@@ -252,6 +252,8 @@ def qml_engine(qapp, runtime_composition, view_model, monkeypatch):
     app, engine, window = _qml_engine(view_model, runtime_composition=runtime_composition)
     window.show()
     QTest.qWaitForWindowExposed(window, 5000)
+    engine.rootContext().contextProperty("interactionModel").revealLibrary()
+    QTest.qWait(100)  # Allow the visible QML layout to polish before measuring.
     QCoreApplication.processEvents()
     yield engine, window
     window.close()
@@ -262,7 +264,10 @@ def _find_item_by_name(root: QObject, object_name: str) -> QObject | None:
     """Recursively find a QML item by objectName."""
     if root.objectName() == object_name:
         return root
-    for child in root.children():
+    children = list(root.children())
+    if isinstance(root, QQuickItem):
+        children += [child for child in root.childItems() if child not in children]
+    for child in children:
         result = _find_item_by_name(child, object_name)
         if result:
             return result
@@ -274,7 +279,10 @@ def _find_items_by_name(root: QObject, object_name: str) -> list[QObject]:
     results = []
     if root.objectName() == object_name:
         results.append(root)
-    for child in root.children():
+    children = list(root.children())
+    if isinstance(root, QQuickItem):
+        children += [child for child in root.childItems() if child not in children]
+    for child in children:
         results.extend(_find_items_by_name(child, object_name))
     return results
 
@@ -362,7 +370,7 @@ class TestVerticalScopeNavigation:
 
         # Keep the existing row size while changing the navigation structure.
         for h in heights:
-            assert h == 36, f"Expected height 36, got {h}"
+            assert h == 35, f"Expected height 35, got {h}"
 
     def test_scope_rows_full_width(self, qml_engine):
         engine, window = qml_engine
@@ -381,8 +389,8 @@ class TestVerticalScopeNavigation:
             btn = _find_item_by_name(root, name)
             assert btn is not None
             btn_width = btn.property("width")
-            # Button should fill the ColumnLayout width (180)
-            assert abs(btn_width - 180) <= 5, f"Button {name} width {btn_width} != bar width {bar_width}"
+            # Button fills the measured solver-owned ColumnLayout width.
+            assert abs(btn_width - bar_width) <= 5, f"Button {name} width {btn_width} != bar width {bar_width}"
 
     def test_no_horizontal_icon_strip(self, qml_engine):
         engine, window = qml_engine
@@ -504,15 +512,15 @@ class TestVisualStateContract:
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
         assert 'return theme.hoverSurface' in scope_block
 
-    def test_active_state_theme_surface_elevated(self, qml_engine):
+    def test_active_state_has_no_fill(self, qml_engine):
         engine, window = qml_engine
         root = engine.rootObjects()[0]
 
-        # Verify scopeFill returns theme.surfaceElevated for active
+        # The Owner amendment removes neutral fill from active rows.
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        assert 'return theme.surfaceElevated' in scope_block
+        assert 'return theme.surfaceElevated' not in scope_block
 
     def test_focus_state_theme_focus_ring(self, qml_engine):
         engine, window = qml_engine
@@ -522,18 +530,18 @@ class TestVisualStateContract:
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        assert 'theme.focusRing' in scope_block
-        assert 'activeFocus ? 2 :' in scope_block
+        assert 'theme.libraryFocusRing' in scope_block
+        assert 'visualFocus ? 1 :' in scope_block
 
     def test_hover_vs_active_different(self, qml_engine):
         """Hover != Active visually -- different theme tokens."""
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        # hoverSurface and surfaceElevated are different tokens
+        # Hover feedback and transparent selection remain distinct.
         assert 'return theme.hoverSurface' in scope_block
-        assert 'return theme.surfaceElevated' in scope_block
-        assert scope_block.index('return theme.hoverSurface') != scope_block.index('return theme.surfaceElevated')
+        assert 'return theme.surfaceElevated' not in scope_block
+        assert 'hovered && !active' in scope_block
 
     def test_idle_vs_hover_different(self, qml_engine):
         """Idle != Hover visually."""
@@ -840,8 +848,8 @@ class TestKeyboardNavigation:
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        assert 'theme.focusRing' in scope_block
-        assert 'activeFocus ? 2 :' in scope_block
+        assert 'theme.libraryFocusRing' in scope_block
+        assert 'visualFocus ? 1 :' in scope_block
 
     def test_tree_keyboard_current_reaches_source_actions(self, qml_engine, runtime_composition):
         engine, window = qml_engine
@@ -942,11 +950,11 @@ class TestNarrowWindow:
         source = workbench_qml.QML_SOURCE
         # libraryScopeBar has explicit width: 180 and Layout.fillWidth: true
         scope_bar = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        assert "width: 180" in scope_bar
+        assert "Layout.fillWidth: true" in scope_bar
         assert "Layout.fillWidth: true" in scope_bar
         # libraryAddSourceButton is in the same Flow/ColumnLayout, below scope bar
         add_btn = source.split('objectName: "libraryAddSourceButton"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        assert "implicitHeight: 26" in add_btn
+        assert "libraryMetrics.addSourceSize" in add_btn
 
     def test_narrow_window_tree_below_navigation(self, qml_engine):
         """Verify QML source has libraryContentHost below libraryScopeBar."""
@@ -1111,7 +1119,7 @@ def test_scope_column_full_width(qml_engine):
     from src import workbench_qml
     source = workbench_qml.QML_SOURCE
     scope_bar = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-    assert "width: 180" in scope_bar
+    assert "Layout.fillWidth: true" in scope_bar
     assert "Layout.fillWidth: true" in scope_bar
 
 
@@ -1147,7 +1155,7 @@ def test_hidden_root_projects_source_without_empty_row(qml_engine, runtime_compo
     assert model.data(evaluate('index(0, 0)'), model.KindRole) == "registered_root"
     assert model.data(evaluate('index(0, 0)'), model.ParentNodeIdRole) == "container:sample-sources"
     assert evaluate("itemAtCell(Qt.point(0, 0)).y") == 0
-    assert evaluate("itemAtCell(Qt.point(0, 0)).height") == 34
+    assert evaluate("itemAtCell(Qt.point(0, 0)).height") == 36
     assert evaluate("itemAtCell(Qt.point(0, 0)).depth") == 0
     assert runtime_composition.library_tree.node("container:sample-sources") is not None
 
@@ -1205,3 +1213,120 @@ def test_hidden_root_projects_source_without_empty_row(qml_engine, runtime_compo
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-x"])
+
+
+# #1248: objective presentation contracts, frozen before implementation.
+def _evaluate_qml(engine, item, expression):
+    from PySide6.QtQml import QQmlEngine, QQmlExpression
+    script = QQmlExpression(QQmlEngine.contextForObject(item), item, expression)
+    value, _ = script.evaluate()
+    assert not script.hasError(), script.error().toString()
+    return value
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+def test_1248_measured_geometry(qml_engine):
+    engine, window = qml_engine
+    header = _find_item_by_name(window, "libraryHeaderRow")
+    add = _find_item_by_name(window, "libraryAddSourceButton")
+    assert header.property("height") == 52
+    assert (add.property("width"), add.property("height")) == (36, 36)
+    previous_y = None
+    for name in ("AllSamples", "Collections", "Favorites", "Recordings"):
+        button = _find_item_by_name(window, f"library{name}ScopeButton")
+        assert button.property("height") == 35
+        y = button.property("y")
+        if previous_y is not None:
+            assert y - previous_y == 36
+        previous_y = y
+        for expression, expected in [
+            ("contentItem.children[0].font.pixelSize",14),
+            ("contentItem.children[0].lineHeight",20),
+            ("contentItem.children[0].font.weight",400),
+            ("contentItem.children[1].width",20),
+            ("contentItem.children[1].height",20),
+            ("contentItem.children[1].visible",True),
+            ("contentItem.children[0].x - contentItem.children[1].x - 20",6),
+        ]:
+            assert _evaluate_qml(engine, button, expression) == expected, expression
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+@pytest.mark.parametrize("section,name,role", [
+    ("all", "AllSamples", "libraryAllSamplesAccent"),
+    ("collections", "Collections", "libraryCollectionsAccent"),
+    ("favorites", "Favorites", "libraryFavoritesAccent"),
+    ("recordings", "Recordings", "libraryRecordsAccent"),
+])
+def test_1248_selection_focus(qml_engine, runtime_composition, section, name, role):
+    engine, window = qml_engine
+    engine.rootContext().contextProperty("libraryInteraction").showLibrarySection(section)
+    QCoreApplication.processEvents()
+    button = _find_item_by_name(window, f"library{name}ScopeButton")
+    assert button.property("scopeActive")
+    assert _evaluate_qml(engine, button, "background.color.a") == 0
+    assert _evaluate_qml(engine, button, f"contentItem.children[0].color == theme.{role}")
+    assert _evaluate_qml(engine, button, f"categoryAccent == theme.{role}")
+    assert _evaluate_qml(engine, button, "background.border.width") == 0
+    button.forceActiveFocus(Qt.TabFocusReason)
+    QCoreApplication.processEvents()
+    assert _evaluate_qml(engine, button, "background.border.width") == 1
+    assert _evaluate_qml(engine, button, "background.border.color == theme.libraryFocusRing")
+    assert _evaluate_qml(engine, button, f"contentItem.children[0].color == theme.{role}")
+    assert runtime_composition.library_tree.active_section == section
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+def test_1248_sources_geometry(qml_engine):
+    engine, window = qml_engine
+    heading = _find_item_by_name(window, "librarySourcesHeading")
+    tree = _find_item_by_name(window, "libraryTree")
+    bar = _find_item_by_name(window, "libraryScopeBar")
+    assert heading.property("height") == 36
+    assert _evaluate_qml(engine, heading, "font.pixelSize") == 14
+    assert _evaluate_qml(engine, heading, "font.weight") == 500
+    assert tree.property("y") - heading.property("y") - 36 == 4
+    assert _evaluate_qml(engine, heading, "mapToItem(null, 0, 0).y") - _evaluate_qml(engine, bar, "mapToItem(null, 0, height).y") == 20
+    interaction = engine.rootContext().contextProperty("libraryInteraction")
+    interaction.selectLibraryNode("root:1")
+    QTest.qWait(100)
+    assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).height") == 36
+    assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).background.color.a") == 0
+    assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).indentation") == 16
+    label = _find_item_by_name(window, "librarySourceLabel")
+    fade = _find_item_by_name(window, "librarySourceLabelFade")
+    assert label is not None and fade is not None
+    assert _evaluate_qml(engine, label, "color == theme.actionActive")
+    assert fade.property("width") == 24
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+def test_1248_long_source_accessible_name_is_complete(qml_engine, runtime_composition):
+    from dataclasses import replace
+
+    engine, window = qml_engine
+    nav = runtime_composition.library_tree.navigation
+    full_name = "Synthetic source with a deliberately long complete accessible name"
+    nav.root = replace(nav.root, label=full_name)
+    model = engine.rootContext().contextProperty("libraryTreeModel")
+    assert model.replaceBranch("container:sample-sources")
+    QTest.qWait(100)
+    tree = _find_item_by_name(window, "libraryTree")
+    assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).Accessible.name") == full_name
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+def test_1248_source_focus_is_neutral_and_independent(qml_engine, runtime_composition):
+    engine, window = qml_engine
+    tree = _find_item_by_name(window, "libraryTree")
+    selected = runtime_composition.library_tree.selected_node_id
+    section = runtime_composition.library_tree.active_section
+    tree.forceActiveFocus(Qt.TabFocusReason)
+    QTest.keyClick(window, Qt.Key_Down)
+    QTest.qWait(100)
+    assert tree.property("keyboardFocusVisible")
+    assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).background.border.width") == 1
+    assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).background.border.color == theme.libraryFocusRing")
+    assert _evaluate_qml(engine, tree, "theme.libraryFocusRing == theme.textSecondary")
+    assert runtime_composition.library_tree.selected_node_id == selected
+    assert runtime_composition.library_tree.active_section == section

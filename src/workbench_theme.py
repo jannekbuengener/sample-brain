@@ -75,6 +75,8 @@ _QML_SEMANTIC_MAP = {
     "waveformActive": "accent",
     "waveformDefault": "textSecondary",
     "focusRing": "focusRing",
+    # #1248 Owner runtime correction: Library focus never follows Accent.
+    "libraryFocusRing": "textSecondary",
     "hoverSurface": "hover",
 }
 
@@ -663,6 +665,26 @@ def theme_tokens_to_qml_semantics(tokens: Mapping[str, Any] | ThemeTokens) -> di
         if normalized is None:
             continue
         out[qml_name] = normalized
+    # #1248: Library-only semantic seam, no persisted/derived schema expansion.
+    # Per-channel luminance fractions project the approved #15171a reference
+    # between the existing Blood base (#020203) and foreground (#e4e6ea).
+    # Other presets/custom bases retain that relative surface hierarchy.
+    background = _normalize_hex(source.get("background"))
+    foreground = _normalize_hex(source.get("foreground"))
+    if background and foreground:
+        fractions = (19 / 226, 21 / 228, 23 / 231)
+        channels = []
+        for offset, fraction in zip((1, 3, 5), fractions):
+            low = int(background[offset:offset + 2], 16)
+            high = int(foreground[offset:offset + 2], 16)
+            channels.append(round(low + (high - low) * fraction))
+        out["surfaceLibrary"] = "#" + "".join(f"{value:02x}" for value in channels)
+    out.update({
+        "libraryAllSamplesAccent": "#93a8b8",
+        "libraryCollectionsAccent": "#aa9e7b",
+        "libraryFavoritesAccent": "#ad6267",
+        "libraryRecordsAccent": "#9c91ae",
+    })
     out.setdefault("textOnAction", TEXT_ON_ACTION)
     return out
 

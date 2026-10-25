@@ -2376,6 +2376,11 @@ ApplicationWindow {
         readonly property color surfaceHeader: themeAuthority.surfaceHeader
         readonly property color surfaceBrowser: themeAuthority.surfaceBrowser
         readonly property color surfacePanel: themeAuthority.surfacePanel
+        readonly property color surfaceLibrary: themeAuthority.surfaceLibrary
+        readonly property color libraryAllSamplesAccent: themeAuthority.libraryAllSamplesAccent
+        readonly property color libraryCollectionsAccent: themeAuthority.libraryCollectionsAccent
+        readonly property color libraryFavoritesAccent: themeAuthority.libraryFavoritesAccent
+        readonly property color libraryRecordsAccent: themeAuthority.libraryRecordsAccent
         readonly property color surfaceElevated: themeAuthority.surfaceElevated
         readonly property color borderSubtle: themeAuthority.borderSubtle
         readonly property color dividerDefault: themeAuthority.dividerDefault
@@ -2389,7 +2394,28 @@ ApplicationWindow {
         readonly property color selectionBorder: themeAuthority.selectionBorder
         readonly property color actionActive: themeAuthority.actionActive
         readonly property color focusRing: themeAuthority.focusRing
+        readonly property color libraryFocusRing: themeAuthority.libraryFocusRing
         readonly property color hoverSurface: themeAuthority.hoverSurface
+    }
+    // #1248 logical UI geometry, local to the Library presentation.
+    QtObject {
+        id: libraryMetrics
+        readonly property int headerHeight: 52
+        readonly property int addSourceSize: 36
+        readonly property int rowHeight: 35
+        readonly property int rowPitch: 36
+        readonly property int paneInset: 6
+        readonly property int contentPadding: 10
+        readonly property int iconSize: 20
+        readonly property int iconLabelGap: 6
+        readonly property int textSize: 14
+        readonly property int textLineHeight: 20
+        readonly property int sectionGap: 20
+        readonly property int sectionHeight: 36
+        readonly property int sectionLineHeight: 18
+        readonly property int sourceGap: 4
+        readonly property int sourceRowHeight: 36
+        readonly property int labelFadeWidth: 24
     }
     // #770 shared context-hint content seam (ephemeral UI state; placement is separate).
     QtObject {
@@ -3123,23 +3149,31 @@ ApplicationWindow {
         onWidthChanged: layoutModel.setContentWidth(width)
         Component.onCompleted: layoutModel.setContentWidth(width)
 
-        Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfacePanel; border.color: theme.borderSubtle
-            ColumnLayout { anchors.fill: parent; anchors.margins: 16
+        Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfaceLibrary; border.color: theme.borderSubtle
+            ColumnLayout { anchors.fill: parent; anchors.leftMargin: libraryMetrics.paneInset; anchors.rightMargin: libraryMetrics.paneInset; spacing: 0
                 RowLayout {
                     id: libraryHeaderRow
                     objectName: "libraryHeaderRow"
                     Layout.fillWidth: true
-                    Label { objectName: "libraryTitleLabel"; text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
+                    Layout.minimumHeight: libraryMetrics.headerHeight
+                    Layout.maximumHeight: libraryMetrics.headerHeight
+                    Layout.leftMargin: libraryMetrics.contentPadding
+                    spacing: 0
+                    Label { objectName: "libraryTitleLabel"; text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: libraryMetrics.textSize; Layout.fillWidth: true }
                     Item { Layout.fillWidth: true }
                     Button {
                         id: libraryAddSourceButton
                         objectName: "libraryAddSourceButton"
                         text: "+"
                         flat: true
-                        implicitHeight: 26
-                        padding: 8
-                        leftPadding: 10
-                        rightPadding: 10
+                        Layout.minimumWidth: libraryMetrics.addSourceSize
+                        Layout.maximumWidth: libraryMetrics.addSourceSize
+                        Layout.minimumHeight: libraryMetrics.addSourceSize
+                        Layout.maximumHeight: libraryMetrics.addSourceSize
+                        implicitHeight: libraryMetrics.addSourceSize
+                        padding: 0
+                        leftPadding: 0
+                        rightPadding: 0
                         Accessible.name: "Add Source"
                         contentItem: Text {
                             text: libraryAddSourceButton.text
@@ -3152,14 +3186,14 @@ ApplicationWindow {
                             opacity: libraryAddSourceButton.enabled ? 1.0 : 0.45
                         }
                         background: Rectangle {
-                            implicitHeight: 26
+                            implicitHeight: libraryMetrics.addSourceSize
                             radius: 4
                             color: !libraryAddSourceButton.enabled ? "transparent"
                                    : (libraryAddSourceButton.pressed ? theme.surfaceElevated
                                       : (libraryAddSourceButton.hovered ? theme.hoverSurface : "transparent"))
                             border.width: 1
                             border.color: !libraryAddSourceButton.enabled ? theme.borderSubtle
-                                          : (libraryAddSourceButton.activeFocus ? theme.focusRing
+                                          : (libraryAddSourceButton.activeFocus ? theme.libraryFocusRing
                                              : (libraryAddSourceButton.pressed ? theme.selectionBorder : theme.borderSubtle))
                             opacity: libraryAddSourceButton.enabled ? 1.0 : 0.4
                         }
@@ -3182,35 +3216,28 @@ ApplicationWindow {
                 ColumnLayout {
                     id: libraryScopeBar
                     objectName: "libraryScopeBar"
-                    width: 180
-                    implicitWidth: width
                     Layout.fillWidth: true
-                    spacing: 3
+                    spacing: libraryMetrics.rowPitch - libraryMetrics.rowHeight
                     z: 2
-                    readonly property int iconPad: 5
 
-                    // #1238/#1239: preserve the existing scope-row states during the IA change.
                     function scopeFill(active, hovered) {
-                        if (active)
-                            return theme.surfaceElevated
                         if (hovered && !active)
                             return theme.hoverSurface
                         return "transparent"
                     }
-                    function scopeStroke(active) {
-                        return active ? theme.selectionSurface : "transparent"
-                    }
-                    function scopeInk(active, focused) {
-                        return active || focused ? theme.textPrimary : theme.textSecondary
+                    function scopeInk(active, categoryAccent) {
+                        return active ? categoryAccent : theme.textSecondary
                     }
                             ToolButton {
                                 id: allSamplesScopeButton
+                                readonly property color categoryAccent: theme.libraryAllSamplesAccent
                                 objectName: "libraryAllSamplesScopeButton"
                                 text: "All Samples"
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "all"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 36
+                                Layout.minimumHeight: libraryMetrics.rowHeight
+                                Layout.maximumHeight: libraryMetrics.rowHeight
                                 onClicked: {
                                     libraryInteraction.selectLibraryNode("scope:all-library")
                                 }
@@ -3229,30 +3256,40 @@ ApplicationWindow {
                                 }
                                 background: Rectangle {
                                     anchors.fill: parent
-                                    radius: 4
+                                    radius: 8
                                     color: libraryScopeBar.scopeFill(allSamplesScopeButton.scopeActive, allSamplesScopeButton.hovered)
-                                    border.width: allSamplesScopeButton.activeFocus ? 2 : (allSamplesScopeButton.scopeActive ? 1 : 0)
-                                    border.color: allSamplesScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(allSamplesScopeButton.scopeActive)
+                                    border.width: allSamplesScopeButton.visualFocus ? 1 : 0
+                                    border.color: theme.libraryFocusRing
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
                                     Text {
-                                        anchors.fill: parent
-                                        leftPadding: 10
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: libraryMetrics.contentPadding + libraryMetrics.iconSize + libraryMetrics.iconLabelGap
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: libraryMetrics.contentPadding
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        height: libraryMetrics.textLineHeight
+                                        lineHeightMode: Text.FixedHeight
+                                        lineHeight: libraryMetrics.textLineHeight
+                                        elide: Text.ElideRight
                                         text: allSamplesScopeButton.text
-                                        color: libraryScopeBar.scopeInk(allSamplesScopeButton.scopeActive, allSamplesScopeButton.activeFocus)
+                                        color: libraryScopeBar.scopeInk(allSamplesScopeButton.scopeActive, allSamplesScopeButton.categoryAccent)
                                         horizontalAlignment: Text.AlignLeft
                                         verticalAlignment: Text.AlignVCenter
-                                        font.pixelSize: 12
+                                        font.pixelSize: libraryMetrics.textSize
+                                        font.weight: Font.Normal
                                     }
                                     Canvas {
-                                        visible: false
-                                        anchors.fill: parent
-                                        anchors.margins: libraryScopeBar.iconPad
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: libraryMetrics.contentPadding
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: libraryMetrics.iconSize
+                                        height: libraryMetrics.iconSize
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(allSamplesScopeButton.scopeActive)
+                                            ctx.strokeStyle = allSamplesScopeButton.categoryAccent
                                             ctx.lineWidth = 1
                                             var y1 = height * 0.25
                                             var y2 = height * 0.5
@@ -3266,18 +3303,21 @@ ApplicationWindow {
                                             target: allSamplesScopeButton
                                             function onScopeActiveChanged() { parent.requestPaint() }
                                             function onHoveredChanged() { parent.requestPaint() }
+                                            function onCategoryAccentChanged() { parent.requestPaint() }
                                         }
                                     }
                                 }
                             }
                             ToolButton {
                                 id: collectionsScopeButton
+                                readonly property color categoryAccent: theme.libraryCollectionsAccent
                                 objectName: "libraryCollectionsScopeButton"
                                 text: "Collections"
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "collections"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 36
+                                Layout.minimumHeight: libraryMetrics.rowHeight
+                                Layout.maximumHeight: libraryMetrics.rowHeight
                                 onClicked: libraryInteraction.showLibrarySection("collections")
                                 Accessible.name: "Collections"
                                 onHoveredChanged: {
@@ -3294,30 +3334,40 @@ ApplicationWindow {
                                 }
                                 background: Rectangle {
                                     anchors.fill: parent
-                                    radius: 4
+                                    radius: 8
                                     color: libraryScopeBar.scopeFill(collectionsScopeButton.scopeActive, collectionsScopeButton.hovered)
-                                    border.width: collectionsScopeButton.activeFocus ? 2 : (collectionsScopeButton.scopeActive ? 1 : 0)
-                                    border.color: collectionsScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(collectionsScopeButton.scopeActive)
+                                    border.width: collectionsScopeButton.visualFocus ? 1 : 0
+                                    border.color: theme.libraryFocusRing
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
                                     Text {
-                                        anchors.fill: parent
-                                        leftPadding: 10
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: libraryMetrics.contentPadding + libraryMetrics.iconSize + libraryMetrics.iconLabelGap
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: libraryMetrics.contentPadding
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        height: libraryMetrics.textLineHeight
+                                        lineHeightMode: Text.FixedHeight
+                                        lineHeight: libraryMetrics.textLineHeight
+                                        elide: Text.ElideRight
                                         text: collectionsScopeButton.text
-                                        color: libraryScopeBar.scopeInk(collectionsScopeButton.scopeActive, collectionsScopeButton.activeFocus)
+                                        color: libraryScopeBar.scopeInk(collectionsScopeButton.scopeActive, collectionsScopeButton.categoryAccent)
                                         horizontalAlignment: Text.AlignLeft
                                         verticalAlignment: Text.AlignVCenter
-                                        font.pixelSize: 12
+                                        font.pixelSize: libraryMetrics.textSize
+                                        font.weight: Font.Normal
                                     }
                                     Canvas {
-                                        visible: false
-                                        anchors.fill: parent
-                                        anchors.margins: libraryScopeBar.iconPad
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: libraryMetrics.contentPadding
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: libraryMetrics.iconSize
+                                        height: libraryMetrics.iconSize
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(collectionsScopeButton.scopeActive)
+                                            ctx.strokeStyle = collectionsScopeButton.categoryAccent
                                             ctx.lineWidth = 1
                                             ctx.strokeRect(2, 1, width - 6, height - 6)
                                             ctx.strokeRect(5, 4, width - 6, height - 6)
@@ -3327,18 +3377,21 @@ ApplicationWindow {
                                             target: collectionsScopeButton
                                             function onScopeActiveChanged() { parent.requestPaint() }
                                             function onHoveredChanged() { parent.requestPaint() }
+                                            function onCategoryAccentChanged() { parent.requestPaint() }
                                         }
                                     }
                                 }
                             }
                             ToolButton {
                                 id: favoritesScopeButton
+                                readonly property color categoryAccent: theme.libraryFavoritesAccent
                                 objectName: "libraryFavoritesScopeButton"
                                 text: "Favorites"
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "favorites"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 36
+                                Layout.minimumHeight: libraryMetrics.rowHeight
+                                Layout.maximumHeight: libraryMetrics.rowHeight
                                 onClicked: {
                                     libraryInteraction.selectLibraryNode("scope:favorites")
                                 }
@@ -3357,31 +3410,41 @@ ApplicationWindow {
                                 }
                                 background: Rectangle {
                                     anchors.fill: parent
-                                    radius: 4
+                                    radius: 8
                                     color: libraryScopeBar.scopeFill(favoritesScopeButton.scopeActive, favoritesScopeButton.hovered)
-                                    border.width: favoritesScopeButton.activeFocus ? 2 : (favoritesScopeButton.scopeActive ? 1 : 0)
-                                    border.color: favoritesScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(favoritesScopeButton.scopeActive)
+                                    border.width: favoritesScopeButton.visualFocus ? 1 : 0
+                                    border.color: theme.libraryFocusRing
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
                                     Text {
-                                        anchors.fill: parent
-                                        leftPadding: 10
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: libraryMetrics.contentPadding + libraryMetrics.iconSize + libraryMetrics.iconLabelGap
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: libraryMetrics.contentPadding
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        height: libraryMetrics.textLineHeight
+                                        lineHeightMode: Text.FixedHeight
+                                        lineHeight: libraryMetrics.textLineHeight
+                                        elide: Text.ElideRight
                                         text: favoritesScopeButton.text
-                                        color: libraryScopeBar.scopeInk(favoritesScopeButton.scopeActive, favoritesScopeButton.activeFocus)
+                                        color: libraryScopeBar.scopeInk(favoritesScopeButton.scopeActive, favoritesScopeButton.categoryAccent)
                                         horizontalAlignment: Text.AlignLeft
                                         verticalAlignment: Text.AlignVCenter
-                                        font.pixelSize: 12
+                                        font.pixelSize: libraryMetrics.textSize
+                                        font.weight: Font.Normal
                                     }
                                     Canvas {
-                                        visible: false
-                                        anchors.fill: parent
-                                        anchors.margins: libraryScopeBar.iconPad
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: libraryMetrics.contentPadding
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: libraryMetrics.iconSize
+                                        height: libraryMetrics.iconSize
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(favoritesScopeButton.scopeActive)
-                                            ctx.fillStyle = libraryScopeBar.scopeInk(favoritesScopeButton.scopeActive)
+                                            ctx.strokeStyle = favoritesScopeButton.categoryAccent
+                                            ctx.fillStyle = favoritesScopeButton.categoryAccent
                                             ctx.lineWidth = 1
                                             var cx = width / 2
                                             var cy = height / 2
@@ -3411,6 +3474,7 @@ ApplicationWindow {
                                             target: favoritesScopeButton
                                             function onScopeActiveChanged() { parent.requestPaint() }
                                             function onHoveredChanged() { parent.requestPaint() }
+                                            function onCategoryAccentChanged() { parent.requestPaint() }
                                         }
                                     }
                                 }
@@ -3418,12 +3482,14 @@ ApplicationWindow {
 
                             ToolButton {
                                 id: recordingsScopeButton
+                                readonly property color categoryAccent: theme.libraryRecordsAccent
                                 objectName: "libraryRecordingsScopeButton"
                                 text: "Records"
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "recordings"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 36
+                                Layout.minimumHeight: libraryMetrics.rowHeight
+                                Layout.maximumHeight: libraryMetrics.rowHeight
                                 onClicked: {
                                     libraryInteraction.selectLibraryNode("scope:recordings")
                                 }
@@ -3442,41 +3508,46 @@ ApplicationWindow {
                                 }
                                 background: Rectangle {
                                     anchors.fill: parent
-                                    radius: 4
+                                    radius: 8
                                     color: libraryScopeBar.scopeFill(recordingsScopeButton.scopeActive, recordingsScopeButton.hovered)
-                                    border.width: recordingsScopeButton.activeFocus ? 2 : (recordingsScopeButton.scopeActive ? 1 : 0)
-                                    border.color: recordingsScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(recordingsScopeButton.scopeActive)
+                                    border.width: recordingsScopeButton.visualFocus ? 1 : 0
+                                    border.color: theme.libraryFocusRing
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
                                     Text {
-                                        anchors.fill: parent
-                                        leftPadding: 10
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: libraryMetrics.contentPadding + libraryMetrics.iconSize + libraryMetrics.iconLabelGap
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: libraryMetrics.contentPadding
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        height: libraryMetrics.textLineHeight
+                                        lineHeightMode: Text.FixedHeight
+                                        lineHeight: libraryMetrics.textLineHeight
+                                        elide: Text.ElideRight
                                         text: recordingsScopeButton.text
-                                        color: libraryScopeBar.scopeInk(recordingsScopeButton.scopeActive, recordingsScopeButton.activeFocus)
+                                        color: libraryScopeBar.scopeInk(recordingsScopeButton.scopeActive, recordingsScopeButton.categoryAccent)
                                         horizontalAlignment: Text.AlignLeft
                                         verticalAlignment: Text.AlignVCenter
-                                        font.pixelSize: 12
+                                        font.pixelSize: libraryMetrics.textSize
+                                        font.weight: Font.Normal
                                     }
                                     Canvas {
-                                        visible: false
-                                        anchors.fill: parent
-                                        anchors.margins: libraryScopeBar.iconPad
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: libraryMetrics.contentPadding
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: libraryMetrics.iconSize
+                                        height: libraryMetrics.iconSize
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(recordingsScopeButton.scopeActive)
+                                            ctx.strokeStyle = recordingsScopeButton.categoryAccent
                                             ctx.lineWidth = 1
                                             ctx.beginPath()
-                                            ctx.moveTo(1, height * 0.55)
-                                            ctx.lineTo(width * 0.25, height * 0.35)
-                                            ctx.lineTo(width * 0.45, height * 0.7)
-                                            ctx.lineTo(width * 0.7, height * 0.25)
-                                            ctx.lineTo(width - 1, height * 0.5)
+                                            ctx.arc(width / 2, height / 2, width * 0.38, 0, 2 * Math.PI)
                                             ctx.stroke()
                                             ctx.beginPath()
-                                            ctx.moveTo(width * 0.15, height - 2)
-                                            ctx.lineTo(width * 0.85, height - 2)
+                                            ctx.arc(width / 2, height / 2, width * 0.10, 0, 2 * Math.PI)
                                             ctx.stroke()
                                         }
                                         Component.onCompleted: requestPaint()
@@ -3484,6 +3555,7 @@ ApplicationWindow {
                                             target: recordingsScopeButton
                                             function onScopeActiveChanged() { parent.requestPaint() }
                                             function onHoveredChanged() { parent.requestPaint() }
+                                            function onCategoryAccentChanged() { parent.requestPaint() }
                                         }
                                     }
                                 }
@@ -3492,6 +3564,7 @@ ApplicationWindow {
                 ColumnLayout {
                     id: libraryContentHost
                     objectName: "libraryContentHost"
+                    Layout.topMargin: libraryMetrics.sectionGap
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     spacing: 0
@@ -3555,17 +3628,32 @@ ApplicationWindow {
                     objectName: "librarySourcesHeading"
                     text: "YOUR SOURCES"
                     color: theme.textSecondary
-                    font: libraryTitleLabel.font
+                    font.pixelSize: libraryMetrics.textSize
+                    font.weight: Font.Medium
+                    lineHeightMode: Text.FixedHeight
+                    lineHeight: libraryMetrics.sectionLineHeight
+                    verticalAlignment: Text.AlignVCenter
+                    Layout.minimumHeight: libraryMetrics.sectionHeight
+                    Layout.maximumHeight: libraryMetrics.sectionHeight
+                    Layout.leftMargin: libraryMetrics.contentPadding
                     Layout.fillWidth: true
                 }
                 TreeView {
                     id: libraryTree
                     objectName: "libraryTree"
+                    property bool keyboardFocusVisible: false
+                    onActiveFocusChanged: keyboardFocusVisible = activeFocus
+                    Layout.topMargin: libraryMetrics.sourceGap
                     visible: true
                     enabled: true
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: libraryTreeModel
+                    // Native keyboard-current only; Python selectedLibraryNodeId
+                    // remains the sole source/navigation selection authority.
+                    selectionModel: ItemSelectionModel {}
+                    selectionBehavior: TableView.SelectionDisabled
+                    columnWidthProvider: function(column) { return libraryTree.width }
                     rootIndex: libraryTreeModel.presentationRootIndex()
                     clip: true
                     focus: false
@@ -3573,14 +3661,20 @@ ApplicationWindow {
                     boundsBehavior: Flickable.StopAtBounds
                     delegate: TreeViewDelegate {
                         id: libraryDelegate
-                        implicitHeight: 34
+                        Accessible.name: model.display
+                        palette.text: libraryInteraction.selectedLibraryNodeId === model.nodeId ? theme.actionActive : theme.textSecondary
+                        palette.windowText: palette.text
+                        implicitHeight: libraryMetrics.sourceRowHeight
                         indentation: 16
                         background: Rectangle {
-                            color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? theme.selectionSurface : "transparent"
-                            border.color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? theme.actionActive : "transparent"
+                            color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? "transparent"
+                                   : (libraryDelegate.hovered ? theme.hoverSurface : "transparent")
+                            border.width: libraryDelegate.current && libraryTree.activeFocus
+                                          && libraryTree.keyboardFocusVisible ? 1 : 0
+                            border.color: theme.libraryFocusRing
                         }
                         contentItem: Item {
-                            implicitHeight: 34
+                            implicitHeight: libraryMetrics.sourceRowHeight
                             implicitWidth: libraryTree.width
                             property bool dropHover: false
                             HoverHandler { id: sourceRowHover }
@@ -3596,6 +3690,7 @@ ApplicationWindow {
                                     } else if (model.selectable) {
                                         libraryInteraction.showLibrarySection("sources")
                                         libraryTree.forceActiveFocus()
+                                        libraryTree.keyboardFocusVisible = false
                                         libraryInteraction.selectLibraryNode(model.nodeId)
                                     }
                                 }
@@ -3632,13 +3727,36 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 anchors.leftMargin: 4
                                 anchors.rightMargin: 8
-                                Label {
+                                Item {
                                     Layout.fillWidth: true
-                                    text: model.loading ? "Loading…" : model.display
-                                    color: model.availability === "offline" ? theme.textDisabled : theme.textPrimary
-                                    opacity: model.error ? 0.72 : 1.0
-                                    elide: Text.ElideRight
-                                    font.pixelSize: 14
+                                    Layout.preferredHeight: libraryMetrics.textLineHeight
+                                    clip: true
+                                    Label {
+                                        id: sourceLabel
+                                        objectName: "librarySourceLabel"
+                                        anchors.fill: parent
+                                        text: model.loading ? "Loading…" : model.display
+                                        color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? theme.actionActive
+                                               : (model.availability === "offline" ? theme.textDisabled : theme.textPrimary)
+                                        opacity: model.error ? 0.72 : 1.0
+                                        font.pixelSize: libraryMetrics.textSize
+                                        font.weight: Font.Normal
+                                        lineHeightMode: Text.FixedHeight
+                                        lineHeight: libraryMetrics.textLineHeight
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    Rectangle {
+                                        objectName: "librarySourceLabelFade"
+                                        anchors.right: parent.right
+                                        height: parent.height
+                                        width: libraryMetrics.labelFadeWidth
+                                        visible: sourceLabel.implicitWidth > sourceLabel.width
+                                        gradient: Gradient {
+                                            orientation: Gradient.Horizontal
+                                            GradientStop { position: 0; color: Qt.rgba(theme.surfaceLibrary.r, theme.surfaceLibrary.g, theme.surfaceLibrary.b, 0) }
+                                            GradientStop { position: 1; color: libraryInteraction.selectedLibraryNodeId !== model.nodeId && libraryDelegate.hovered ? theme.hoverSurface : theme.surfaceLibrary }
+                                        }
+                                    }
                                 }
                                 Label {
                                     visible: model.error
@@ -3679,14 +3797,15 @@ ApplicationWindow {
                                         color: sourceActionsButton.activeFocus
                                                ? theme.surfaceElevated
                                                : (sourceActionsButton.hovered ? theme.hoverSurface : "transparent")
-                                        border.width: sourceActionsButton.activeFocus ? 2 : 0
-                                        border.color: theme.focusRing
+                                        border.width: sourceActionsButton.activeFocus ? 1 : 0
+                                        border.color: theme.libraryFocusRing
                                     }
                                 }
                             }
                         }
                     }
                     Keys.onPressed: function(event) {
+                        libraryTree.keyboardFocusVisible = true
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             browser.forceActiveFocus()
                             event.accepted = true
@@ -8074,6 +8193,30 @@ def _qml_theme_authority_bridge(
         @Property(str, notify=themeChanged)
         def surfacePanel(self) -> str:
             return self._color("surfacePanel")
+
+        @Property(str, notify=themeChanged)
+        def libraryFocusRing(self) -> str:
+            return self._color("libraryFocusRing")
+
+        @Property(str, notify=themeChanged)
+        def surfaceLibrary(self) -> str:
+            return self._color("surfaceLibrary")
+
+        @Property(str, notify=themeChanged)
+        def libraryAllSamplesAccent(self) -> str:
+            return self._color("libraryAllSamplesAccent")
+
+        @Property(str, notify=themeChanged)
+        def libraryCollectionsAccent(self) -> str:
+            return self._color("libraryCollectionsAccent")
+
+        @Property(str, notify=themeChanged)
+        def libraryFavoritesAccent(self) -> str:
+            return self._color("libraryFavoritesAccent")
+
+        @Property(str, notify=themeChanged)
+        def libraryRecordsAccent(self) -> str:
+            return self._color("libraryRecordsAccent")
 
         @Property(str, notify=themeChanged)
         def surfaceElevated(self) -> str:

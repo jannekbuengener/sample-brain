@@ -361,3 +361,37 @@ def test_qml_semantic_map_covers_screen1_facade_without_persisting_text_on_actio
     assert "textOnAction" not in stored
     assert "hoverSurface" not in stored
     assert "hover" not in stored
+
+
+def test_library_semantics_are_additive_and_follow_custom_base(tmp_path):
+    from src.workbench_theme import resolve_theme, theme_tokens_to_qml_semantics, derive_tokens
+    base = resolve_theme(state_dir=tmp_path)
+    roles = theme_tokens_to_qml_semantics(base)
+    assert roles["surfaceLibrary"] == "#15171a"
+    assert roles["libraryAllSamplesAccent"] == "#93a8b8"
+    assert roles["libraryCollectionsAccent"] == "#aa9e7b"
+    assert roles["libraryFavoritesAccent"] == "#ad6267"
+    assert roles["libraryRecordsAccent"] == "#9c91ae"
+    assert roles["surfaceBrowser"] == base.surface
+    custom = {"accent":"#558833", "background":"#202020", "foreground":"#dddddd"}
+    custom.update(derive_tokens(custom))
+    updated = theme_tokens_to_qml_semantics(custom)
+    assert updated["surfaceLibrary"] != roles["surfaceLibrary"]
+    assert updated["actionActive"] == "#558833"
+    for key in ("libraryAllSamplesAccent", "libraryCollectionsAccent", "libraryFavoritesAccent", "libraryRecordsAccent"):
+        assert updated[key] == roles[key]
+
+
+def test_library_focus_role_is_neutral_and_independent_of_accent(tmp_path):
+    from src.workbench_theme import resolve_theme, theme_tokens_to_qml_semantics, derive_tokens
+
+    base = resolve_theme(state_dir=tmp_path)
+    roles = theme_tokens_to_qml_semantics(base)
+    assert roles["libraryFocusRing"] == base.textSecondary
+    assert roles["libraryFocusRing"] != roles["actionActive"]
+    changed = base.as_dict()
+    changed["accent"] = "#558833"
+    changed.update(derive_tokens(changed))
+    updated = theme_tokens_to_qml_semantics(changed)
+    assert updated["actionActive"] == "#558833"
+    assert updated["libraryFocusRing"] == roles["libraryFocusRing"]
