@@ -3640,12 +3640,18 @@ ApplicationWindow {
                 TreeView {
                     id: libraryTree
                     objectName: "libraryTree"
+                    property bool keyboardFocusVisible: false
+                    onActiveFocusChanged: keyboardFocusVisible = activeFocus
                     Layout.topMargin: libraryMetrics.sourceGap
                     visible: true
                     enabled: true
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: libraryTreeModel
+                    // Native keyboard-current only; Python selectedLibraryNodeId
+                    // remains the sole source/navigation selection authority.
+                    selectionModel: ItemSelectionModel {}
+                    selectionBehavior: TableView.SelectionDisabled
                     columnWidthProvider: function(column) { return libraryTree.width }
                     rootIndex: libraryTreeModel.presentationRootIndex()
                     clip: true
@@ -3662,7 +3668,7 @@ ApplicationWindow {
                             color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? "transparent"
                                    : (libraryDelegate.hovered ? theme.hoverSurface : "transparent")
                             border.width: libraryDelegate.current && libraryTree.activeFocus
-                                          && (libraryTree.focusReason === Qt.TabFocusReason || libraryTree.focusReason === Qt.BacktabFocusReason) ? 2 : 0
+                                          && libraryTree.keyboardFocusVisible ? 2 : 0
                             border.color: theme.focusRing
                         }
                         contentItem: Item {
@@ -3682,6 +3688,7 @@ ApplicationWindow {
                                     } else if (model.selectable) {
                                         libraryInteraction.showLibrarySection("sources")
                                         libraryTree.forceActiveFocus()
+                                        libraryTree.keyboardFocusVisible = false
                                         libraryInteraction.selectLibraryNode(model.nodeId)
                                     }
                                 }
@@ -3796,6 +3803,7 @@ ApplicationWindow {
                         }
                     }
                     Keys.onPressed: function(event) {
+                        libraryTree.keyboardFocusVisible = true
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             browser.forceActiveFocus()
                             event.accepted = true
