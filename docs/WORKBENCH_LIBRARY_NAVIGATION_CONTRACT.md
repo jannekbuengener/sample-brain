@@ -42,6 +42,7 @@ Presentation split:
   `#1248` owns the later scale, spacing, and icon contract. The global footer
   remains a context/status surface and contains no scope-navigation copy. The
   visible Catalog control is not presented.
+  The compact in-pane placement introduced by `#1201` remains in the Library header baseline.
 
 Favorites is a dedicated user-organization scope
 (`scope:favorites` / `LibraryScopeKind.FAVORITES`). Records is the visible
