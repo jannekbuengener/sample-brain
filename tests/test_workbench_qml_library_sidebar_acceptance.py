@@ -264,7 +264,10 @@ def _find_item_by_name(root: QObject, object_name: str) -> QObject | None:
     """Recursively find a QML item by objectName."""
     if root.objectName() == object_name:
         return root
-    for child in root.children():
+    children = list(root.children())
+    if isinstance(root, QQuickItem):
+        children += [child for child in root.childItems() if child not in children]
+    for child in children:
         result = _find_item_by_name(child, object_name)
         if result:
             return result
@@ -276,7 +279,10 @@ def _find_items_by_name(root: QObject, object_name: str) -> list[QObject]:
     results = []
     if root.objectName() == object_name:
         results.append(root)
-    for child in root.children():
+    children = list(root.children())
+    if isinstance(root, QQuickItem):
+        children += [child for child in root.childItems() if child not in children]
+    for child in children:
         results.extend(_find_items_by_name(child, object_name))
     return results
 
@@ -383,8 +389,8 @@ class TestVerticalScopeNavigation:
             btn = _find_item_by_name(root, name)
             assert btn is not None
             btn_width = btn.property("width")
-            # Button should fill the ColumnLayout width (180)
-            assert abs(btn_width - 180) <= 5, f"Button {name} width {btn_width} != bar width {bar_width}"
+            # Button fills the measured solver-owned ColumnLayout width.
+            assert abs(btn_width - bar_width) <= 5, f"Button {name} width {btn_width} != bar width {bar_width}"
 
     def test_no_horizontal_icon_strip(self, qml_engine):
         engine, window = qml_engine
@@ -510,7 +516,7 @@ class TestVisualStateContract:
         engine, window = qml_engine
         root = engine.rootObjects()[0]
 
-        # Verify scopeFill returns theme.surfaceElevated for active
+        # The Owner amendment removes neutral fill from active rows.
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
@@ -525,14 +531,14 @@ class TestVisualStateContract:
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
         assert 'theme.focusRing' in scope_block
-        assert 'activeFocus ? 2 :' in scope_block
+        assert 'visualFocus ? 2 :' in scope_block
 
     def test_hover_vs_active_different(self, qml_engine):
         """Hover != Active visually -- different theme tokens."""
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        # hoverSurface and surfaceElevated are different tokens
+        # Hover feedback and transparent selection remain distinct.
         assert 'return theme.hoverSurface' in scope_block
         assert 'return theme.surfaceElevated' not in scope_block
         assert 'hovered && !active' in scope_block
@@ -843,7 +849,7 @@ class TestKeyboardNavigation:
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
         assert 'theme.focusRing' in scope_block
-        assert 'activeFocus ? 2 :' in scope_block
+        assert 'visualFocus ? 2 :' in scope_block
 
     def test_tree_keyboard_current_reaches_source_actions(self, qml_engine, runtime_composition):
         engine, window = qml_engine

@@ -289,7 +289,7 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     assert "activeLibrarySection" in scope_block
     assert "property string mode" not in scope_block
     assert "libraryScopeBar.mode" not in scope_block
-    assert "theme.surfaceElevated" in scope_block
+    assert "theme.surfaceElevated" not in scope_block
     assert "theme.hoverSurface" in scope_block
     assert "theme.focusRing" in scope_block
     assert "theme.actionActive" not in scope_block
@@ -327,7 +327,7 @@ def test_scope_rows_use_one_shared_state_function_and_four_primary_targets() -> 
     for label in ("All Samples", "Collections", "Favorites", "Records"):
         assert f'text: "{label}"' in scope_block
     assert 'objectName: "librarySourcesScopeButton"' not in scope_block
-    assert 'return theme.surfaceElevated' in scope_block
+    assert 'return theme.surfaceElevated' not in scope_block
     assert 'return theme.hoverSurface' in scope_block
     assert scope_block.count("border.color:") == 4
 
@@ -342,11 +342,11 @@ def test_scope_active_hover_idle_focus_and_source_action_contracts_are_explicit(
     header_block = source.split('objectName: "libraryHeaderRow"', 1)[1].split(
         'objectName: "libraryScopeBar"', 1
     )[0]
-    assert "return theme.surfaceElevated" in scope_block
+    assert "return theme.surfaceElevated" not in scope_block
     assert "return theme.hoverSurface" in scope_block
     assert 'return "transparent"' in scope_block
     assert "theme.focusRing" in scope_block
-    assert 'return active ? theme.selectionSurface : "transparent"' in scope_block
+    assert "return active ? categoryAccent : theme.textSecondary" in scope_block
     assert 'text: "+"' in header_block
     assert 'Accessible.name: "Add Source"' in header_block
 
