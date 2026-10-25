@@ -94,6 +94,25 @@ def _register_analyzed_root(tmp_path: Path) -> tuple[Path, Path]:
     return root, db
 
 
+def _register_analyzed_nested_bank(tmp_path: Path) -> tuple[Path, Path]:
+    from src.workbench_controller import analyze_folder_for_workbench
+    from src.workbench_library import workbench_library_db_path
+    from tests.audio_fixtures import write_kick_transient_wav, write_major_chord_wav
+
+    root = tmp_path / "Bank"
+    (root / "Drums" / "Hats").mkdir(parents=True)
+    (root / "Bass").mkdir()
+    (root / "FX").mkdir()
+    write_major_chord_wav(root / "root.wav")
+    write_kick_transient_wav(root / "Drums" / "kick.wav", bpm=120.0, duration_sec=1.0)
+    write_major_chord_wav(root / "Drums" / "Hats" / "hat.wav")
+    write_major_chord_wav(root / "Bass" / "bass.wav")
+    write_major_chord_wav(root / "FX" / "riser.wav")
+    db = workbench_library_db_path()
+    analyze_folder_for_workbench(root, library_db_path=db)
+    return root, db
+
+
 # --- Startup preset / launch resolver ---------------------------------------
 
 
@@ -358,6 +377,62 @@ class _FakeNav:
 
 
 # --- QML production shell ---------------------------------------------------
+
+
+def test_returning_workspace_uses_registered_nested_source_root(tmp_path: Path):
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    _root, db = _register_analyzed_nested_bank(tmp_path)
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+
+    mode = apply_clean_start_launch(view_model, composition, state_dir=state_dir)
+
+    root_node = next(
+        node
+        for node in navigation.children(SAMPLE_SOURCES)
+        if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+    assert mode is WorkspaceMode.ACTIVE_SOURCE
+    assert composition.selected_node_id == root_node.node_id
+    assert not composition.selected_node_id.startswith("folder:")
+    assert sorted(
+        row.source_row.details["relative_path"].replace("\\", "/")
+        for row in view_model.browser_rows
+    ) == sorted(
+        [
+            "root.wav",
+            "Drums/kick.wav",
+            "Drums/Hats/hat.wav",
+            "Bass/bass.wav",
+            "FX/riser.wav",
+        ]
+    )
+    assert view_model.selected_browser_index == -1
+    assert composition.audition_dispatches == []
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -721,6 +796,89 @@ def test_qml_add_source_may_activate_new_source(tmp_path: Path):
         assert coordinator is not None
     finally:
         _shutdown_engine(app, engine, window)
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_analysis_completion_preserves_active_nested_subfolder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        _qml_engine,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    _root, db = _register_analyzed_nested_bank(tmp_path)
+    monkeypatch.setenv("SAMPLE_BRAIN_TEST_NO_WAVEFORM_LOADER", "1")
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    try:
+        library_model = engine._screen1_library_model
+        library_bridge = engine._screen1_library_bridge
+        coordinator = engine._screen1_analysis_coordinator
+        assert coordinator is not None
+
+        library_model.ensureChildren(SAMPLE_SOURCES)
+        root_node = next(
+            node
+            for node in library_model.state.visible_children(SAMPLE_SOURCES)
+            if node.kind is LibraryNodeKind.REGISTERED_ROOT
+        )
+        library_model.ensureChildren(root_node.node_id)
+        drums_node = next(
+            node
+            for node in library_model.state.visible_children(root_node.node_id)
+            if node.kind is LibraryNodeKind.SUBFOLDER
+            and node.label == "Drums"
+        )
+        library_model.ensureChildren(drums_node.node_id)
+        hats_node = next(
+            node
+            for node in library_model.state.visible_children(drums_node.node_id)
+            if node.kind is LibraryNodeKind.SUBFOLDER
+            and node.label == "Hats"
+        )
+        library_bridge.selectLibraryNode(hats_node.node_id)
+        assert composition.selected_node_id == hats_node.node_id
+
+        coordinator._core._on_complete(root_node.folder_id, object())
+
+        assert library_model.state.selected_node_id == hats_node.node_id
+        assert composition.selected_node_id == hats_node.node_id
+        assert [
+            row.source_row.details["relative_path"].replace("\\", "/")
+            for row in view_model.browser_rows
+        ] == ["Drums/Hats/hat.wav"]
+    finally:
+        window.close()
+        app.quit()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
+        coordinator.close()
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
