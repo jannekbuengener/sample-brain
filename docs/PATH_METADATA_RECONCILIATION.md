@@ -98,7 +98,7 @@ playback/runtime authority for Channel Rack / Live Kit.
 | `CONFIRMED` | Path and analysis agree after normalization |
 | `COMPATIBLE` | Known half/double BPM relationship |
 | `PARTIAL` | Partial agreement (e.g. key root only; mode unresolved) |
-| `CONFLICT` | Hard disagreement; `resolved_value` is NULL |
+| `CONFLICT` | Hard disagreement; `resolved_value` = authoritative analysis value (Analyzer-SSOT); both evidences retained |
 | `DECLARED_ONLY` | Path claim with no independent analyzer (e.g. genre) |
 | `ANALYSIS_ONLY` | No path claim; analysis value used |
 | `UNKNOWN` | Neither side provides a value |
@@ -109,7 +109,8 @@ playback/runtime authority for Channel Rack / Live Kit.
 |------|------------------|
 | `CONFIRMED` / `COMPATIBLE` | Normalized filename/path claim |
 | `PARTIAL` (key root, mode unknown on analysis) | Root-only canonical key; mode remains unresolved in note |
-| `CONFLICT` | `NULL` (both sides retained on the row) |
+| `CONFLICT` (Analyzer-SSOT fields: `bpm`, `key`, `sample_class`, `pred_type`) | Authoritative analysis value; filename and analysis values both retained on the row |
+| `CONFLICT` (genre) | Path declaration; no independent genre analyzer in V1 |
 | `DECLARED_ONLY` | Path declaration |
 | `ANALYSIS_ONLY` | Analysis value |
 | `UNKNOWN` | `NULL` |
@@ -118,6 +119,20 @@ BPM agreement uses producer-facing rounding (`src/bpm_display.round_bpm_display`
 and half/double classification via `src/bpm_evidence.classify_bpm_error`.
 Key comparison uses `parse_key_signature` / `is_same_root` / `is_same_mode`
 after enharmonic normalization.
+
+### Field authority policy
+
+| Field | Declared authority | Analysis authority | Agreement result | Hard-conflict result | Unknown/missing result |
+|-------|--------------------|--------------------|------------------|----------------------|------------------------|
+| `bpm` | Path `NNN BPM` token | `features.bpm` | `CONFIRMED` (filename value) | `CONFLICT` → `resolved_value` = analysis value | `DECLARED_ONLY` / `ANALYSIS_ONLY` / `UNKNOWN` |
+| `key` | Path modeful key token | `features.key` | `CONFIRMED` (filename value) | `CONFLICT` → `resolved_value` = analysis value | `DECLARED_ONLY` / `ANALYSIS_ONLY` / `UNKNOWN` |
+| `sample_class` | Path `loop`/`oneshot` | `features.class` | `CONFIRMED` (filename value) | `CONFLICT` → `resolved_value` = analysis value | `DECLARED_ONLY` / `ANALYSIS_ONLY` / `UNKNOWN` |
+| `pred_type` | Path instrument token | `features.pred_type` | `CONFIRMED` (filename value) | `CONFLICT` → `resolved_value` = analysis value | `DECLARED_ONLY` / `ANALYSIS_ONLY` / `UNKNOWN` |
+| `genre` | Path genre vocabulary | none (V1) | `DECLARED_ONLY` | n/a (no independent analyzer) | `UNKNOWN` |
+
+Raw analyzer/classifier fields (`features.*`) are never overwritten by path claims.
+`resolved_value` is the consumer-facing product value only; raw evidence stays in
+`filename_value` / `analysis_value` and `path_metadata_claims` for provenance.
 
 ## Invalidation
 

@@ -547,7 +547,7 @@ def _reconcile_bpm(
         )
     return (
         STATUS_CONFLICT,
-        None,
+        analysis_str,
         f"BPM conflict filename={int(label)} analysis={analysis_display}",
     )
 
@@ -604,12 +604,12 @@ def _reconcile_key(
         ):
             return (
                 STATUS_CONFLICT,
-                None,
+                analysis_fmt,
                 f"key mode conflict filename={path_fmt} analysis={analysis_fmt}",
             )
     return (
         STATUS_CONFLICT,
-        None,
+        analysis_fmt,
         f"key conflict filename={path_fmt} analysis={analysis_fmt}",
     )
 
@@ -640,7 +640,7 @@ def _reconcile_class_or_type(
         )
     return (
         STATUS_CONFLICT,
-        None,
+        analysis_value,
         f"{field} conflict filename={filename_value} analysis={analysis_value}",
     )
 
