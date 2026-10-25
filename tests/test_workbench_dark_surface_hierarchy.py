@@ -316,7 +316,7 @@ def test_qml_primary_surfaces_have_no_atmosphere_overlays() -> None:
     assert "LinearGradient" not in QML_SOURCE
 
     library = QML_SOURCE.split('objectName: "libraryPane"', 1)[1][:1600]
-    assert "theme.surfacePanel" in library
+    assert "theme.surfaceLibrary" in library
     assert "NoirAtmosphere" not in library
     assert "atmospherePanel" not in library
 

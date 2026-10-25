@@ -43,7 +43,24 @@ def test_qml_source_keeps_historical_background_non_composited_without_effects()
     source = workbench_qml.QML_SOURCE
     assert "objectName: \"screen1Background\"" in source
     assert "source: screen1BackgroundUrl" in source
-    assert "Gradient" not in source
+    # #1248 permits exactly one bounded Source-label fade, never atmosphere.
+    fade = re.search(
+        r'^(?P<indent> +)Rectangle \{\n +objectName: "librarySourceLabelFade"\n.*?^(?P=indent)\}',
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert fade is not None
+    assert source.count('objectName: "librarySourceLabelFade"') == 1
+    fade_block = fade.group(0)
+    assert "width: libraryMetrics.labelFadeWidth" in fade_block
+    assert "readonly property int labelFadeWidth: 24" in source
+    assert "visible: sourceLabel.implicitWidth > sourceLabel.width" in fade_block
+    assert "anchors.right: parent.right" in fade_block
+    assert "height: parent.height" in fade_block
+    assert fade_block.count("gradient: Gradient {") == 1
+    assert "orientation: Gradient.Horizontal" in fade_block
+    without_label_fade = source[:fade.start()] + source[fade.end():]
+    assert "Gradient" not in without_label_fade
     assert "LinearGradient" not in source
     assert "RadialGradient" not in source
     # The immutable asset/URL helper stays for historical evidence, but may not

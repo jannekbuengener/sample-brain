@@ -52,6 +52,16 @@ not migrated by this background/depth slice.
   gray palette, a new accent, neon/glow, glass, or a decorative asset to this
   foundation.
 
+### Later Library-only supersession (#1248)
+
+#1248 uses the additive `surfaceLibrary` semantic role for the Library only;
+existing V7 base/derived tokens and every other pane keep their current roles.
+It also permits one bounded 24-pixel Source-label trailing fade using QML
+Gradient. This is a text-readability exception, not a background gradient,
+atmosphere/glow allowance or a broader Appearance migration. The remaining V7
+background/effect prohibition stays intact. See
+`docs/WORKBENCH_QML_LIBRARY_TREE_CONTRACT.md` and the #1248 Owner amendments.
+
 ### V7 visual principles and slice boundary
 
 The application reads almost black at first glance. Depth comes from quiet
