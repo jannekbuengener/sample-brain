@@ -1297,3 +1297,18 @@ def test_1248_sources_geometry(qml_engine):
     assert label is not None and fade is not None
     assert _evaluate_qml(engine, label, "color == theme.actionActive")
     assert fade.property("width") == 24
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+def test_1248_long_source_accessible_name_is_complete(qml_engine, runtime_composition):
+    from dataclasses import replace
+
+    engine, window = qml_engine
+    nav = runtime_composition.library_tree.navigation
+    full_name = "Synthetic source with a deliberately long complete accessible name"
+    nav.root = replace(nav.root, label=full_name)
+    model = engine.rootContext().contextProperty("libraryTreeModel")
+    assert model.replaceBranch("container:sample-sources")
+    QTest.qWait(100)
+    tree = _find_item_by_name(window, "libraryTree")
+    assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).Accessible.name") == full_name

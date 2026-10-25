@@ -3660,6 +3660,7 @@ ApplicationWindow {
                     boundsBehavior: Flickable.StopAtBounds
                     delegate: TreeViewDelegate {
                         id: libraryDelegate
+                        Accessible.name: model.display
                         palette.text: libraryInteraction.selectedLibraryNodeId === model.nodeId ? theme.actionActive : theme.textSecondary
                         palette.windowText: palette.text
                         implicitHeight: libraryMetrics.sourceRowHeight
