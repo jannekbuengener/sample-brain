@@ -338,11 +338,10 @@ sb_result_t sb_engine_start(sb_engine_t engine) {
     }
 
     engine->running.store(true);
-    if (intentional_restart &&
-        engine->device_status.load(std::memory_order_relaxed) == SB_DEVICE_OK) {
-        engine->device_status.store(SB_DEVICE_OK, std::memory_order_relaxed);
-        engine->recovery_state.store(0, std::memory_order_relaxed);
-    }
+    // Intentional stop leaves healthy device state untouched, so a successful
+    // restart requires no health normalization here. Notification callbacks may
+    // publish a real loss concurrently; writing OK/0 from this control thread
+    // could erase that newer failure evidence.
     engine->engine_frame.store(0);
     engine->metrics.reset();
 

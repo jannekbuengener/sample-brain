@@ -151,6 +151,30 @@ static void test_unexpected_device_events_preserve_loss_and_recovery() {
     TEST_ASSERT_EQ(sb_engine_close(engine), SB_OK, "engine closes");
 }
 
+static void test_intentional_restart_does_not_overwrite_device_health_evidence() {
+    std::printf("test_intentional_restart_does_not_overwrite_device_health_evidence...\n");
+    sb_engine_t engine = open_test_engine();
+
+    // Model an intentional-restart provenance bit while preserving independently
+    // published device-health evidence. sb_engine_start() must not normalize
+    // health fields itself because notification callbacks may update them concurrently.
+    engine->stopping.store(true, std::memory_order_release);
+    engine->device_status.store(SB_DEVICE_OK, std::memory_order_relaxed);
+    engine->recovery_state.store(7u, std::memory_order_relaxed);
+
+    TEST_ASSERT_EQ(sb_engine_start(engine), SB_OK, "engine starts with intentional restart provenance");
+
+    sb_snapshot_t snapshot = {};
+    TEST_ASSERT_EQ(sb_engine_snapshot(engine, &snapshot), SB_OK, "health-evidence snapshot succeeds");
+    TEST_ASSERT_EQ(snapshot.device_status, SB_DEVICE_OK,
+                   "engine start leaves independently published device status untouched");
+    TEST_ASSERT_EQ(snapshot.recovery_state, 7u,
+                   "engine start does not overwrite independently published recovery evidence");
+
+    TEST_ASSERT_EQ(sb_engine_stop(engine), SB_OK, "engine stops after health-evidence check");
+    TEST_ASSERT_EQ(sb_engine_close(engine), SB_OK, "engine closes");
+}
+
 static void test_pcm_playback_and_metrics_survive_intentional_restart() {
     std::printf("test_pcm_playback_and_metrics_survive_intentional_restart...\n");
     sb_engine_t engine = open_test_engine();
@@ -184,7 +208,9 @@ static void test_pcm_playback_and_metrics_survive_intentional_restart() {
     TEST_ASSERT_EQ(snapshot.overflow_count, 0u, "restart preserves overflow count");
     TEST_ASSERT_EQ(snapshot.xrun_count, 0u, "restart preserves xrun count");
 
-    TEST_ASSERT_EQ(sb_voice_schedule_start(engine, voice_id, snapshot.engine_frame), SB_OK,
+    const sb_frame_t playback_start =
+        snapshot.engine_frame + static_cast<sb_frame_t>(engine->config.buffer_frames) * 4;
+    TEST_ASSERT_EQ(sb_voice_schedule_start(engine, voice_id, playback_start), SB_OK,
                    "PCM voice schedules after restart");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -209,6 +235,7 @@ int main() {
     test_intentional_stop_restart_reports_healthy_device();
     test_repeated_intentional_restarts_are_stable();
     test_unexpected_device_events_preserve_loss_and_recovery();
+    test_intentional_restart_does_not_overwrite_device_health_evidence();
     test_pcm_playback_and_metrics_survive_intentional_restart();
 
     std::printf("\n=== Results ===\nPassed: %d\nFailed: %d\n", tests_passed, tests_failed);
