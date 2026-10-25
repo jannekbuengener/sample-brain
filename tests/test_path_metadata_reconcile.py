@@ -219,9 +219,24 @@ def test_hard_bpm_conflict(catalog):
     run_metadata_reconcile([sid])
     row = _resolution(sid, "bpm")
     assert row["resolution_status"] == STATUS_CONFLICT
-    assert row["resolved_value"] is None
+    assert row["resolved_value"] == "143"
     assert row["filename_value"] == "128"
     assert row["analysis_value"] == "143"
+    assert "conflict" in (row["provenance_note"] or "").lower()
+
+
+def test_hard_bpm_conflict_analysis_is_authoritative(catalog):
+    # filename/path = 128 BPM, independent analysis = 160.0 (genuine disagreement)
+    sid = _insert("/lib/Kick_128BPM.wav", relpath="Kick_128BPM.wav")
+    run_path_metadata_prepass([sid])
+    _set_features(sid, bpm=160.0)
+    run_metadata_reconcile([sid])
+    row = _resolution(sid, "bpm")
+    assert row["resolution_status"] == STATUS_CONFLICT
+    assert row["filename_value"] == "128"
+    assert row["analysis_value"] == "160"
+    assert row["resolved_value"] == "160"
+    assert "conflict" in (row["provenance_note"] or "").lower()
 
 
 def test_hard_key_conflict(catalog):
@@ -231,10 +246,13 @@ def test_hard_key_conflict(catalog):
     run_metadata_reconcile([sid])
     row = _resolution(sid, "key")
     assert row["resolution_status"] == STATUS_CONFLICT
-    assert row["resolved_value"] is None
+    assert row["resolved_value"] == "Cmaj"
+    assert row["filename_value"] == "Amin"
+    assert row["analysis_value"] == "Cmaj"
+    assert "conflict" in (row["provenance_note"] or "").lower()
 
 
-def test_type_class_conflict(catalog):
+def test_hard_sample_class_conflict(catalog):
     sid = _insert("/lib/KickLoop.wav", relpath="KickLoop.wav")
     run_path_metadata_prepass([sid])
     _set_features(sid, clazz="oneshot", pred_type="Snare")
@@ -243,6 +261,37 @@ def test_type_class_conflict(catalog):
     pred_row = _resolution(sid, "pred_type")
     assert class_row["resolution_status"] == STATUS_CONFLICT
     assert pred_row["resolution_status"] == STATUS_CONFLICT
+    assert class_row["resolved_value"] == "oneshot"
+    assert pred_row["resolved_value"] == "Snare"
+    assert class_row["filename_value"] == "loop"
+    assert class_row["analysis_value"] == "oneshot"
+    assert pred_row["filename_value"] == "Kick"
+    assert pred_row["analysis_value"] == "Snare"
+
+
+def test_hard_pred_type_conflict_analysis_is_authoritative(catalog):
+    sid = _insert("/lib/KickLoop.wav", relpath="KickLoop.wav")
+    run_path_metadata_prepass([sid])
+    _set_features(sid, clazz="loop", pred_type="Snare")
+    run_metadata_reconcile([sid])
+    row = _resolution(sid, "pred_type")
+    assert row["resolution_status"] == STATUS_CONFLICT
+    assert row["filename_value"] == "Kick"
+    assert row["analysis_value"] == "Snare"
+    assert row["resolved_value"] == "Snare"
+    assert "conflict" in (row["provenance_note"] or "").lower()
+
+
+def test_hard_key_conflict_analysis_is_authoritative(catalog):
+    sid = _insert("/lib/Pad_Amin.wav", relpath="Pad_Amin.wav")
+    run_path_metadata_prepass([sid])
+    _set_features(sid, key="Cmaj")
+    run_metadata_reconcile([sid])
+    row = _resolution(sid, "key")
+    assert row["resolution_status"] == STATUS_CONFLICT
+    assert row["filename_value"] == "Amin"
+    assert row["analysis_value"] == "Cmaj"
+    assert row["resolved_value"] == "Cmaj"
 
 
 def test_filename_only_field(catalog):

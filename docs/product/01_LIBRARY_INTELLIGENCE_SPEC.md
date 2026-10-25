@@ -112,7 +112,7 @@ source via parser preference. See [`docs/PATH_METADATA_RECONCILIATION.md`](../PA
 |-------|------|-------|
 | `sample_id`, `field` | PK | One resolution per field |
 | `resolution_status` | TEXT | `CONFIRMED`, `COMPATIBLE`, `PARTIAL`, `CONFLICT`, `DECLARED_ONLY`, `ANALYSIS_ONLY`, `UNKNOWN` |
-| `resolved_value` | TEXT | Nullable; NULL on `CONFLICT` / `UNKNOWN` |
+| `resolved_value` | TEXT | Nullable; NULL on `UNKNOWN`. On `CONFLICT` for Analyzer-SSOT fields (`bpm`, `key`, `sample_class`, `pred_type`) holds the authoritative analysis value; both `filename_value` and `analysis_value` are retained |
 | `filename_value`, `analysis_value` | TEXT | Retained for inspectability |
 | `provenance_note` | TEXT | Human-readable disposition |
 | `parser_version`, `reconciled_at` | TEXT | |
