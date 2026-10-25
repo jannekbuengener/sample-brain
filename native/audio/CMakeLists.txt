@@ -124,6 +124,22 @@ foreach(test_name IN LISTS SAMPLEBRAIN_AUDIO_TESTS)
     add_test(NAME ${test_target} COMMAND ${test_target})
 endforeach()
 
+add_executable(samplebrain_audio_test_engine_lifecycle
+    tests/test_engine_lifecycle.cpp
+    src/voice.cpp
+    src/keylock_voice.cpp
+    src/ringbuffer.cpp
+    src/metrics.cpp
+    src/synthetic.cpp
+)
+target_compile_definitions(samplebrain_audio_test_engine_lifecycle PRIVATE
+    SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND=1
+    -DSB_GIT_SHA="${SB_GIT_SHA}"
+    -DSB_BUILD_TIMESTAMP="${SB_BUILD_TIMESTAMP}"
+)
+target_link_libraries(samplebrain_audio_test_engine_lifecycle PRIVATE ${MINIAUDIO_SYSTEM_LIBS})
+add_test(NAME samplebrain_audio_test_engine_lifecycle COMMAND samplebrain_audio_test_engine_lifecycle)
+
 install(TARGETS samplebrain_audio
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib

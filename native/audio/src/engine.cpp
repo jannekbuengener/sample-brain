@@ -201,9 +201,14 @@ static void ma_on_notification(const ma_device_notification* pNotification) {
 
     switch (pNotification->type) {
         case ma_device_notification_type_rerouted:
-        case ma_device_notification_type_stopped:
             engine->device_status.store(SB_DEVICE_LOST, std::memory_order_relaxed);
             engine->recovery_state.store(1, std::memory_order_relaxed);
+            break;
+        case ma_device_notification_type_stopped:
+            if (!engine->stopping.load(std::memory_order_acquire)) {
+                engine->device_status.store(SB_DEVICE_LOST, std::memory_order_relaxed);
+                engine->recovery_state.store(1, std::memory_order_relaxed);
+            }
             break;
         case ma_device_notification_type_started:
             if (engine->device_status.load(std::memory_order_relaxed) == SB_DEVICE_LOST) {
@@ -323,13 +328,20 @@ sb_result_t sb_engine_start(sb_engine_t engine) {
     if (!engine) return SB_ERR_NOT_INITIALIZED;
     if (engine->running.load()) return SB_ERR_ALREADY_RUNNING;
 
+    const bool intentional_restart = engine->stopping.exchange(false, std::memory_order_acq_rel);
     ma_result res = ma_device_start(&engine->device);
     if (res != MA_SUCCESS) {
+        if (intentional_restart) {
+            engine->stopping.store(true, std::memory_order_release);
+        }
         return SB_ERR_DEVICE_ERROR;
     }
 
     engine->running.store(true);
-    engine->stopping.store(false);
+    // Intentional stop leaves healthy device state untouched, so a successful
+    // restart requires no health normalization here. Notification callbacks may
+    // publish a real loss concurrently; writing OK/0 from this control thread
+    // could erase that newer failure evidence.
     engine->engine_frame.store(0);
     engine->metrics.reset();
 
