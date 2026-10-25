@@ -18,11 +18,11 @@ from src.workbench_qml import QML_SOURCE, _qml_row, format_selected_sample_conte
 PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 EXPECTED_DESCRIPTORS: dict[str, tuple[str, str]] = {
-    "library.scope.sources": ("Sample Sources", "analysierte Sample-Quellen"),
+    "library.scope.sources": ("YOUR SOURCES", "registrierte Sample-Quellen"),
     "library.scope.all_samples": ("All Samples", "alle Samples im Workspace"),
     "library.scope.collections": ("Collections", "gespeicherte Sample-Sammlungen"),
     "library.scope.favorites": ("Favorites", "markierte Samples"),
-    "library.scope.recordings": ("Recordings", "lokale Aufnahmen"),
+    "library.scope.recordings": ("Records", "lokale Aufnahmen"),
     "library.add_source": ("Add Source", "lokalen Sample-Ordner hinzufügen"),
 }
 

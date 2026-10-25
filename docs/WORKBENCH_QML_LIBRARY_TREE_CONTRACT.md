@@ -3,7 +3,8 @@
 ## Purpose and boundary
 
 The Screen-1 Library keeps one renderer-neutral navigation authority while the
-QML presentation separates **Source folders** from **secondary Library scopes**.
+QML presentation shows four **primary Library views** and a persistent
+**Sources tree**.
 QML remains a thin renderer/intent layer; Browser loading, cache state,
 playlists, Catalog loaders, analysis, Preview, Harmony, and Live Kit remain
 owned by their existing Python contracts.
@@ -14,55 +15,67 @@ and placed `Add Source…` inside `Sample Sources`. It also supersedes the
 #765/#766 compact icon row that sat **above** the Source tree and exposed a
 visible Catalog control.
 
-#837 remains the authority for which secondary scopes are visible and which
-intents they dispatch. #1201 owns the compact Library-header placement of that
-utility set; the global footer contains context/status only.
+#1247 owns the structural sidebar hierarchy and visible copy. Existing Python
+navigation and typed selection intents remain authoritative. #1248 owns the
+follow-up visual scale, spacing, and icon contract; the global footer contains
+context/status only.
 
 ## Source tree taxonomy
 
-The visible QML tree now has exactly one top-level container:
+The visible Library sidebar has this hierarchy:
 
 ```text
-Sample Sources
+LIBRARY                                      [+]
+
+All Samples
+Collections
+Favorites
+Records
+
+YOUR SOURCES
   <registered source root>
     <real direct subfolder>
       ...
 ```
 
-`Sample Sources` contains only persisted registered roots plus their real lazy
-subfolders and bounded status/error nodes. It does **not** contain `Add Source…`,
-All Samples, Catalog, Collections, Favorites, Recordings, or synthetic
-convenience folders.
+`YOUR SOURCES` projects persisted registered roots, real lazy subfolders, and
+bounded status/error nodes through the existing hidden-root TreeView projection.
+The logical `container:sample-sources` parent remains intact but is not a
+visible primary view. The Sources tree remains visible while any primary view
+is active. It does **not** contain `Add Source…`, All Samples, Catalog,
+Collections, Favorites, Records, or synthetic convenience folders.
 
 The single primary Add Source affordance remains the existing button in the
 Library header. `action:add-source` is not emitted by the navigation model.
 
-## Library-header secondary navigation (#837 scope set; #1201 placement)
+## Primary views and persistent Sources (#1247)
 
-Historical #837 placement was a compact icon-only row at the bottom of the left
-Library/Browser pane, directly above the ApplicationWindow footer. #1201 places
-the same utility set in the Library header beside the existing title/actions.
-This section still owns the scope set and the intent dispatch only. Do not
-render the same scope twice.
+The title row keeps `LIBRARY` and the existing Add Source button. Four
+primary rows follow it; the persistent Sources section follows the primary
+views. #1247 changes this structure only. Do not add a second navigation
+authority or pull #1248's visual contract forward.
+The in-pane scope-bar placement introduced by #1201 remains the structural
+baseline for these four primary rows.
 
-Visible secondary controls:
+Visible primary views:
 
-- **Sample Sources** — returns the pane to the real Source tree;
 - **All Samples** — selects `scope:all-library`;
 - **Collections** — reveals the existing persisted Workbench playlists;
 - **Favorites** — selects `scope:favorites` (`LibraryScopeKind.FAVORITES`) with
   a geometric star mark;
-- **Recordings** — selects `scope:recordings` (`LibraryScopeKind.RECORDINGS`).
+- **Records** — selects `scope:recordings` (`LibraryScopeKind.RECORDINGS`).
 
 The visible Catalog / Katalog read-only control is removed from Library
 navigation. Catalog data ownership, loaders, and `scope:catalog-readonly`
 resolution remain available to Python/core contracts; only the visible
 navigation entry is gone.
 
-The icon row is presentation only. Stable node IDs and `LibraryScope`
-resolution remain authoritative. All Samples, Favorites, Recordings, and
-collection entries flow through the same typed selection intent used by Source
-rows.
+The rows are presentation only. Stable node IDs and `LibraryScope` resolution
+remain authoritative. All Samples, Favorites, Records, collection entries,
+and Source rows use the existing Python selection authority. Selecting a
+primary view leaves the Sources tree visible; selecting a Source clears the
+primary active presentation through Python state. Source expand/collapse is
+presentation-only and does not change Browser, audio, Kit, or Source state.
 
 Every icon-only control exposes a stable object/semantic identity and accessible
 name. #770 owns the shared context-hint display; the focused footer-context
@@ -123,26 +136,27 @@ visible. All icon controls retain accessible names. View switches must not start
 preview/audition and must not duplicate selection intents beyond the single typed
 dispatch.
 
-## Source Tree visibility by scope mode
+## Source Tree visibility by primary view
 
-Presentation rule for the Library pane (no opacity-only hide with active input):
+Presentation rule for the materialized Library pane:
 
-| Mode | Source Tree | Secondary surface |
-|------|-------------|-------------------|
-| Sources | visible + focusable/interactive | — |
-| All Samples | not visible; not focusable; no input | — |
-| Favorites | not visible; not focusable; no input | — |
-| Recordings | not visible; not focusable; no input | — |
-| Collections | not visible; not focusable; no input | Collection list visible |
+| Active presentation | Sources tree | Collections list |
+|---------------------|--------------|-----------------|
+| All Samples | visible + interactive | hidden |
+| Favorites | visible + interactive | hidden |
+| Records | visible + interactive | hidden |
+| Collections | visible + interactive | visible |
+| Selected Source | visible + interactive | hidden |
 
-`libraryScopeBar` is the left side of the global footer band
-(`docs/PROGRAM_CHROME_CONTRACT.md`, #830). It is not a second row inside the
-Library pane, and mode switches must not move it above the Library header.
-Tree/list visibility stays in one `libraryContentHost` (`Layout.fillHeight`),
-which fills the Library pane under the Library header.
+The four primary rows follow the `LIBRARY`/Add Source title row. The
+`YOUR SOURCES` section and TreeView stay visible below them as Browser scope
+changes. The existing Collections list remains available when its primary view
+is selected. The tree and list stay in the Library content layout below the
+primary rows.
 
-Returning to Sources keeps the existing Tree expand/selection state; do not
-reload navigation solely because of a scope-bar mode switch.
+Primary view switches do not remove or collapse Sources. Selecting a Source
+uses the existing authoritative route; expanding/collapsing a Source remains
+presentation-only.
 
 ## Visual and responsive contract
 
@@ -172,11 +186,12 @@ visible Catalog navigation.
 
 Regression coverage now freezes:
 
-- one visible Source-tree root;
+- exactly four visible primary rows: All Samples, Collections, Favorites, Records;
+- no visible `Sample Sources` primary row;
+- persistent `YOUR SOURCES` label and Source tree across primary views;
+- `container:sample-sources` remains the logical tree parent;
 - no `action:add-source` child;
-- secondary icons reuse the #837 scope set; #830 places that utility on the left of the global footer band instead of a separate row above it;
-- All Samples / Favorites / Collections / Recordings remembered as secondary
-  nodes;
+- existing typed selection routes, including the internal `scope:recordings` ID;
 - no visible Catalog navigation control;
 - Catalog Python resolve/load contracts remain intact;
 - secondary selections use the same typed intent/scope authority;
@@ -190,10 +205,9 @@ Regression coverage now freezes:
 
 ## Dependency boundary
 
-#836 owns Sample Sources expand/hydrate reliability. #837 owns secondary scope
-intents and Recordings navigation projection. #770 delivers the shared
-context-hint seam for those icon-only controls; #830 owns footer-band geometry
-(utility left, context info true-center, status right). This contract still
-excludes sample Drag & Drop ownership changes, Add Source relocation, and
-the future modular snap/docking system. Packaging/installer work is also out of
-scope.
+#836 owns Source expand/hydrate reliability. #837 owns the existing scope
+intents and internal Recordings navigation projection. #770 delivers the
+shared context-hint seam; #830 owns footer-band geometry (context info
+true-center, status right). This contract still excludes sample Drag & Drop
+ownership changes, Add Source command changes, and the future modular
+snap/docking system. Packaging/installer work is also out of scope.

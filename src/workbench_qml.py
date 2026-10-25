@@ -2396,11 +2396,11 @@ ApplicationWindow {
         id: contextHintState
         objectName: "contextHintState"
         readonly property var descriptors: ({
-            "library.scope.sources": { "label": "Sample Sources", "help": "analysierte Sample-Quellen" },
+            "library.scope.sources": { "label": "YOUR SOURCES", "help": "registrierte Sample-Quellen" },
             "library.scope.all_samples": { "label": "All Samples", "help": "alle Samples im Workspace" },
             "library.scope.collections": { "label": "Collections", "help": "gespeicherte Sample-Sammlungen" },
             "library.scope.favorites": { "label": "Favorites", "help": "markierte Samples" },
-            "library.scope.recordings": { "label": "Recordings", "help": "lokale Aufnahmen" },
+            "library.scope.recordings": { "label": "Records", "help": "lokale Aufnahmen" },
             "library.add_source": { "label": "Add Source", "help": "lokalen Sample-Ordner hinzufügen" }
         })
         property string hoveredId: ""
@@ -3125,107 +3125,84 @@ ApplicationWindow {
 
         Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfacePanel; border.color: theme.borderSubtle
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
-                // #1201: let the compact scope/actions chrome wrap at the
-                // solver's supported Library minimum instead of overlapping.
-                Flow {
+                RowLayout {
                     id: libraryHeaderRow
                     objectName: "libraryHeaderRow"
                     Layout.fillWidth: true
-                    spacing: 6
-                    Label { text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
-                    // #1201: existing Python-owned Library scope routes stay compact and local.
-                    ColumnLayout {
-                        id: libraryScopeBar
-                        objectName: "libraryScopeBar"
-                        // Flow does not apply Layout.fillWidth to children;
-                        // keep the five vertical rows wide enough for their
-                        // text and comfortable pointer/keyboard hit areas.
-                        width: 180
-                        implicitWidth: width
-                        Layout.fillWidth: true
-                        spacing: 3
-                        z: 2
-                        readonly property int iconPad: 5
+                    Label { objectName: "libraryTitleLabel"; text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        id: libraryAddSourceButton
+                        objectName: "libraryAddSourceButton"
+                        text: "+"
+                        flat: true
+                        implicitHeight: 26
+                        padding: 8
+                        leftPadding: 10
+                        rightPadding: 10
+                        Accessible.name: "Add Source"
+                        contentItem: Text {
+                            text: libraryAddSourceButton.text
+                            color: !libraryAddSourceButton.enabled ? theme.textDisabled
+                                   : (libraryAddSourceButton.pressed ? theme.textPrimary
+                                      : (libraryAddSourceButton.hovered || libraryAddSourceButton.activeFocus ? theme.textPrimary : theme.textSecondary))
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 11
+                            opacity: libraryAddSourceButton.enabled ? 1.0 : 0.45
+                        }
+                        background: Rectangle {
+                            implicitHeight: 26
+                            radius: 4
+                            color: !libraryAddSourceButton.enabled ? "transparent"
+                                   : (libraryAddSourceButton.pressed ? theme.surfaceElevated
+                                      : (libraryAddSourceButton.hovered ? theme.hoverSurface : "transparent"))
+                            border.width: 1
+                            border.color: !libraryAddSourceButton.enabled ? theme.borderSubtle
+                                          : (libraryAddSourceButton.activeFocus ? theme.focusRing
+                                             : (libraryAddSourceButton.pressed ? theme.selectionBorder : theme.borderSubtle))
+                            opacity: libraryAddSourceButton.enabled ? 1.0 : 0.4
+                        }
+                        onClicked: addSourceDialog.open()
+                        onHoveredChanged: {
+                            if (hovered)
+                                contextHintState.reportHover("library.add_source")
+                            else
+                                contextHintState.clearHover("library.add_source")
+                        }
+                        onActiveFocusChanged: {
+                            if (activeFocus)
+                                contextHintState.reportFocus("library.add_source")
+                            else
+                                contextHintState.clearFocus("library.add_source")
+                        }
+                    }
+                }
+                // #1201: existing Python-owned Library scope routes stay compact and local.
+                ColumnLayout {
+                    id: libraryScopeBar
+                    objectName: "libraryScopeBar"
+                    width: 180
+                    implicitWidth: width
+                    Layout.fillWidth: true
+                    spacing: 3
+                    z: 2
+                    readonly property int iconPad: 5
 
-                        // #1238/#1239: one shared neutral state function for all five rows.
-                        function scopeFill(active, hovered) {
-                            if (active)
-                                return theme.surfaceElevated
-                            if (hovered && !active)
-                                return theme.hoverSurface
-                            return "transparent"
-                        }
-                        function scopeStroke(active) {
-                            return active ? theme.selectionSurface : "transparent"
-                        }
-                        function scopeInk(active, focused) {
-                            return active || focused ? theme.textPrimary : theme.textSecondary
-                        }
-
-                            ToolButton {
-                                id: sourcesScopeButton
-                                objectName: "librarySourcesScopeButton"
-                                text: "Sample Sources"
-                                flat: true
-                                readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "sources"
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 36
-                                onClicked: libraryInteraction.showLibrarySection("sources")
-                                Accessible.name: "Sample Sources"
-                                onHoveredChanged: {
-                                    if (hovered)
-                                        contextHintState.reportHover("library.scope.sources")
-                                    else
-                                        contextHintState.clearHover("library.scope.sources")
-                                }
-                                onActiveFocusChanged: {
-                                    if (activeFocus)
-                                        contextHintState.reportFocus("library.scope.sources")
-                                    else
-                                        contextHintState.clearFocus("library.scope.sources")
-                                }
-                                background: Rectangle {
-                                    anchors.fill: parent
-                                    radius: 4
-                                    color: libraryScopeBar.scopeFill(sourcesScopeButton.scopeActive, sourcesScopeButton.hovered)
-                                    border.width: sourcesScopeButton.activeFocus ? 2 : (sourcesScopeButton.scopeActive ? 1 : 0)
-                                    border.color: sourcesScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(sourcesScopeButton.scopeActive)
-                                }
-                                contentItem: Item {
-                                    anchors.fill: parent
-                                    Text {
-                                        anchors.fill: parent
-                                        leftPadding: 10
-                                        text: sourcesScopeButton.text
-                                        color: libraryScopeBar.scopeInk(sourcesScopeButton.scopeActive, sourcesScopeButton.activeFocus)
-                                        horizontalAlignment: Text.AlignLeft
-                                        verticalAlignment: Text.AlignVCenter
-                                        font.pixelSize: 12
-                                    }
-                                    Canvas {
-                                        visible: false
-                                        anchors.fill: parent
-                                        anchors.margins: libraryScopeBar.iconPad
-                                        onPaint: {
-                                            var ctx = getContext("2d")
-                                            ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(sourcesScopeButton.scopeActive)
-                                            ctx.lineWidth = 1
-                                            ctx.strokeRect(1, 4, width - 2, height - 6)
-                                            ctx.beginPath()
-                                            ctx.moveTo(1, 8)
-                                            ctx.lineTo(width - 1, 8)
-                                            ctx.stroke()
-                                        }
-                                        Component.onCompleted: requestPaint()
-                                        Connections {
-                                            target: sourcesScopeButton
-                                            function onScopeActiveChanged() { parent.requestPaint() }
-                                            function onHoveredChanged() { parent.requestPaint() }
-                                        }
-                                    }
-                                }
-                            }
+                    // #1238/#1239: preserve the existing scope-row states during the IA change.
+                    function scopeFill(active, hovered) {
+                        if (active)
+                            return theme.surfaceElevated
+                        if (hovered && !active)
+                            return theme.hoverSurface
+                        return "transparent"
+                    }
+                    function scopeStroke(active) {
+                        return active ? theme.selectionSurface : "transparent"
+                    }
+                    function scopeInk(active, focused) {
+                        return active || focused ? theme.textPrimary : theme.textSecondary
+                    }
                             ToolButton {
                                 id: allSamplesScopeButton
                                 objectName: "libraryAllSamplesScopeButton"
@@ -3442,7 +3419,7 @@ ApplicationWindow {
                             ToolButton {
                                 id: recordingsScopeButton
                                 objectName: "libraryRecordingsScopeButton"
-                                text: "Recordings"
+                                text: "Records"
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "recordings"
                                 Layout.fillWidth: true
@@ -3450,7 +3427,7 @@ ApplicationWindow {
                                 onClicked: {
                                     libraryInteraction.selectLibraryNode("scope:recordings")
                                 }
-                                Accessible.name: "Recordings"
+                                Accessible.name: "Records"
                                 onHoveredChanged: {
                                     if (hovered)
                                         contextHintState.reportHover("library.scope.recordings")
@@ -3512,64 +3489,19 @@ ApplicationWindow {
                                 }
                             }
                     }
-                    // #895: secondary control chrome — dark/flat Theme Authority (no default white Button).
-                    Button {
-                        id: libraryAddSourceButton
-                        objectName: "libraryAddSourceButton"
-                        text: "+"
-                        flat: true
-                        implicitHeight: 26
-                        padding: 8
-                        leftPadding: 10
-                        rightPadding: 10
-                        Accessible.name: "Add Source"
-                        contentItem: Text {
-                            text: libraryAddSourceButton.text
-                            color: !libraryAddSourceButton.enabled ? theme.textDisabled
-                                   : (libraryAddSourceButton.pressed ? theme.textPrimary
-                                      : (libraryAddSourceButton.hovered || libraryAddSourceButton.activeFocus ? theme.textPrimary : theme.textSecondary))
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            font.pixelSize: 11
-                            opacity: libraryAddSourceButton.enabled ? 1.0 : 0.45
-                        }
-                        background: Rectangle {
-                            implicitHeight: 26
-                            radius: 4
-                            color: !libraryAddSourceButton.enabled ? "transparent"
-                                   : (libraryAddSourceButton.pressed ? theme.surfaceElevated
-                                      : (libraryAddSourceButton.hovered ? theme.hoverSurface : "transparent"))
-                            border.width: 1
-                            border.color: !libraryAddSourceButton.enabled ? theme.borderSubtle
-                                          : (libraryAddSourceButton.activeFocus ? theme.focusRing
-                                             : (libraryAddSourceButton.pressed ? theme.selectionBorder : theme.borderSubtle))
-                            opacity: libraryAddSourceButton.enabled ? 1.0 : 0.4
-                        }
-                        onClicked: addSourceDialog.open()
-                        onHoveredChanged: {
-                            if (hovered)
-                                contextHintState.reportHover("library.add_source")
-                            else
-                                contextHintState.clearHover("library.add_source")
-                        }
-                        onActiveFocusChanged: {
-                            if (activeFocus)
-                                contextHintState.reportFocus("library.add_source")
-                            else
-                                contextHintState.clearFocus("library.add_source")
-                        }
-                    }
-                }
-                Item {
+                ColumnLayout {
                     id: libraryContentHost
                     objectName: "libraryContentHost"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    spacing: 0
                 ListView {
                     id: collectionList
                     objectName: "libraryCollectionList"
                     visible: libraryInteraction.activeLibrarySection === "collections"
-                    anchors.fill: parent
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? Math.min(Math.max(contentHeight, 36), Math.max(36, libraryContentHost.height * 0.35)) : 0
+                    Layout.maximumHeight: visible ? Math.max(36, libraryContentHost.height * 0.35) : 0
                     clip: true
                     focus: visible
                     activeFocusOnTab: visible
@@ -3619,17 +3551,25 @@ ApplicationWindow {
                         font.pixelSize: 11
                     }
                 }
+                Label {
+                    objectName: "librarySourcesHeading"
+                    text: "YOUR SOURCES"
+                    color: theme.textSecondary
+                    font: libraryTitleLabel.font
+                    Layout.fillWidth: true
+                }
                 TreeView {
                     id: libraryTree
                     objectName: "libraryTree"
-                    visible: libraryInteraction.activeLibrarySection === "sources"
-                    enabled: libraryInteraction.activeLibrarySection === "sources"
-                    anchors.fill: parent
+                    visible: true
+                    enabled: true
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                     model: libraryTreeModel
                     rootIndex: libraryTreeModel.presentationRootIndex()
                     clip: true
-                    focus: libraryInteraction.activeLibrarySection === "sources"
-                    activeFocusOnTab: libraryInteraction.activeLibrarySection === "sources"
+                    focus: false
+                    activeFocusOnTab: true
                     boundsBehavior: Flickable.StopAtBounds
                     delegate: TreeViewDelegate {
                         id: libraryDelegate

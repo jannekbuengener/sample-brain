@@ -409,7 +409,7 @@ class Screen1QmlRuntimeComposition:
         if scope.kind is LibraryScopeKind.FAVORITES:
             return "Favorites"
         if scope.kind is LibraryScopeKind.RECORDINGS:
-            return "Recordings"
+            return "Records"
         return intent.node.label
 
     def _set_no_scope(self, error: str | None = None) -> Screen1BrowserState:

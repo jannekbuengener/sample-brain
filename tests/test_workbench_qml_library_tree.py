@@ -230,17 +230,18 @@ def test_qml_library_model_uses_exact_canonical_taxonomy_without_fake_surface() 
     assert "TreeView" in source
     assert "libraryTreeModel" in source
     assert 'objectName: "libraryScopeBar"' in source
-    assert 'objectName: "librarySourcesScopeButton"' in source
+    assert 'objectName: "librarySourcesScopeButton"' not in source
+    assert 'objectName: "librarySourcesHeading"' in source
     assert 'objectName: "libraryAllSamplesScopeButton"' in source
     assert 'objectName: "libraryCatalogScopeButton"' not in source
     assert 'objectName: "libraryCollectionsScopeButton"' in source
     assert 'objectName: "libraryRecordingsScopeButton"' in source
-    assert 'Accessible.name: "Sample Sources"' in source
+    assert 'text: "YOUR SOURCES"' in source
     assert 'Accessible.name: "All Samples"' in source
     assert 'Accessible.name: "Catalog"' not in source
     assert 'Accessible.name: "Favorites"' in source
     assert 'Accessible.name: "Collections"' in source
-    assert 'Accessible.name: "Recordings"' in source
+    assert 'Accessible.name: "Records"' in source
     assert 'model.kind === "add_source"' not in source
     assert "libraryLabels" not in source
     assert 'objectName: "libraryFavoritesScopeButton"' in source
@@ -262,6 +263,9 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
         'objectName: "libraryContentHost"', 1
     )[0]
+    header_block = source.split('objectName: "libraryHeaderRow"', 1)[1].split(
+        'objectName: "libraryScopeBar"', 1
+    )[0]
     tree_block = source.split('objectName: "libraryTree"', 1)[1].split(
         "delegate: TreeViewDelegate", 1
     )[0]
@@ -279,33 +283,30 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     for glyph in ("⌁", "≡", "▣"):
         assert f'text: "{glyph}"' not in source
 
-    # #1238/#1239: five rows share one Python-owned, neutral state projection.
-    assert 'id: libraryScopeBar\n                        objectName: "libraryScopeBar"' in source
+    # Four primary rows share one Python-owned, neutral state projection.
+    assert 'id: libraryScopeBar\n                    objectName: "libraryScopeBar"' in source
     assert "ColumnLayout {" in source.split('id: libraryScopeBar', 1)[0][-120:]
     assert "activeLibrarySection" in scope_block
     assert "property string mode" not in scope_block
     assert "libraryScopeBar.mode" not in scope_block
     assert "theme.surfaceElevated" in scope_block
-    assert "theme.selectionBorder" in scope_block
     assert "theme.hoverSurface" in scope_block
     assert "theme.focusRing" in scope_block
     assert "theme.actionActive" not in scope_block
     assert "anchors.bottom: parent.bottom" not in scope_block
     assert "height: 1" not in scope_block
 
-    assert 'visible: libraryInteraction.activeLibrarySection === "sources"' in tree_block
-    assert 'enabled: libraryInteraction.activeLibrarySection === "sources"' in tree_block
-    assert 'activeFocusOnTab: libraryInteraction.activeLibrarySection === "sources"' in tree_block
+    assert "visible: true" in tree_block
+    assert "enabled: true" in tree_block
+    assert "activeFocusOnTab: true" in tree_block
     assert 'visible: libraryScopeBar.mode !== "collections"' not in tree_block
     assert 'objectName: "libraryContentHost"' in source
     assert "Layout.fillHeight: true" in source.split(
         'objectName: "libraryContentHost"', 1
     )[1].split('objectName: "libraryCollectionList"', 1)[0]
-    # Tree/list fill the host via anchors; they must not be ColumnLayout fillHeight siblings of the scope bar.
-    assert "Layout.fillHeight: true" not in tree_block
-    assert "Layout.fillHeight: true" not in collection_block
-    assert "anchors.fill: parent" in tree_block
-    assert "anchors.fill: parent" in collection_block
+    # The persistent tree and Collections list share the bounded content layout.
+    assert "Layout.fillHeight: true" in tree_block
+    assert "Layout.fillWidth: true" in collection_block
 
     assert "libraryInteraction.collectionEntries" in collection_block
     assert "theme.selectionSurface" in collection_block
@@ -313,7 +314,7 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     assert "ItemDelegate" not in collection_block
 
 
-def test_scope_rows_use_one_shared_state_function_and_all_five_named_targets() -> None:
+def test_scope_rows_use_one_shared_state_function_and_four_primary_targets() -> None:
     from src import workbench_qml
 
     source = workbench_qml.QML_SOURCE
@@ -322,12 +323,13 @@ def test_scope_rows_use_one_shared_state_function_and_all_five_named_targets() -
     )[0]
 
     assert scope_block.count("function scopeFill") == 1
-    assert scope_block.count("scopeFill(") >= 6  # declaration plus each row
-    for label in ("Sample Sources", "All Samples", "Collections", "Favorites", "Recordings"):
+    assert scope_block.count("scopeFill(") == 5  # declaration plus four rows
+    for label in ("All Samples", "Collections", "Favorites", "Records"):
         assert f'text: "{label}"' in scope_block
+    assert 'objectName: "librarySourcesScopeButton"' not in scope_block
     assert 'return theme.surfaceElevated' in scope_block
     assert 'return theme.hoverSurface' in scope_block
-    assert scope_block.count("border.color:") >= 5
+    assert scope_block.count("border.color:") == 4
 
 
 def test_scope_active_hover_idle_focus_and_source_action_contracts_are_explicit() -> None:
@@ -337,13 +339,16 @@ def test_scope_active_hover_idle_focus_and_source_action_contracts_are_explicit(
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
         'objectName: "libraryContentHost"', 1
     )[0]
+    header_block = source.split('objectName: "libraryHeaderRow"', 1)[1].split(
+        'objectName: "libraryScopeBar"', 1
+    )[0]
     assert "return theme.surfaceElevated" in scope_block
     assert "return theme.hoverSurface" in scope_block
     assert 'return "transparent"' in scope_block
     assert "theme.focusRing" in scope_block
     assert 'return active ? theme.selectionSurface : "transparent"' in scope_block
-    assert 'text: "+"' in scope_block
-    assert 'Accessible.name: "Add Source"' in scope_block
+    assert 'text: "+"' in header_block
+    assert 'Accessible.name: "Add Source"' in header_block
 
     source_actions = source.split('objectName: "librarySourceActionsButton"', 1)[1].split(
         'Keys.onPressed:', 1

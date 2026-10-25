@@ -27,23 +27,23 @@ def test_capture_helper_rejects_mislabeled_all_samples_as_favorites() -> None:
         browser_title="All Samples",
         tree_visible=False,
         collections_visible=False,
-        scope_bar_y=0.0,
+        scope_bar_y=40.0,
         header_bottom_y=23.0,
     )
     with pytest.raises(ScopeCaptureError, match="scope mode mismatch"):
         assert_presentation_matches(SCOPE_FAVORITES, observed)
 
 
-def test_capture_helper_rejects_visible_tree_for_secondary_scopes() -> None:
+def test_capture_helper_rejects_hidden_tree_for_primary_scopes() -> None:
     observed = expected_presentation(
         SCOPE_ALL,
         browser_title="All Samples",
-        tree_visible=True,
+        tree_visible=False,
         collections_visible=False,
-        scope_bar_y=0.0,
+        scope_bar_y=40.0,
         header_bottom_y=23.0,
     )
-    with pytest.raises(ScopeCaptureError, match="hidden Source Tree"):
+    with pytest.raises(ScopeCaptureError, match="visible Source Tree"):
         assert_presentation_matches(SCOPE_ALL, observed)
 
 
@@ -56,21 +56,21 @@ def test_capture_helper_rejects_footer_scope_bar() -> None:
         scope_bar_y=568.0,
         header_bottom_y=23.0,
     )
-    with pytest.raises(ScopeCaptureError, match="not inside Library header"):
+    with pytest.raises(ScopeCaptureError, match="must follow the Library title row"):
         assert_presentation_matches(SCOPE_FAVORITES, observed)
 
 
 def test_capture_helper_rejects_scope_bar_outside_header_bounds() -> None:
-    for scope_bar_y in (-1.0, 60.0):
+    for scope_bar_y in (22.0, 120.0):
         observed = expected_presentation(
             SCOPE_ALL,
             browser_title="All Samples",
-            tree_visible=False,
+            tree_visible=True,
             collections_visible=False,
             scope_bar_y=scope_bar_y,
             header_bottom_y=23.0,
         )
-        with pytest.raises(ScopeCaptureError, match="not inside Library header"):
+        with pytest.raises(ScopeCaptureError, match="must follow the Library title row"):
             assert_presentation_matches(SCOPE_ALL, observed)
 
 
@@ -83,7 +83,7 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
                 browser_title="Samples",
                 tree_visible=True,
                 collections_visible=False,
-                scope_bar_y=0.0,
+                scope_bar_y=40.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -92,9 +92,9 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
             expected_presentation(
                 SCOPE_ALL,
                 browser_title="All Samples",
-                tree_visible=False,
+                tree_visible=True,
                 collections_visible=False,
-                scope_bar_y=0.0,
+                scope_bar_y=40.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -103,9 +103,9 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
             expected_presentation(
                 SCOPE_FAVORITES,
                 browser_title="Favorites",
-                tree_visible=False,
+                tree_visible=True,
                 collections_visible=False,
-                scope_bar_y=0.0,
+                scope_bar_y=40.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -113,10 +113,10 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
             SCOPE_RECORDINGS,
             expected_presentation(
                 SCOPE_RECORDINGS,
-                browser_title="Recordings",
-                tree_visible=False,
+                browser_title="Records",
+                tree_visible=True,
                 collections_visible=False,
-                scope_bar_y=0.0,
+                scope_bar_y=40.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -125,9 +125,9 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
             expected_presentation(
                 SCOPE_COLLECTIONS,
                 browser_title="Collections",
-                tree_visible=False,
+                tree_visible=True,
                 collections_visible=True,
-                scope_bar_y=0.0,
+                scope_bar_y=40.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -165,7 +165,7 @@ PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
-    """Runtime: libraryScopeBar stays in the Library header (#1201)."""
+    """Runtime: primary rows follow the title and Sources stays visible."""
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_library import init_workbench_library
@@ -223,9 +223,10 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
         ):
             bar = window.findChild(QQuickItem, "libraryScopeBar")
             assert bar is not None
-            bar.setProperty("mode", mode)
             if node_id:
                 bridge.selectLibraryNode(node_id)
+            elif mode == "collections":
+                bridge.showLibrarySection("collections")
             app.processEvents()
             _settle_qml_frame(app)
             bar = window.findChild(QQuickItem, "libraryScopeBar")
@@ -239,20 +240,21 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
             assert bar is not None and footer is not None and header is not None and host is not None
             assert fav is not None
             assert catalog is None
-            assert header.isAncestorOf(bar)
             assert not footer.isAncestorOf(bar)
-            bar_in_header = bar.mapToItem(header, 0, 0)
-            bar_ys[mode] = float(bar_in_header.y())
-            assert bar_in_header.y() >= -1.0
-            assert bar_in_header.y() + bar.height() <= header.height() + 1.0
+            pane = window.findChild(QQuickItem, "libraryPane")
+            assert pane is not None and pane.isAncestorOf(bar)
+            bar_in_pane = bar.mapToItem(pane, 0, 0)
+            title_bottom_in_pane = header.mapToItem(
+                pane, 0, float(header.height())
+            ).y()
+            bar_ys[mode] = float(bar_in_pane.y())
+            assert bar_in_pane.y() >= title_bottom_in_pane - 1.0
+            assert tree is not None and tree.isVisible()
             if mode == "sources":
-                assert tree is not None and tree.isVisible()
                 assert coll is not None and not coll.isVisible()
             elif mode == "collections":
                 assert coll is not None and coll.isVisible()
-                assert tree is not None and not tree.isVisible()
             else:
-                assert tree is not None and not tree.isVisible()
                 assert coll is not None and not coll.isVisible()
         assert abs(bar_ys["all"] - bar_ys["sources"]) < 1.0
         assert abs(bar_ys["favorites"] - bar_ys["sources"]) < 1.0

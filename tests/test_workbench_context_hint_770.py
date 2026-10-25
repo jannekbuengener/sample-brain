@@ -18,16 +18,15 @@ from src.workbench_qml import QML_SOURCE
 PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 EXPECTED_DESCRIPTORS: dict[str, tuple[str, str]] = {
-    "library.scope.sources": ("Sample Sources", "analysierte Sample-Quellen"),
+    "library.scope.sources": ("YOUR SOURCES", "registrierte Sample-Quellen"),
     "library.scope.all_samples": ("All Samples", "alle Samples im Workspace"),
     "library.scope.collections": ("Collections", "gespeicherte Sample-Sammlungen"),
     "library.scope.favorites": ("Favorites", "markierte Samples"),
-    "library.scope.recordings": ("Recordings", "lokale Aufnahmen"),
+    "library.scope.recordings": ("Records", "lokale Aufnahmen"),
     "library.add_source": ("Add Source", "lokalen Sample-Ordner hinzufügen"),
 }
 
 SCOPE_BUTTON_HINT_IDS: dict[str, str] = {
-    "librarySourcesScopeButton": "library.scope.sources",
     "libraryAllSamplesScopeButton": "library.scope.all_samples",
     "libraryCollectionsScopeButton": "library.scope.collections",
     "libraryFavoritesScopeButton": "library.scope.favorites",
@@ -113,7 +112,7 @@ def test_supported_controls_register_stable_distinct_descriptors() -> None:
 
     assert 'Accessible.name: "Favorites"' in source
     assert 'Accessible.name: "Collections"' in source
-    assert 'Accessible.name: "Recordings"' in source
+    assert 'Accessible.name: "Records"' in source
     assert 'objectName: "libraryCatalogScopeButton"' not in source
     # Scope controls must not depend on classic ToolTip for discoverability.
     # libraryScopeBar is a Library-header child; truncate before the content host.

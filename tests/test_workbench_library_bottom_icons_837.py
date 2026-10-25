@@ -59,9 +59,9 @@ def test_docs_gate_library_header_scope_presentation_authority() -> None:
     nav = Path("docs/WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md").read_text(encoding="utf-8")
     hint = Path("docs/WORKBENCH_CONTEXT_HINT_CONTRACT.md").read_text(encoding="utf-8")
     assert "#837" in tree
-    assert "Library-header secondary navigation" in tree
+    assert "exactly four visible primary rows" in tree
     assert "#1201" in tree
-    assert "footer contains context/status only" in tree
+    assert "footer retains context/status only" in tree
     assert "scope:recordings" in tree
     assert "visible Catalog" in tree or "Catalog / Katalog" in tree
     assert "Catalog data ownership" in tree or "Catalog loaders" in tree
@@ -101,17 +101,18 @@ def test_secondary_nodes_bottom_bar_taxonomy_without_visible_catalog(
 def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     source = QML_SOURCE
     assert 'objectName: "libraryScopeBar"' in source
-    assert 'objectName: "librarySourcesScopeButton"' in source
+    assert 'objectName: "librarySourcesScopeButton"' not in source
+    assert 'objectName: "librarySourcesHeading"' in source
     assert 'objectName: "libraryAllSamplesScopeButton"' in source
     assert 'objectName: "libraryCollectionsScopeButton"' in source
     assert 'objectName: "libraryFavoritesScopeButton"' in source
     assert 'objectName: "libraryRecordingsScopeButton"' in source
     assert 'objectName: "libraryCatalogScopeButton"' not in source
-    assert 'Accessible.name: "Sample Sources"' in source
+    assert 'text: "YOUR SOURCES"' in source
     assert 'Accessible.name: "All Samples"' in source
     assert 'Accessible.name: "Collections"' in source
     assert 'Accessible.name: "Favorites"' in source
-    assert 'Accessible.name: "Recordings"' in source
+    assert 'Accessible.name: "Records"' in source
     assert 'Accessible.name: "Catalog"' not in source
     assert 'selectLibraryNode("scope:favorites")' in source
     assert 'selectLibraryNode("scope:recordings")' in source
@@ -155,7 +156,7 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert "ToolTip." not in scope_block
     assert "contextHintState.reportHover" in scope_block
     assert "contextHintState.reportFocus" in scope_block
-    assert scope_block.count('Layout.preferredHeight: 36') == 5
+    assert scope_block.count('Layout.preferredHeight: 36') == 4
     assert 'readonly property int iconPad: 5' in scope_block
     assert "scopeActive" in scope_block
     assert "theme.surfaceElevated" in scope_block
@@ -350,13 +351,16 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
             collections = window.findChild(QQuickItem, "libraryCollectionsScopeButton")
             recordings = window.findChild(QQuickItem, "libraryRecordingsScopeButton")
             all_samples = window.findChild(QQuickItem, "libraryAllSamplesScopeButton")
-            sources = window.findChild(QQuickItem, "librarySourcesScopeButton")
+            sources_heading = window.findChild(QQuickItem, "librarySourcesHeading")
+            sources_tree = window.findChild(QQuickItem, "libraryTree")
             assert (
                 pane is not None
                 and header is not None
                 and host is not None
                 and bar is not None
                 and add_source is not None
+                and sources_heading is not None
+                and sources_tree is not None
             )
             assert remove_source is None
             assert footer is not None
@@ -366,26 +370,24 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
             assert collections is not None and collections.isVisible()
             assert recordings is not None and recordings.isVisible()
             assert all_samples is not None and all_samples.isVisible()
-            assert sources is not None and sources.isVisible()
-            scope_buttons = (sources, all_samples, collections, favorites, recordings)
+            assert sources_heading.isVisible()
+            assert sources_tree.isVisible()
+            scope_buttons = (all_samples, collections, favorites, recordings)
             assert len({round(float(button.width()), 2) for button in scope_buttons}) == 1
             assert len({round(float(button.height()), 2) for button in scope_buttons}) == 1
-            assert float(sources.width()) >= 26.0
-            assert float(sources.height()) >= 26.0
 
-            # Geometry: scope bar is a Library-header child, never global footer chrome.
+            # Geometry: primary scopes follow the title row and remain Library-local.
             assert pane.isAncestorOf(bar)
             assert not footer.isAncestorOf(bar)
             bar_in_pane = bar.mapToItem(pane, QPointF(0, 0))
             assert bar_in_pane.x() >= -1.0
-            assert bar_in_pane.y() >= -1.0
             header_bottom_in_pane = header.mapToItem(
                 pane, QPointF(0, header.height())
             ).y()
-            assert bar_in_pane.y() + bar.height() <= header_bottom_in_pane + 1.0
-            # The Flow header keeps the scope/actions chrome inside the
-            # supported Library minimum instead of overlapping.
-            for control in (bar, add_source):
+            assert bar_in_pane.y() >= header_bottom_in_pane - 1.0
+            assert header.isAncestorOf(add_source)
+            # The title row keeps Add Source inside the supported Library minimum.
+            for control in (add_source,):
                 if not control.isVisible():
                     continue
                 control_in_header = control.mapToItem(header, QPointF(0, 0))
@@ -394,13 +396,12 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
                 assert control_in_header.x() + control.width() <= header.width() + 1.0
                 assert control_in_header.y() + control.height() <= header.height() + 1.0
 
-            # Activate each secondary control; tree retreats except Sources.
+            # Primary selections update Python state while Sources stays projected.
             for mode, button_name, expected_kind in (
                 ("all", "libraryAllSamplesScopeButton", LibraryScopeKind.ALL_SAMPLES),
                 ("favorites", "libraryFavoritesScopeButton", LibraryScopeKind.FAVORITES),
                 ("recordings", "libraryRecordingsScopeButton", LibraryScopeKind.RECORDINGS),
                 ("collections", "libraryCollectionsScopeButton", None),
-                ("sources", "librarySourcesScopeButton", None),
             ):
                 button = window.findChild(QQuickItem, button_name)
                 assert button is not None
@@ -408,6 +409,8 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
                 app.processEvents()
                 _settle_qml_frame(app)
                 assert engine._screen1_library_bridge.activeLibrarySection == mode
+                assert sources_tree.isVisible()
+                assert sources_heading.isVisible()
                 assert sum(bool(scope_button.property("scopeActive")) for scope_button in scope_buttons) == 1
                 assert bool(button.property("scopeActive"))
                 assert all(
@@ -425,10 +428,9 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
                     assert not coll.isVisible()
                 elif mode == "collections":
                     assert coll.isVisible()
-                    assert not tree.isVisible()
                 else:
-                    assert not tree.isVisible()
                     assert not coll.isVisible()
+                assert tree.isVisible()
                 # Mode switches must not relocate the bar out of the Library header.
                 bar2 = window.findChild(QQuickItem, "libraryScopeBar")
                 assert bar2 is not None

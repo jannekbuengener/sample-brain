@@ -101,10 +101,11 @@ materialization path from program chrome.
 
 ## Footer reuse
 
-[#837](https://github.com/jannekbuengener/sample-brain/issues/837) still owns which Library scopes exist and that they dispatch the existing scope intents. #1201 owns their compact presentation in the Library header; the global footer remains a context/status surface and contains no Library-scope navigation.
+[#1247](https://github.com/jannekbuengener/sample-brain/issues/1247) owns the four visible Library primary views and the persistent `YOUR SOURCES` tree. The existing Python navigation intents remain authoritative; `#1248` owns the later sidebar scale, spacing, and icon contract. The global footer remains a context/status surface and contains no Library-scope navigation.
 
-- Reuse the existing five #837 controls in the Library header. Do not add a second copy elsewhere.
-- Sample Sources, All Samples, Collections, Favorites, and Recordings stay available through the existing scope set. Do not delete them to match the crop, and do not invent a new control for them.
+- Show exactly four primary views: All Samples, Collections, Favorites, and Records. Keep the registered Sources tree visible below them while the Library pane is shown.
+- Keep `container:sample-sources` as the internal tree parent; it is not a visible primary view.
+- Use Records as visible copy while retaining the existing `scope:recordings` identity and dispatch.
 - Do not add Song clock, pattern-step counters, or a `Local` badge unless a current projection already exposes that text.
 - [#770](https://github.com/jannekbuengener/sample-brain/issues/770) still owns hint priority (Hover > Selection/focus > Default/empty) and the rule that the hint surface takes no focus. Selection includes keyboard-focused supported controls and, when none are focused, the existing browser sample selection projection. The focused footer-context centering slice re-authorizes geometric centering on the full footer midpoint inside this band; the hint must not overlap the utility or status hit areas.
 
