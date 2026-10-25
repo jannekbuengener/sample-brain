@@ -24,25 +24,30 @@ backend and no renderer, dialog, audio, scan, or analysis behavior.
 
 ## Navigation model
 
-The renderer-neutral authority still owns Sample Sources, All Samples,
-Catalog (resolve/load), Collections, Favorites, and Recordings.
+The renderer-neutral authority still owns the logical Sample Sources
+container, All Samples, Catalog (resolve/load), Collections, Favorites, and
+Recordings.
 
 Presentation split:
 
-- **Source tree:** Sample Sources with registered roots and lazy subfolders.
-  Add Source lives in the Library header, not inside the tree.
-- **Secondary scope controls (intent authority):** All Samples, Collections,
-  Favorites (geometric star), and Recordings — same scope set and dispatch as
-  #837 / the QML Library Tree contract. No new Library intents and no new scopes.
-- **Secondary scope controls (placement authority):** `#1201` owns the compact
-  presentation placement in the **Library header**, alongside the existing
-  Library title and Add Source/Remove controls. The global footer remains a
-  context/status surface and contains no scope-navigation copy. The visible
-  Catalog control is not presented.
+- **Primary views:** All Samples, Collections, Favorites, and Records. The
+  first three retain their existing routes; Records uses the existing
+  `scope:recordings` intent.
+- **Persistent Sources section:** `YOUR SOURCES` projects the registered roots
+  and lazy subfolders below the primary views. The logical
+  `container:sample-sources` parent remains intact and is not a primary view.
+- **Add Source:** stays in the Library title row and retains its existing
+  Python-owned command path.
+- **Placement/visual ownership:** `#1247` owns the structural hierarchy;
+  `#1248` owns the later scale, spacing, and icon contract. The global footer
+  remains a context/status surface and contains no scope-navigation copy. The
+  visible Catalog control is not presented.
+  The compact in-pane placement introduced by `#1201` remains in the Library header baseline.
 
 Favorites is a dedicated user-organization scope
-(`scope:favorites` / `LibraryScopeKind.FAVORITES`). Recordings is a dedicated
-scope (`scope:recordings` / `LibraryScopeKind.RECORDINGS`). Neither is a
+(`scope:favorites` / `LibraryScopeKind.FAVORITES`). Records is the visible
+label for the dedicated `scope:recordings` / `LibraryScopeKind.RECORDINGS`
+scope. Neither is a
 Source-tree folder, analysis category, or playlist/Collection UI alias.
 Implicit filesystem locations, counts, and fake collections remain absent.
 

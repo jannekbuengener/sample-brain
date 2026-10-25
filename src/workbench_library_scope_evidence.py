@@ -34,7 +34,7 @@ class LibraryScopePresentation:
     browser_title: str
     tree_visible: bool
     collections_visible: bool
-    # The scope bar's y-coordinate relative to the Library header.
+    # The primary navigation's y-coordinate relative to the Library pane.
     scope_bar_y: float
     # Retained as capture metadata for existing evidence records.
     header_bottom_y: float
@@ -71,12 +71,12 @@ def assert_scope_bar_pinned(
     *,
     max_offset_from_header_px: float = 80.0,
 ) -> None:
-    """#1201: secondary scope bar is kept inside the Library header."""
-    header_boundary = min(presentation.header_bottom_y, max_offset_from_header_px)
-    if not 0.0 <= presentation.scope_bar_y <= header_boundary:
+    """Keep primary navigation below the Library title/Add Source row."""
+    offset_from_title = presentation.scope_bar_y - presentation.header_bottom_y
+    if not 0.0 <= offset_from_title <= max_offset_from_header_px:
         raise ScopeCaptureError(
-            "libraryScopeBar not inside Library header: "
-            f"bar_y={presentation.scope_bar_y} header_boundary={header_boundary}"
+            "libraryScopeBar must follow the Library title row: "
+            f"bar_y={presentation.scope_bar_y} title_bottom={presentation.header_bottom_y}"
         )
 
 
@@ -99,8 +99,8 @@ def assert_presentation_matches(scope: str, observed: LibraryScopePresentation) 
             raise ScopeCaptureError(
                 f"All Samples title mismatch: {observed.browser_title!r}"
             )
-        if observed.tree_visible:
-            raise ScopeCaptureError("All Samples capture requires hidden Source Tree")
+        if not observed.tree_visible:
+            raise ScopeCaptureError("All Samples capture requires visible Source Tree")
         if observed.collections_visible:
             raise ScopeCaptureError("All Samples must not show Collections list")
         return
@@ -110,19 +110,19 @@ def assert_presentation_matches(scope: str, observed: LibraryScopePresentation) 
             raise ScopeCaptureError(
                 f"Favorites title mismatch: {observed.browser_title!r}"
             )
-        if observed.tree_visible:
-            raise ScopeCaptureError("Favorites capture requires hidden Source Tree")
+        if not observed.tree_visible:
+            raise ScopeCaptureError("Favorites capture requires visible Source Tree")
         if observed.collections_visible:
             raise ScopeCaptureError("Favorites must not show Collections list")
         return
 
     if scope == SCOPE_RECORDINGS:
-        if observed.browser_title != "Recordings":
+        if observed.browser_title != "Records":
             raise ScopeCaptureError(
-                f"Recordings title mismatch: {observed.browser_title!r}"
+                f"Records title mismatch: {observed.browser_title!r}"
             )
-        if observed.tree_visible:
-            raise ScopeCaptureError("Recordings capture requires hidden Source Tree")
+        if not observed.tree_visible:
+            raise ScopeCaptureError("Records capture requires visible Source Tree")
         if observed.collections_visible:
             raise ScopeCaptureError("Recordings must not show Collections list")
         return
@@ -132,8 +132,8 @@ def assert_presentation_matches(scope: str, observed: LibraryScopePresentation) 
             raise ScopeCaptureError(
                 "Collections capture requires visible libraryCollectionList"
             )
-        if observed.tree_visible:
-            raise ScopeCaptureError("Collections capture requires hidden Source Tree")
+        if not observed.tree_visible:
+            raise ScopeCaptureError("Collections capture requires visible Source Tree")
         return
 
     raise ScopeCaptureError(f"unknown scope for capture: {scope!r}")
@@ -184,6 +184,6 @@ def capture_report_lines(
         f"05 SHA: {hashes[EVIDENCE_FILENAMES[SCOPE_COLLECTIONS]]}",
         f"02 expected scope/title: all / {titles.get(SCOPE_ALL, 'All Samples')}",
         f"03 expected scope/title: favorites / {titles.get(SCOPE_FAVORITES, 'Favorites')}",
-        f"04 expected scope/title: recordings / {titles.get(SCOPE_RECORDINGS, 'Recordings')}",
+        f"04 expected scope/title: recordings / {titles.get(SCOPE_RECORDINGS, 'Records')}",
         f"05 expected scope/title: collections / {titles.get(SCOPE_COLLECTIONS, '(collections surface)')}",
     ]

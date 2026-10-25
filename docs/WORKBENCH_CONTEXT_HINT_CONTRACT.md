@@ -97,20 +97,21 @@ Display format:
 
 | Semantic ID | Label | Help |
 |-------------|-------|------|
-| `library.scope.sources` | Sample Sources | analysierte Sample-Quellen |
+| `library.scope.sources` | YOUR SOURCES | registrierte Sample-Quellen |
 | `library.scope.all_samples` | All Samples | alle Samples im Workspace |
 | `library.scope.collections` | Collections | gespeicherte Sample-Sammlungen |
 | `library.scope.favorites` | Favorites | markierte Samples |
-| `library.scope.recordings` | Recordings | lokale Aufnahmen |
+| `library.scope.recordings` | Records | lokale Aufnahmen |
 | `library.add_source` | Add Source | lokalen Sample-Ordner hinzufügen |
 
 #837 removes the visible Catalog navigation control; Catalog core/loaders remain
-outside this hint table. Favorites, Collections, and Recordings must remain
-distinct. Help strings must not contradict each other across duplicate
-registrations.
+outside this hint table. #1247 keeps only All Samples, Collections, Favorites,
+and Records as primary views. `library.scope.sources` describes the persistent
+YOUR SOURCES section rather than a primary navigation button. Collections and
+Records remain distinct. Help strings must not contradict each other across
+duplicate registrations.
 
-`library.add_source` may bind the existing compact Calm-Canvas `+` control.
-The permanent text `Add Source` header button is not required for V1.
+`library.add_source` binds the existing Add Source header action.
 
 ## Accessibility
 

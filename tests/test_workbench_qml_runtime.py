@@ -84,7 +84,7 @@ class FakeNavigation:
         self.recordings = LibraryNode(
             "scope:recordings",
             LibraryNodeKind.RECORDINGS,
-            "Recordings",
+            "Records",
             None,
             True,
             False,
@@ -239,6 +239,8 @@ def test_scope_dispatch_uses_each_existing_loader_once_and_sets_visual_selection
         assert result.error is None
         assert result.selected_index == -1
         assert calls[-1][0] == expected_kind
+        if expected_kind == "recordings":
+            assert composition.browser_state.browser_context == "Records"
 
     assert calls == [
         ("root", "C:/samples"),

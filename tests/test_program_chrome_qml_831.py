@@ -120,8 +120,8 @@ def test_program_chrome_footer_hosts_context_status_without_scope_navigation() -
         'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
     assert 'objectName: "libraryScopeBar"' in pane
-    assert pane.index('objectName: "libraryScopeBar"') < pane.index(
-        'objectName: "libraryAddSourceButton"'
+    assert pane.index('objectName: "libraryAddSourceButton"') < pane.index(
+        'objectName: "libraryScopeBar"'
     )
 
 

@@ -20,7 +20,6 @@ _PRIOR_HEADER_HEIGHT = 54.0
 _PRIOR_FOOTER_HEIGHT = 40.0
 _PRIOR_SYNC_W = 48.0
 _PRIOR_SYNC_H = 25.0
-_PRIOR_SCOPE_CONTROL = 28.0
 
 # First #880 round (superseded visually; must still get smaller).
 _PRIOR_880_HEADER = 36.0
@@ -91,9 +90,9 @@ def test_runtime_transport_and_scope_controls_are_lighter() -> None:
 
         sync = window.findChild(QQuickItem, "syncButton")
         overflow = window.findChild(QQuickItem, "displayPreferencesOverflow")
-        sources = window.findChild(QQuickItem, "librarySourcesScopeButton")
+        all_samples = window.findChild(QQuickItem, "libraryAllSamplesScopeButton")
         transport = window.findChild(QQuickItem, "headerTransportZone")
-        assert sync is not None and overflow is not None and sources is not None
+        assert sync is not None and overflow is not None and all_samples is not None
         assert transport is not None
 
         assert float(sync.width()) < _PRIOR_SYNC_W
@@ -104,9 +103,8 @@ def test_runtime_transport_and_scope_controls_are_lighter() -> None:
         assert float(overflow.height()) <= 24.0
         assert float(overflow.height()) >= _MIN_HIT - 2.0
 
-        assert float(sources.width()) < _PRIOR_SCOPE_CONTROL
-        assert float(sources.height()) < _PRIOR_SCOPE_CONTROL
-        assert float(sources.height()) >= _MIN_HIT - 2.0
+        # #1247 preserves the existing primary-row geometry; #1248 owns scale polish.
+        assert float(all_samples.height()) >= _MIN_HIT - 2.0
         # Compact tempo-zone: not a stretched utility strip at 1600px.
         assert float(transport.width()) <= 420.0
     finally:

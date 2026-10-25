@@ -296,24 +296,28 @@ def _wait_for_property(item: QObject, property_name: str, expected_value: Any, t
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestVerticalScopeNavigation:
-    """A. VERTIKALE SCOPE-NAVIGATION -- fünf Scope-Rows, vertikal, konsistent."""
+    """A. Four primary Library views with persistent Sources below them."""
 
-    def test_five_scope_rows_exist(self, qml_engine):
+    def test_exactly_four_primary_rows_exist(self, qml_engine):
         engine, window = qml_engine
         root = engine.rootObjects()[0]
 
         scope_names = [
-            "librarySourcesScopeButton",
             "libraryAllSamplesScopeButton",
             "libraryCollectionsScopeButton",
             "libraryFavoritesScopeButton",
             "libraryRecordingsScopeButton",
         ]
 
+        assert _find_item_by_name(root, "librarySourcesScopeButton") is None
         for name in scope_names:
             btn = _find_item_by_name(root, name)
             assert btn is not None, f"Scope button {name} not found"
             assert btn.property("text") is not None
+
+        assert [
+            _find_item_by_name(root, name).property("text") for name in scope_names
+        ] == ["All Samples", "Collections", "Favorites", "Records"]
 
     def test_scope_rows_vertical_layout(self, qml_engine):
         engine, window = qml_engine
@@ -325,7 +329,6 @@ class TestVerticalScopeNavigation:
         assert scope_bar.property("objectName") == "libraryScopeBar"
 
         buttons = [
-            _find_item_by_name(root, "librarySourcesScopeButton"),
             _find_item_by_name(root, "libraryAllSamplesScopeButton"),
             _find_item_by_name(root, "libraryCollectionsScopeButton"),
             _find_item_by_name(root, "libraryFavoritesScopeButton"),
@@ -347,7 +350,6 @@ class TestVerticalScopeNavigation:
 
         heights = []
         for name in [
-            "librarySourcesScopeButton",
             "libraryAllSamplesScopeButton",
             "libraryCollectionsScopeButton",
             "libraryFavoritesScopeButton",
@@ -358,7 +360,7 @@ class TestVerticalScopeNavigation:
             h = btn.property("height") or btn.property("implicitHeight")
             heights.append(h)
 
-        # All five scope buttons retain the approved 36px visual polish.
+        # Keep the existing row size while changing the navigation structure.
         for h in heights:
             assert h == 36, f"Expected height 36, got {h}"
 
@@ -371,7 +373,6 @@ class TestVerticalScopeNavigation:
         bar_width = scope_bar.property("width")
 
         for name in [
-            "librarySourcesScopeButton",
             "libraryAllSamplesScopeButton",
             "libraryCollectionsScopeButton",
             "libraryFavoritesScopeButton",
@@ -395,28 +396,40 @@ class TestVerticalScopeNavigation:
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestActiveState:
-    """B. ACTIVE STATE -- Python-owned authority, exactly one active, content projection."""
+    """B. Active view remains Python-owned while Sources stays projected."""
 
-    def test_initial_active_section_sources(self, qml_engine, runtime_composition):
+    def test_initial_sources_tree_is_visible_without_a_sources_primary_row(self, qml_engine, runtime_composition):
         engine, window = qml_engine
         root = engine.rootObjects()[0]
+        engine.rootContext().contextProperty("interactionModel").revealLibrary()
+        QCoreApplication.processEvents()
 
-        # Initial active section should be "sources"
-        sources_btn = _find_item_by_name(root, "librarySourcesScopeButton")
-        assert sources_btn is not None
-        # Check scopeActive is True for sources (Python-owned initial state)
-        assert sources_btn.property("scopeActive") is True
+        assert runtime_composition.library_tree.active_section == "sources"
+        assert _find_item_by_name(root, "librarySourcesScopeButton") is None
+        assert _find_item_by_name(root, "libraryTree").property("visible") is True
+        assert _find_item_by_name(root, "librarySourcesHeading").property("text") == "YOUR SOURCES"
 
-        # Others should not be active
-        for name in [
-            "libraryAllSamplesScopeButton",
-            "libraryCollectionsScopeButton",
-            "libraryFavoritesScopeButton",
-            "libraryRecordingsScopeButton",
-        ]:
-            btn = _find_item_by_name(root, name)
-            assert btn is not None
-            assert btn.property("scopeActive") is False
+    def test_primary_selection_keeps_sources_visible(self, qml_engine, runtime_composition):
+        engine, window = qml_engine
+        root = engine.rootObjects()[0]
+        interaction = engine.rootContext().contextProperty("libraryInteraction")
+        tree = _find_item_by_name(root, "libraryTree")
+
+        for node_id, section in (
+            ("scope:all-library", "all"),
+            ("scope:favorites", "favorites"),
+            ("scope:recordings", "recordings"),
+        ):
+            interaction.selectLibraryNode(node_id)
+            QCoreApplication.processEvents()
+            assert runtime_composition.library_tree.active_section == section
+            assert tree.property("visible") is True
+
+        interaction.showLibrarySection("collections")
+        QCoreApplication.processEvents()
+        assert runtime_composition.library_tree.active_section == "collections"
+        assert tree.property("visible") is True
+        assert _find_item_by_name(root, "libraryCollectionList").property("visible") is True
 
     def test_click_scope_changes_active(self, qml_engine, runtime_composition):
         engine, window = qml_engine
@@ -557,7 +570,7 @@ class TestHoverBehavior:
         engine, window = qml_engine
         root = engine.rootObjects()[0]
 
-        btn = _find_item_by_name(root, "librarySourcesScopeButton")
+        btn = _find_item_by_name(root, "libraryAllSamplesScopeButton")
         assert btn is not None
 
         # The hovered property is managed by QML HoverHandler
@@ -568,27 +581,25 @@ class TestHoverBehavior:
         assert "onHoveredChanged:" in scope_block
         assert "contextHintState.reportHover" in scope_block
 
-    def test_scope_hover_leave_removes_hover_state(self, qml_engine):
+    def test_primary_scope_hover_leave_removes_hover_state(self, qml_engine):
         engine, window = qml_engine
         root = engine.rootObjects()[0]
 
-        btn = _find_item_by_name(root, "librarySourcesScopeButton")
+        btn = _find_item_by_name(root, "libraryAllSamplesScopeButton")
         assert btn is not None
 
         # Verify clearHover is called on hover leave
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        assert 'contextHintState.clearHover("library.scope.sources")' in scope_block
+        for scope in ("all_samples", "collections", "favorites", "recordings"):
+            assert f'contextHintState.clearHover("library.scope.{scope}")' in scope_block
 
     def test_scope_hover_does_not_change_active(self, qml_engine, runtime_composition):
         engine, window = qml_engine
         root = engine.rootObjects()[0]
 
-        # Initial active is sources
-        assert runtime_composition.library_tree.active_section == "sources"
-
-        # Hover is a visual state only, doesn't change active section
+        # Hover is a visual state only and does not change Python navigation.
         # (verified by QML: onHoveredChanged only calls contextHintState, not showLibrarySection)
 
     def test_source_hover_shows_ellipsis(self, qml_engine, runtime_composition):
@@ -659,7 +670,8 @@ class TestAddSourceButton:
 
         btn = _find_item_by_name(root, "libraryAddSourceButton")
         assert btn is not None
-        # Button exists in the visual tree (library pane may be collapsed when no active source)
+        assert btn.parent().objectName() == "libraryHeaderRow"
+        assert _find_item_by_name(root, "libraryTitleLabel").property("text") == "LIBRARY"
 
     def test_add_source_button_text_is_plus(self, qml_engine):
         engine, window = qml_engine
@@ -810,18 +822,18 @@ class TestKeyboardNavigation:
         root = engine.rootObjects()[0]
 
         # Focus the first scope button via forceActiveFocus (simulates Tab)
-        sources_btn = _find_item_by_name(root, "librarySourcesScopeButton")
-        sources_btn.forceActiveFocus()
+        all_samples_btn = _find_item_by_name(root, "libraryAllSamplesScopeButton")
+        all_samples_btn.forceActiveFocus()
         QCoreApplication.processEvents()
 
-        assert sources_btn.property("activeFocus") is True
+        assert all_samples_btn.property("activeFocus") is True
 
     def test_focus_state_visible(self, qml_engine):
         engine, window = qml_engine
         root = engine.rootObjects()[0]
 
-        sources_btn = _find_item_by_name(root, "librarySourcesScopeButton")
-        sources_btn.forceActiveFocus()
+        all_samples_btn = _find_item_by_name(root, "libraryAllSamplesScopeButton")
+        all_samples_btn.forceActiveFocus()
         QCoreApplication.processEvents()
 
         # Focus ring should be visible - verify QML has focus handling
@@ -908,7 +920,6 @@ class TestNarrowWindow:
 
         # Check scope button texts don't overlap
         btns = [
-            _find_item_by_name(root, "librarySourcesScopeButton"),
             _find_item_by_name(root, "libraryAllSamplesScopeButton"),
             _find_item_by_name(root, "libraryCollectionsScopeButton"),
             _find_item_by_name(root, "libraryFavoritesScopeButton"),
@@ -967,7 +978,6 @@ class TestNarrowWindow:
 
         # Scope buttons should still be clickable (width > 0)
         for name in [
-            "librarySourcesScopeButton",
             "libraryAllSamplesScopeButton",
             "libraryCollectionsScopeButton",
             "libraryFavoritesScopeButton",
@@ -1110,13 +1120,18 @@ def test_scope_column_full_width(qml_engine):
 # ============================================================
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
-def test_hidden_root_projects_source_without_empty_row(qml_engine, runtime_composition):
+def test_hidden_root_projects_source_without_empty_row(qml_engine, runtime_composition, tmp_path):
     from PySide6.QtQml import QQmlExpression
 
     engine, window = qml_engine
     tree = _find_item_by_name(window, "libraryTree")
     model = engine.rootContext().contextProperty("libraryTreeModel")
     engine.rootContext().contextProperty("interactionModel").revealLibrary()
+    library_interaction = engine.rootContext().contextProperty("libraryInteraction")
+    library_interaction.selectLibraryNode("scope:all-library")
+    QCoreApplication.processEvents()
+    assert runtime_composition.library_tree.active_section == "all"
+    assert tree.property("visible") is True
 
     def evaluate(expression):
         script = QQmlExpression(engine.rootContext(), tree, expression)
@@ -1125,6 +1140,9 @@ def test_hidden_root_projects_source_without_empty_row(qml_engine, runtime_compo
         return result
 
     QTest.qWait(100)
+    all_samples_capture = tmp_path / "all_samples_with_sources.png"
+    assert window.grabWindow().save(str(all_samples_capture))
+    assert all_samples_capture.stat().st_size > 0
     assert evaluate("rows") == 1
     assert model.data(evaluate('index(0, 0)'), model.KindRole) == "registered_root"
     assert model.data(evaluate('index(0, 0)'), model.ParentNodeIdRole) == "container:sample-sources"
@@ -1137,13 +1155,35 @@ def test_hidden_root_projects_source_without_empty_row(qml_engine, runtime_compo
                     evaluate("mapToItem(null, width / 2, 17)").toPoint())
     QCoreApplication.processEvents()
     assert runtime_composition.library_tree.selected_node_id == "root:1"
+    assert runtime_composition.library_tree.active_section == "sources"
+    source_scope = runtime_composition.browser_state.scope
+    assert tree.property("visible") is True
+    for button_name in (
+        "libraryAllSamplesScopeButton",
+        "libraryCollectionsScopeButton",
+        "libraryFavoritesScopeButton",
+        "libraryRecordingsScopeButton",
+    ):
+        assert _find_item_by_name(window, button_name).property("scopeActive") is False
+    source_capture = tmp_path / "selected_source.png"
+    assert window.grabWindow().save(str(source_capture))
+    assert source_capture.stat().st_size > 0
     evaluate("expand(0)")
     QTest.qWait(100)
     assert evaluate("rows") == 2
     assert model.data(evaluate('index(1, 0)'), model.KindRole) == "subfolder"
+    assert runtime_composition.library_tree.selected_node_id == "root:1"
+    assert runtime_composition.library_tree.active_section == "sources"
+    assert runtime_composition.browser_state.scope == source_scope
+    expanded_capture = tmp_path / "expanded_source.png"
+    assert window.grabWindow().save(str(expanded_capture))
+    assert expanded_capture.stat().st_size > 0
     evaluate("collapse(0)")
     QTest.qWait(100)
     assert evaluate("rows") == 1
+    assert runtime_composition.library_tree.selected_node_id == "root:1"
+    assert runtime_composition.library_tree.active_section == "sources"
+    assert runtime_composition.browser_state.scope == source_scope
 
     navigation = runtime_composition.library_tree.navigation
     children = navigation.children
@@ -1159,8 +1199,8 @@ def test_hidden_root_projects_source_without_empty_row(qml_engine, runtime_compo
     assert evaluate("itemAtCell(Qt.point(0, 0)).y") == 0
     assert evaluate("rootIndex").isValid()
     from src.workbench_qml import QML_SOURCE
-    scope = QML_SOURCE.split('objectName: "librarySourcesScopeButton"', 1)[1].split('objectName: "libraryAllSamplesScopeButton"', 1)[0]
-    assert 'Accessible.name: "Sample Sources"' in scope
+    assert _find_item_by_name(window, "librarySourcesScopeButton") is None
+    assert _find_item_by_name(window, "librarySourcesHeading").property("text") == "YOUR SOURCES"
 
 
 if __name__ == "__main__":

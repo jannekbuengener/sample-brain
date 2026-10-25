@@ -76,8 +76,8 @@ class WorkbenchLibraryTreeState:
         self._expanded: set[str] = set()
         self.selected_node_id: str | None = None
         self.selection_intent: LibrarySelectionIntent | None = None
-        # The vertical scope navigation is a projection of this state. QML
-        # may request a section, but it never owns the active-section truth.
+        # Primary-view and selected-source presentation projects from this
+        # state. QML may request a section but never owns active navigation.
         self.active_section = "sources"
         self._remember_nodes(tree_top_level)
         self._remember_nodes(secondary)
@@ -209,7 +209,7 @@ class WorkbenchLibraryTreeState:
         return intent
 
     def show_section(self, section: str) -> bool:
-        """Project the existing navigation into one of the five UI scopes."""
+        """Project an existing primary view or selected-source presentation."""
 
         if section not in {"sources", "all", "collections", "favorites", "recordings"}:
             return False
