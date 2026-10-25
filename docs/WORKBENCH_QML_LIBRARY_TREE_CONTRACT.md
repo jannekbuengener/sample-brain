@@ -160,16 +160,40 @@ presentation-only.
 
 ## Visual and responsive contract
 
-The Library pane keeps the existing near-black surfaces, thin dividers, compact
-density, and sparse blood-red intent. Scope controls are icon-only geometric
-marks (no emoji/Unicode glyph icons, no brain artwork). Favorites uses a
-geometric star. Active scope uses `selectionSurface` +
-`selectionBorder`/`actionActive`; idle uses panel-dark surfaces — never
-light-gray native chrome.
+#1248 consumes MagicPath component `464784312458436608`, revision
+`464978117610602496`, and the 2026-10-25 Owner active-state amendment.
+This supersedes neutral filled active rows and enclosing selection frames.
 
-Labels are clipped/elided rather than exposing raw producer paths. The pane must
-remain usable at the existing Screen-1 acceptance sizes and Windows scale
-factors. This contract does not introduce a general docking/layout system.
+All measurements are logical UI pixels; sidebar width stays layout-solver-owned.
+
+| Role | Contract |
+|---|---|
+| Header / Add Source | 52 high / 36 x 36, aligned right |
+| Primary row | 35 high, 36 pitch; pane inset 6, content padding 10 |
+| Icon / icon-label gap | 20 x 20 / 6 |
+| Navigation / Sources text | system font, 14 / 20 / 400 |
+| YOUR SOURCES | gap before 20, header 36, gap after 4; 14 / 18 / 500 |
+| Source rows | 36 high/pitch, existing 16-pixel depth indentation |
+| Long source labels | bounded 24-pixel trailing fade outside action controls |
+
+Selected text/icons use category semantic accents: cool blue for All Samples,
+muted gold for Collections, muted warm red for Favorites, lavender for Records.
+Source selection uses the existing global Accent role. No selection fill,
+enclosing selection outline, dashed marker, neon or bloom. Focus-visible has
+its own ring; hover/focus never select, navigate or mutate Audio/Kit/Source state.
+Existing icon primitives and functional expand/collapse indicators are reused.
+
+Theme Core owns the minimal Library-only color seam: default Library surface
+reference `#15171a`, custom surfaces derived from their bases. Browser/Workspace
+`#0d0f12` is comparison evidence only; Browser rendering is outside this slice.
+Category accents are fixed orientation roles independent of status colors and
+the configurable global Accent. No second theme persistence or global migration
+is introduced. The unassigned design value `84` is unused per Owner decision;
+no opacity is inferred from it. #1257 retains broader Appearance ownership.
+
+Runtime checks distinguish logical geometry, DPR and screenshot dimensions at
+100/125/150 percent Windows scaling. Captures and objective checks do not imply
+subjective Owner acceptance.
 
 ## Qt optionality
 
