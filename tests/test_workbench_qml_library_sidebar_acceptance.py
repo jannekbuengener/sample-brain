@@ -530,8 +530,8 @@ class TestVisualStateContract:
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        assert 'theme.focusRing' in scope_block
-        assert 'visualFocus ? 2 :' in scope_block
+        assert 'theme.libraryFocusRing' in scope_block
+        assert 'visualFocus ? 1 :' in scope_block
 
     def test_hover_vs_active_different(self, qml_engine):
         """Hover != Active visually -- different theme tokens."""
@@ -848,8 +848,8 @@ class TestKeyboardNavigation:
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        assert 'theme.focusRing' in scope_block
-        assert 'visualFocus ? 2 :' in scope_block
+        assert 'theme.libraryFocusRing' in scope_block
+        assert 'visualFocus ? 1 :' in scope_block
 
     def test_tree_keyboard_current_reaches_source_actions(self, qml_engine, runtime_composition):
         engine, window = qml_engine
@@ -1270,7 +1270,8 @@ def test_1248_selection_focus(qml_engine, runtime_composition, section, name, ro
     assert _evaluate_qml(engine, button, "background.border.width") == 0
     button.forceActiveFocus(Qt.TabFocusReason)
     QCoreApplication.processEvents()
-    assert _evaluate_qml(engine, button, "background.border.width") == 2
+    assert _evaluate_qml(engine, button, "background.border.width") == 1
+    assert _evaluate_qml(engine, button, "background.border.color == theme.libraryFocusRing")
     assert _evaluate_qml(engine, button, f"contentItem.children[0].color == theme.{role}")
     assert runtime_composition.library_tree.active_section == section
 
@@ -1312,3 +1313,20 @@ def test_1248_long_source_accessible_name_is_complete(qml_engine, runtime_compos
     QTest.qWait(100)
     tree = _find_item_by_name(window, "libraryTree")
     assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).Accessible.name") == full_name
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+def test_1248_source_focus_is_neutral_and_independent(qml_engine, runtime_composition):
+    engine, window = qml_engine
+    tree = _find_item_by_name(window, "libraryTree")
+    selected = runtime_composition.library_tree.selected_node_id
+    section = runtime_composition.library_tree.active_section
+    tree.forceActiveFocus(Qt.TabFocusReason)
+    QTest.keyClick(window, Qt.Key_Down)
+    QTest.qWait(100)
+    assert tree.property("keyboardFocusVisible")
+    assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).background.border.width") == 1
+    assert _evaluate_qml(engine, tree, "itemAtCell(Qt.point(0,0)).background.border.color == theme.libraryFocusRing")
+    assert _evaluate_qml(engine, tree, "theme.libraryFocusRing == theme.textSecondary")
+    assert runtime_composition.library_tree.selected_node_id == selected
+    assert runtime_composition.library_tree.active_section == section

@@ -180,7 +180,12 @@ Selected text/icons use category semantic accents: cool blue for All Samples,
 muted gold for Collections, muted warm red for Favorites, lavender for Records.
 Source selection uses the existing global Accent role. No selection fill,
 enclosing selection outline, dashed marker, neon or bloom. Focus-visible has
-its own ring; hover/focus never select, navigate or mutate Audio/Kit/Source state.
+a separate quiet 1-pixel neutral ring via `libraryFocusRing`, mapped to the
+existing secondary-text role. This follows the later 2026-10-25 Owner runtime
+correction: Focus color must not derive from Blood/Accent. Primary rows, Source
+rows and Library action controls consume this local focus role; selection stays
+colored text/icon only. Hover/focus never select, navigate or mutate
+Audio/Kit/Source state.
 Existing icon primitives and functional expand/collapse indicators are reused.
 
 Theme Core owns the minimal Library-only color seam: default Library surface

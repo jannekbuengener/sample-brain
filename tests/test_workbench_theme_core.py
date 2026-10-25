@@ -380,3 +380,18 @@ def test_library_semantics_are_additive_and_follow_custom_base(tmp_path):
     assert updated["actionActive"] == "#558833"
     for key in ("libraryAllSamplesAccent", "libraryCollectionsAccent", "libraryFavoritesAccent", "libraryRecordsAccent"):
         assert updated[key] == roles[key]
+
+
+def test_library_focus_role_is_neutral_and_independent_of_accent(tmp_path):
+    from src.workbench_theme import resolve_theme, theme_tokens_to_qml_semantics, derive_tokens
+
+    base = resolve_theme(state_dir=tmp_path)
+    roles = theme_tokens_to_qml_semantics(base)
+    assert roles["libraryFocusRing"] == base.textSecondary
+    assert roles["libraryFocusRing"] != roles["actionActive"]
+    changed = base.as_dict()
+    changed["accent"] = "#558833"
+    changed.update(derive_tokens(changed))
+    updated = theme_tokens_to_qml_semantics(changed)
+    assert updated["actionActive"] == "#558833"
+    assert updated["libraryFocusRing"] == roles["libraryFocusRing"]

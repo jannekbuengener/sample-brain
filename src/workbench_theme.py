@@ -75,6 +75,8 @@ _QML_SEMANTIC_MAP = {
     "waveformActive": "accent",
     "waveformDefault": "textSecondary",
     "focusRing": "focusRing",
+    # #1248 Owner runtime correction: Library focus never follows Accent.
+    "libraryFocusRing": "textSecondary",
     "hoverSurface": "hover",
 }
 

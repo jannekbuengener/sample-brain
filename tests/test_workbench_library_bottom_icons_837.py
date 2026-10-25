@@ -164,7 +164,7 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert "scopeActive" in scope_block
     assert "theme.surfaceElevated" not in scope_block
     assert "theme.hoverSurface" in scope_block
-    assert "theme.focusRing" in scope_block
+    assert "theme.libraryFocusRing" in scope_block
     assert "checkable: true" not in scope_block
     assert "anchors.bottom: parent.bottom" not in scope_block
     assert "height: 1" not in scope_block

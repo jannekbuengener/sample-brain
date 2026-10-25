@@ -291,7 +291,7 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     assert "libraryScopeBar.mode" not in scope_block
     assert "theme.surfaceElevated" not in scope_block
     assert "theme.hoverSurface" in scope_block
-    assert "theme.focusRing" in scope_block
+    assert "theme.libraryFocusRing" in scope_block
     assert "theme.actionActive" not in scope_block
     assert "anchors.bottom: parent.bottom" not in scope_block
     assert "height: 1" not in scope_block
@@ -345,7 +345,7 @@ def test_scope_active_hover_idle_focus_and_source_action_contracts_are_explicit(
     assert "return theme.surfaceElevated" not in scope_block
     assert "return theme.hoverSurface" in scope_block
     assert 'return "transparent"' in scope_block
-    assert "theme.focusRing" in scope_block
+    assert "theme.libraryFocusRing" in scope_block
     assert "return active ? categoryAccent : theme.textSecondary" in scope_block
     assert 'text: "+"' in header_block
     assert 'Accessible.name: "Add Source"' in header_block

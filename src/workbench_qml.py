@@ -2394,6 +2394,7 @@ ApplicationWindow {
         readonly property color selectionBorder: themeAuthority.selectionBorder
         readonly property color actionActive: themeAuthority.actionActive
         readonly property color focusRing: themeAuthority.focusRing
+        readonly property color libraryFocusRing: themeAuthority.libraryFocusRing
         readonly property color hoverSurface: themeAuthority.hoverSurface
     }
     // #1248 logical UI geometry, local to the Library presentation.
@@ -3192,7 +3193,7 @@ ApplicationWindow {
                                       : (libraryAddSourceButton.hovered ? theme.hoverSurface : "transparent"))
                             border.width: 1
                             border.color: !libraryAddSourceButton.enabled ? theme.borderSubtle
-                                          : (libraryAddSourceButton.activeFocus ? theme.focusRing
+                                          : (libraryAddSourceButton.activeFocus ? theme.libraryFocusRing
                                              : (libraryAddSourceButton.pressed ? theme.selectionBorder : theme.borderSubtle))
                             opacity: libraryAddSourceButton.enabled ? 1.0 : 0.4
                         }
@@ -3257,8 +3258,8 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 8
                                     color: libraryScopeBar.scopeFill(allSamplesScopeButton.scopeActive, allSamplesScopeButton.hovered)
-                                    border.width: allSamplesScopeButton.visualFocus ? 2 : 0
-                                    border.color: theme.focusRing
+                                    border.width: allSamplesScopeButton.visualFocus ? 1 : 0
+                                    border.color: theme.libraryFocusRing
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
@@ -3335,8 +3336,8 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 8
                                     color: libraryScopeBar.scopeFill(collectionsScopeButton.scopeActive, collectionsScopeButton.hovered)
-                                    border.width: collectionsScopeButton.visualFocus ? 2 : 0
-                                    border.color: theme.focusRing
+                                    border.width: collectionsScopeButton.visualFocus ? 1 : 0
+                                    border.color: theme.libraryFocusRing
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
@@ -3411,8 +3412,8 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 8
                                     color: libraryScopeBar.scopeFill(favoritesScopeButton.scopeActive, favoritesScopeButton.hovered)
-                                    border.width: favoritesScopeButton.visualFocus ? 2 : 0
-                                    border.color: theme.focusRing
+                                    border.width: favoritesScopeButton.visualFocus ? 1 : 0
+                                    border.color: theme.libraryFocusRing
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
@@ -3509,8 +3510,8 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 8
                                     color: libraryScopeBar.scopeFill(recordingsScopeButton.scopeActive, recordingsScopeButton.hovered)
-                                    border.width: recordingsScopeButton.visualFocus ? 2 : 0
-                                    border.color: theme.focusRing
+                                    border.width: recordingsScopeButton.visualFocus ? 1 : 0
+                                    border.color: theme.libraryFocusRing
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
@@ -3669,8 +3670,8 @@ ApplicationWindow {
                             color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? "transparent"
                                    : (libraryDelegate.hovered ? theme.hoverSurface : "transparent")
                             border.width: libraryDelegate.current && libraryTree.activeFocus
-                                          && libraryTree.keyboardFocusVisible ? 2 : 0
-                            border.color: theme.focusRing
+                                          && libraryTree.keyboardFocusVisible ? 1 : 0
+                            border.color: theme.libraryFocusRing
                         }
                         contentItem: Item {
                             implicitHeight: libraryMetrics.sourceRowHeight
@@ -3796,8 +3797,8 @@ ApplicationWindow {
                                         color: sourceActionsButton.activeFocus
                                                ? theme.surfaceElevated
                                                : (sourceActionsButton.hovered ? theme.hoverSurface : "transparent")
-                                        border.width: sourceActionsButton.activeFocus ? 2 : 0
-                                        border.color: theme.focusRing
+                                        border.width: sourceActionsButton.activeFocus ? 1 : 0
+                                        border.color: theme.libraryFocusRing
                                     }
                                 }
                             }
@@ -8192,6 +8193,10 @@ def _qml_theme_authority_bridge(
         @Property(str, notify=themeChanged)
         def surfacePanel(self) -> str:
             return self._color("surfacePanel")
+
+        @Property(str, notify=themeChanged)
+        def libraryFocusRing(self) -> str:
+            return self._color("libraryFocusRing")
 
         @Property(str, notify=themeChanged)
         def surfaceLibrary(self) -> str:
