@@ -240,6 +240,22 @@ def test_measurement_off_no_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert not (tmp_path / "measurement.db").exists()
 
 
+def test_workbench_session_id_exists_when_measurement_is_off(tmp_path: Path) -> None:
+    db = tmp_path / "measurement.db"
+    session = compose_workbench_session(
+        state_dir=tmp_path / "state",
+        env={
+            "SAMPLE_BRAIN_MEASUREMENT_MODE": "off",
+            "SAMPLE_BRAIN_MEASUREMENT_DB_PATH": str(db),
+        },
+    )
+    parsed = uuid.UUID(session.session_id)
+    assert parsed.version == 4
+    assert str(parsed) == session.session_id
+    assert session.measurement_session_id == session.session_id
+    assert not db.exists()
+
+
 def test_observer_exception_does_not_change_matching() -> None:
     direct = _suggestion(_row("direct"), HarmonyRelation.DIRECT)
 
@@ -323,8 +339,8 @@ def test_session_id_stable_across_queries_in_composed_session(
     monkeypatch.setenv("SAMPLE_BRAIN_MEASUREMENT_MODE", "local")
     monkeypatch.setenv("SAMPLE_BRAIN_MEASUREMENT_DB_PATH", str(db))
     session = compose_workbench_session()
-    assert session.measurement_session_id is not None
-    sid = session.measurement_session_id
+    sid = session.session_id
+    assert session.measurement_session_id == sid
     ctrl = session.qml_interaction_adapter.harmony_controller
     assert isinstance(ctrl, HarmonicMatchLibraryController)
 
@@ -346,7 +362,7 @@ def test_session_id_stable_across_queries_in_composed_session(
     assert len(payloads) == 2
     assert {p["session_id"] for p in payloads} == {sid}
     run_ids = {p["run_id"] for p in payloads}
-    assert len(run_ids) == 2
+    assert len(run_ids) == 1
     for rid in run_ids:
         uuid.UUID(rid)
     uuid.UUID(sid)
@@ -358,7 +374,7 @@ def test_session_id_stable_across_queries_in_composed_session(
     assert "anchor" not in blob
 
 
-def test_run_ids_differ_and_are_opaque(tmp_path: Path) -> None:
+def test_observer_reuses_one_run_id_across_queries(tmp_path: Path) -> None:
     db = tmp_path / "measurement.db"
     observer, session_id = make_match_query_finished_observer(
         env={
@@ -375,10 +391,38 @@ def test_run_ids_differ_and_are_opaque(tmp_path: Path) -> None:
         for row in conn.execute("SELECT payload_json FROM events").fetchall()
     ]
     conn.close()
-    assert payloads[0]["run_id"] != payloads[1]["run_id"]
+    assert payloads[0]["run_id"] == payloads[1]["run_id"]
     assert payloads[0]["session_id"] == payloads[1]["session_id"] == session_id
     assert "path" not in payloads[0]["props"]
     assert set(payloads[0]["props"]) == {"wall_ms", "result_count"}
+
+
+def test_observer_preserves_explicit_correlation_ids(tmp_path: Path) -> None:
+    db = tmp_path / "measurement.db"
+    explicit_run_id = "550e8400-e29b-41d4-a716-446655440020"
+    explicit_session_id = "550e8400-e29b-41d4-a716-446655440021"
+    observer, session_id = make_match_query_finished_observer(
+        env={
+            "SAMPLE_BRAIN_MEASUREMENT_MODE": "local",
+            "SAMPLE_BRAIN_MEASUREMENT_DB_PATH": str(db),
+        },
+        run_id=explicit_run_id,
+        session_id=explicit_session_id,
+    )
+    assert observer is not None
+    assert session_id == explicit_session_id
+    observer(wall_ms=1, result_count=0)
+    observer(wall_ms=2, result_count=1)
+    with sqlite3.connect(db) as conn:
+        payloads = [
+            json.loads(row[0])
+            for row in conn.execute("SELECT payload_json FROM events").fetchall()
+        ]
+    assert len(payloads) == 2
+    assert {payload["run_id"] for payload in payloads} == {explicit_run_id}
+    assert {payload["session_id"] for payload in payloads} == {
+        explicit_session_id
+    }
 
 
 # --- Report ---

@@ -286,6 +286,7 @@ def make_match_query_finished_observer(
     *,
     config: Optional[Mapping[str, Any]] = None,
     env: Optional[Mapping[str, str]] = None,
+    run_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> tuple[Optional[Any], Optional[str]]:
     """Return ``(observer|None, session_id|None)`` for Workbench composition.
@@ -298,7 +299,8 @@ def make_match_query_finished_observer(
         if mode is MeasurementMode.OFF:
             return None, None
         bus = build_bus(config=config, env=env)
-        resolved_session = session_id or str(uuid.uuid4())
+        resolved_run = run_id if run_id is not None else str(uuid.uuid4())
+        resolved_session = session_id if session_id is not None else str(uuid.uuid4())
 
         def _observer(
             *,
@@ -313,7 +315,7 @@ def make_match_query_finished_observer(
                     result_count=max(0, int(result_count)),
                     status=status,
                     session_id=resolved_session,
-                    run_id=str(uuid.uuid4()),
+                    run_id=resolved_run,
                 )
             except Exception:
                 return

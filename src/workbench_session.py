@@ -21,6 +21,7 @@ session).
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -96,8 +97,8 @@ class WorkbenchSession:
     audition: TransportAwarePreview
     qml_interaction_adapter: Screen1QmlInteractionAdapter
     channel_rack: ChannelRackController
+    session_id: str
     tk_workbench: WorkbenchApp | None = None
-    measurement_session_id: str | None = None
     persistence_status: str = PERSISTENCE_STATUS_FRESH_MISSING
     _resume_persistence_status: str = field(
         default=PERSISTENCE_STATUS_FRESH_MISSING,
@@ -133,6 +134,11 @@ class WorkbenchSession:
     _restored_rack_time_status: Mapping[str, object] | None = field(
         default=None, repr=False, compare=False
     )
+
+    @property
+    def measurement_session_id(self) -> str:
+        """Compatibility alias for the single Workbench session authority."""
+        return self.session_id
 
     @property
     def arrangement_state(self) -> ArrangementState | None:
@@ -805,14 +811,16 @@ def compose_workbench_session(
         live_kit_groups=presenter.groups,
     )
     match_observer = None
-    measurement_session_id: str | None = None
+    session_id = str(uuid.uuid4())
     try:
         from .measurement.emit import make_match_query_finished_observer
 
-        match_observer, measurement_session_id = make_match_query_finished_observer()
+        match_observer, _ = make_match_query_finished_observer(
+            env=env,
+            session_id=session_id,
+        )
     except Exception:
         match_observer = None
-        measurement_session_id = None
 
     # Late-bound so preview start can arbitrate against Rack after controller exists.
     rack_holder: list[ChannelRackController | None] = [None]
@@ -858,8 +866,8 @@ def compose_workbench_session(
         audition=audition,
         qml_interaction_adapter=adapter,
         channel_rack=channel_rack,
+        session_id=session_id,
         tk_workbench=tk_workbench,
-        measurement_session_id=measurement_session_id,
         persistence_status=resume_status,
         _resume_persistence_status=resume_status,
         active_track_id=active_track_id,
