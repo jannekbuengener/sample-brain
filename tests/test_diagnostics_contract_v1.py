@@ -366,6 +366,15 @@ def test_embedded_measurement_event_is_revalidated() -> None:
     assert not _validate(bundle)
 
 
+@pytest.mark.parametrize("event_version", [True, 2, 99])
+def test_embedded_measurement_event_version_is_exactly_v1(
+    event_version: object,
+) -> None:
+    bundle = _valid_bundle()
+    bundle["measurement_events"][0]["event_version"] = event_version
+    assert not _validate(bundle)
+
+
 def test_embedded_measurement_event_must_be_export_safe() -> None:
     bundle = _valid_bundle()
     bundle["measurement_events"][0]["privacy_class"] = "local_only"

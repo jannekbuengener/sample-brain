@@ -243,7 +243,11 @@ def validate_event(event: MeasurementEvent) -> Optional[MeasurementEvent]:
             return None
         if event.event_name not in SUPPORTED_EVENT_NAMES:
             return None
-        if not isinstance(event.event_version, int) or event.event_version < 1:
+        if (
+            not isinstance(event.event_version, int)
+            or isinstance(event.event_version, bool)
+            or event.event_version != 1
+        ):
             return None
         if not _utc_ms_z_ok(event.occurred_at):
             return None

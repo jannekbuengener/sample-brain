@@ -207,6 +207,13 @@ def test_reason_code_accepts_none_or_stable_machine_code(reason_code: str | None
     assert validate_event(candidate) is candidate
 
 
+@pytest.mark.parametrize("event_version", [True, 2, 99])
+def test_event_version_is_exactly_v1(event_version: object) -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(**{**event.__dict__, "event_version": event_version})
+    assert validate_event(bad) is None
+
+
 def test_validate_event_never_raises_for_malformed_input() -> None:
     assert validate_event(object()) is None
 
