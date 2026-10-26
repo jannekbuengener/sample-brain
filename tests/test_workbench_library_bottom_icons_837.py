@@ -156,12 +156,15 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert "ToolTip." not in scope_block
     assert "contextHintState.reportHover" in scope_block
     assert "contextHintState.reportFocus" in scope_block
-    assert scope_block.count('Layout.preferredHeight: 36') == 4
-    assert 'readonly property int iconPad: 5' in scope_block
+    assert scope_block.count('Layout.minimumHeight: libraryMetrics.rowHeight') == 4
+    assert scope_block.count('Layout.maximumHeight: libraryMetrics.rowHeight') == 4
+    assert 'readonly property int rowHeight: 35' in source
+    assert scope_block.count('width: libraryMetrics.iconSize') == 4
+    assert 'readonly property int iconSize: 20' in source
     assert "scopeActive" in scope_block
-    assert "theme.surfaceElevated" in scope_block
+    assert "theme.surfaceElevated" not in scope_block
     assert "theme.hoverSurface" in scope_block
-    assert "theme.focusRing" in scope_block
+    assert "theme.libraryFocusRing" in scope_block
     assert "checkable: true" not in scope_block
     assert "anchors.bottom: parent.bottom" not in scope_block
     assert "height: 1" not in scope_block

@@ -83,7 +83,7 @@ def test_v7_root_uses_chrome_while_workspace_uses_workspace_depth() -> None:
 
     assert "color: theme.surfaceRoot" in _qml_block("calmCanvas")
     assert "color: theme.surfaceRoot" in _qml_block("analysisWorkingSurface")
-    assert "color: theme.surfacePanel" in _qml_block("libraryPane")
+    assert "color: theme.surfaceLibrary" in _qml_block("libraryPane")
     assert "color: theme.surfaceBrowser" in _qml_block("browserPane")
     assert "color: theme.surfacePanel" in _qml_block("harmonyPane")
     # #1077: Live Kit height/user-resize properties lengthen the bottom pane header.

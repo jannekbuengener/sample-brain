@@ -42,9 +42,9 @@ def test_playlist_viewport_does_not_use_panel_family_fill() -> None:
 
 
 def test_library_harmony_live_kit_remain_panel_surfaces() -> None:
-    """Unchanged surfaces: Library, Harmonic Matches, Live Kit stay panel fills."""
+    """#1248 gives only Library its own role; Harmony/Live Kit stay panel fills."""
     library = _snippet_after('objectName: "libraryPane"', 240)
-    assert "color: theme.surfacePanel" in library
+    assert "color: theme.surfaceLibrary" in library
 
     harmony = _snippet_after('objectName: "harmonyPane"', 500)
     assert "color: theme.surfacePanel" in harmony
@@ -138,7 +138,8 @@ def test_runtime_playlist_viewport_matches_calm_canvas_surface_root(tmp_path) ->
         assert library is not None and harmony is not None and live_kit is not None
         assert bottom is not None and browser_pane is not None
         panel = QColor(blood.surface)
-        assert QColor(library.property("color")).name() == panel.name()
+        library_surface = QColor(theme_core.theme_tokens_to_qml_semantics(blood)["surfaceLibrary"])
+        assert QColor(library.property("color")).name() == library_surface.name()
         assert QColor(harmony.property("color")).name() == panel.name()
         # #908: panel fill is on bottomRackPane; liveKitPane is a compat Item.
         assert QColor(bottom.property("color")).name() == panel.name()
