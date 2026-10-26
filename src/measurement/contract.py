@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
+import math
 from typing import Any, Mapping, Optional
 
 
@@ -16,8 +19,16 @@ class PrivacyClass(str, Enum):
 
 DOCUMENT_TYPE = "sample_brain.measurement_event"
 SCHEMA_VERSION = "1.0.0"
-SUPPORTED_EVENT_NAMES = frozenset({"pipeline.stage_finished", "match.query_finished"})
-SUPPORTED_DOMAINS = frozenset({"pipeline", "match"})
+SUPPORTED_EVENT_NAMES = frozenset(
+    {
+        "pipeline.stage_finished",
+        "match.query_finished",
+        "workbench.session_finished",
+        "rt.callback_stats",
+        "process.failure",
+    }
+)
+SUPPORTED_DOMAINS = frozenset({"pipeline", "match", "workbench", "rt", "eng"})
 SUPPORTED_STATUSES = frozenset({"ok", "error", "cancelled", "skipped"})
 
 STAGE_FINISHED_ALLOWED_PROPS = frozenset(
@@ -25,6 +36,28 @@ STAGE_FINISHED_ALLOWED_PROPS = frozenset(
 )
 STAGE_FINISHED_ALLOWED_STAGES = frozenset({"analyze"})
 MATCH_QUERY_FINISHED_ALLOWED_PROPS = frozenset({"wall_ms", "result_count"})
+WORKBENCH_SESSION_FINISHED_ALLOWED_PROPS = frozenset(
+    {"renderer", "duration_ms_bucket"}
+)
+WORKBENCH_RENDERERS = frozenset({"qml", "tk"})
+WORKBENCH_DURATION_BUCKETS = frozenset(
+    {"lt_1m", "1m_5m", "5m_15m", "15m_60m", "ge_60m"}
+)
+RT_CALLBACK_STATS_ALLOWED_PROPS = frozenset(
+    {"buffer_size", "callback_mean_us", "callback_p95_us", "xrun_count"}
+)
+PROCESS_FAILURE_ALLOWED_PROPS = frozenset({"component"})
+PROCESS_FAILURE_COMPONENTS = frozenset(
+    {
+        "startup",
+        "workbench",
+        "qml",
+        "python",
+        "native_audio",
+        "measurement",
+        "unknown",
+    }
+)
 
 FORBIDDEN_PROP_KEYS = frozenset(
     {
@@ -74,6 +107,22 @@ _PRIVATE_PATH = re.compile(
     r"(?:^[A-Za-z]:[\\/]|^\\\\|^/(?:home|Users|root|mnt|Volumes|tmp)/)",
     re.IGNORECASE,
 )
+
+# UTC ISO-8601 with exactly 3 fractional milliseconds and 'Z' suffix
+_UTC_MS_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+
+# App metadata allowed keys (documented only)
+_APP_ALLOWED_KEYS = frozenset({"app_version", "git_sha", "analyzer_version", "search_backend"})
+
+# reason_code: stable machine codes, starts with uppercase letter, alnum/underscore, max 63 chars
+_REASON_CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+
+# Git SHA: None or 7-40 hex characters (case-insensitive)
+_GIT_SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+# Safe token bounds: max 64 chars, no paths, no spaces, no equals
+_SAFE_TOKEN_MAX_LEN = 64
+_SAFE_TOKEN_FORBIDDEN = re.compile(r"[\s/\\=]")
 
 
 @dataclass(frozen=True)
@@ -125,11 +174,64 @@ def _privacy_ok(value: PrivacyClass | str) -> bool:
     return True
 
 
+def _export_safe(value: PrivacyClass | str) -> bool:
+    return value == PrivacyClass.EXPORT_SAFE or value == PrivacyClass.EXPORT_SAFE.value
+
+
+def _utc_ms_z_ok(value: str) -> bool:
+    if not _UTC_MS_Z.match(value):
+        return False
+    try:
+        dt = datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ")
+        if dt.tzinfo is not None or value[-1] != "Z":
+            return False
+    except ValueError:
+        return False
+    return True
+
+
+def _canonical_uuid4_ok(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError):
+        return False
+    return (
+        parsed.version == 4
+        and parsed.variant == uuid.RFC_4122
+        and str(parsed) == value
+    )
+
+
+def _safe_token_ok(value: Optional[str]) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    if not value:
+        return False
+    if len(value) > _SAFE_TOKEN_MAX_LEN:
+        return False
+    if _SAFE_TOKEN_FORBIDDEN.search(value):
+        return False
+    return True
+
+
 def _props_contain_path_leak(props: Mapping[str, Any]) -> bool:
     for value in props.values():
         if isinstance(value, str) and _PRIVATE_PATH.search(value):
             return True
     return False
+
+
+def _non_negative_number(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+    )
 
 
 def validate_event(event: MeasurementEvent) -> Optional[MeasurementEvent]:
@@ -141,24 +243,42 @@ def validate_event(event: MeasurementEvent) -> Optional[MeasurementEvent]:
             return None
         if event.event_name not in SUPPORTED_EVENT_NAMES:
             return None
-        if not isinstance(event.event_version, int) or event.event_version < 1:
+        if (
+            not isinstance(event.event_version, int)
+            or isinstance(event.event_version, bool)
+            or event.event_version != 1
+        ):
             return None
-        if not event.occurred_at or not isinstance(event.occurred_at, str):
+        if not _utc_ms_z_ok(event.occurred_at):
             return None
-        if not event.run_id or not isinstance(event.run_id, str):
+        if not _canonical_uuid4_ok(event.run_id):
             return None
-        if event.session_id is not None and not isinstance(event.session_id, str):
-            return None
+        if event.session_id is not None:
+            if not isinstance(event.session_id, str):
+                return None
+            if not _canonical_uuid4_ok(event.session_id):
+                return None
         if event.domain not in SUPPORTED_DOMAINS:
             return None
         if not _privacy_ok(event.privacy_class):
             return None
         if event.status not in SUPPORTED_STATUSES:
             return None
-        if event.reason_code is not None and not isinstance(event.reason_code, str):
-            return None
+        if event.reason_code is not None:
+            if not isinstance(event.reason_code, str):
+                return None
+            if not _REASON_CODE_PATTERN.match(event.reason_code):
+                return None
         if not isinstance(event.app, Mapping):
             return None
+        # App metadata keys must be documented; values must be safe tokens (or None)
+        for k, v in event.app.items():
+            if k not in _APP_ALLOWED_KEYS:
+                return None
+            if not _safe_token_ok(v):
+                return None
+            if k == "git_sha" and v is not None and not _GIT_SHA_PATTERN.match(v):
+                return None
         if not isinstance(event.props, Mapping):
             return None
 
@@ -194,6 +314,48 @@ def validate_event(event: MeasurementEvent) -> Optional[MeasurementEvent]:
                     return None
                 if value < 0:
                     return None
+        elif event.event_name == "workbench.session_finished":
+            if event.domain != "workbench" or not _export_safe(event.privacy_class):
+                return None
+            if event.session_id is None:
+                return None
+            if prop_keys != WORKBENCH_SESSION_FINISHED_ALLOWED_PROPS:
+                return None
+            if event.props.get("renderer") not in WORKBENCH_RENDERERS:
+                return None
+            if event.props.get("duration_ms_bucket") not in WORKBENCH_DURATION_BUCKETS:
+                return None
+        elif event.event_name == "rt.callback_stats":
+            if event.domain != "rt" or not _export_safe(event.privacy_class):
+                return None
+            if prop_keys != RT_CALLBACK_STATS_ALLOWED_PROPS:
+                return None
+            buffer_size = event.props.get("buffer_size")
+            if (
+                not isinstance(buffer_size, int)
+                or isinstance(buffer_size, bool)
+                or buffer_size <= 0
+            ):
+                return None
+            xrun_count = event.props.get("xrun_count")
+            if (
+                not isinstance(xrun_count, int)
+                or isinstance(xrun_count, bool)
+                or xrun_count < 0
+            ):
+                return None
+            for key in ("callback_mean_us", "callback_p95_us"):
+                if not _non_negative_number(event.props.get(key)):
+                    return None
+        elif event.event_name == "process.failure":
+            if event.domain != "eng" or not _export_safe(event.privacy_class):
+                return None
+            if event.status != "error" or event.reason_code is None:
+                return None
+            if prop_keys != PROCESS_FAILURE_ALLOWED_PROPS:
+                return None
+            if event.props.get("component") not in PROCESS_FAILURE_COMPONENTS:
+                return None
         if _props_contain_path_leak(event.props):
             return None
         return event

@@ -61,6 +61,163 @@ def test_valid_envelope_accepted() -> None:
     assert validate_event(event) is event
 
 
+@pytest.mark.parametrize(
+    "run_id",
+    [
+        "550e8400-e29b-11d1-a716-446655440000",
+        "550e8400e29b41d4a716446655440000",
+        "550E8400-E29B-41D4-A716-446655440000",
+        "550e8400-e29b-41d4-c716-446655440000",
+        "not-a-uuid",
+    ],
+)
+def test_run_id_requires_canonical_uuid_v4(run_id: str) -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(**{**event.__dict__, "run_id": run_id})
+    assert validate_event(bad) is None
+
+
+@pytest.mark.parametrize(
+    "session_id",
+    [
+        "550e8400-e29b-11d1-a716-446655440000",
+        "550e8400e29b41d4a716446655440000",
+        "550E8400-E29B-41D4-A716-446655440000",
+        "550e8400-e29b-41d4-c716-446655440000",
+        "not-a-uuid",
+    ],
+)
+def test_session_id_requires_canonical_uuid_v4(session_id: str) -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(**{**event.__dict__, "session_id": session_id})
+    assert validate_event(bad) is None
+
+
+def test_null_session_id_accepted() -> None:
+    event = _valid_stage_finished()
+    assert event.session_id is None
+    assert validate_event(event) is event
+
+
+@pytest.mark.parametrize("variant", ["8", "9", "a", "b"])
+def test_uuid_v4_rfc_4122_variants_are_accepted(variant: str) -> None:
+    event = _valid_stage_finished()
+    run_id = f"550e8400-e29b-41d4-{variant}716-446655440000"
+    session_id = f"550e8400-e29b-41d4-{variant}716-446655440001"
+    candidate = event.__class__(
+        **{**event.__dict__, "run_id": run_id, "session_id": session_id}
+    )
+    assert validate_event(candidate) is candidate
+
+
+@pytest.mark.parametrize(
+    "occurred_at",
+    [
+        "2026-09-30T20:15:00Z",
+        "2026-09-30T20:15:00.123+00:00",
+        "2026-09-30T20:15:00.123456Z",
+        "2026-13-30T20:15:00.123Z",
+        "2026-09-30T20:15:00.123z",
+        "not-a-timestamp",
+    ],
+)
+def test_occurred_at_requires_utc_millisecond_timestamp(occurred_at: str) -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(**{**event.__dict__, "occurred_at": occurred_at})
+    assert validate_event(bad) is None
+
+
+def test_app_accepts_only_documented_keys() -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(
+        **{
+            **event.__dict__,
+            "app": {**event.app, "username": "operator"},
+        }
+    )
+    assert validate_event(bad) is None
+
+
+def test_app_accepts_optional_documented_keys() -> None:
+    event = _valid_stage_finished()
+    candidate = event.__class__(**{**event.__dict__, "app": {"app_version": "0.1.0"}})
+    assert validate_event(candidate) is candidate
+
+
+@pytest.mark.parametrize(
+    "git_sha",
+    ["abc123", "g123456", "a" * 41, "abc defg", "0", "0" * 41],
+)
+def test_app_git_sha_requires_short_or_full_hex(git_sha: str) -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(
+        **{**event.__dict__, "app": {**event.app, "git_sha": git_sha}}
+    )
+    assert validate_event(bad) is None
+
+
+@pytest.mark.parametrize("git_sha", [None, "abc1234", "A" * 40])
+def test_app_git_sha_accepts_none_or_hex(git_sha: str | None) -> None:
+    event = _valid_stage_finished()
+    candidate = event.__class__(
+        **{**event.__dict__, "app": {**event.app, "git_sha": git_sha}}
+    )
+    assert validate_event(candidate) is candidate
+
+
+@pytest.mark.parametrize(
+    "app_version",
+    ["two words", "C:/Users/operator/private", "a" * 65, "token=secret", 1],
+)
+def test_app_values_require_bounded_safe_tokens(app_version: object) -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(
+        **{**event.__dict__, "app": {**event.app, "app_version": app_version}}
+    )
+    assert validate_event(bad) is None
+
+
+@pytest.mark.parametrize("key", ["app_version", "analyzer_version", "search_backend"])
+def test_non_null_app_tokens_must_not_be_empty(key: str) -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(**{**event.__dict__, "app": {**event.app, key: ""}})
+    assert validate_event(bad) is None
+
+
+@pytest.mark.parametrize(
+    "reason_code",
+    [
+        "audio device unavailable",
+        "AUDIO-DEVICE-UNAVAILABLE",
+        "C:/Users/operator/private",
+        "A" * 65,
+        "AUDIO_DEVICE_UNAVAILABLE!",
+    ],
+)
+def test_reason_code_requires_stable_machine_code(reason_code: str) -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(**{**event.__dict__, "reason_code": reason_code})
+    assert validate_event(bad) is None
+
+
+@pytest.mark.parametrize("reason_code", [None, "AUDIO_DEVICE_UNAVAILABLE", "FAILED"])
+def test_reason_code_accepts_none_or_stable_machine_code(reason_code: str | None) -> None:
+    event = _valid_stage_finished()
+    candidate = event.__class__(**{**event.__dict__, "reason_code": reason_code})
+    assert validate_event(candidate) is candidate
+
+
+@pytest.mark.parametrize("event_version", [True, 2, 99])
+def test_event_version_is_exactly_v1(event_version: object) -> None:
+    event = _valid_stage_finished()
+    bad = event.__class__(**{**event.__dict__, "event_version": event_version})
+    assert validate_event(bad) is None
+
+
+def test_validate_event_never_raises_for_malformed_input() -> None:
+    assert validate_event(object()) is None
+
+
 def test_invalid_document_type_rejected() -> None:
     event = _valid_stage_finished()
     bad = event.__class__(**{**event.__dict__, "document_type": "not_measurement"})

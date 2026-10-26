@@ -145,10 +145,148 @@ def emit_match_query_finished(
     bus.flush()
 
 
+def emit_workbench_session_finished(
+    *,
+    bus: MeasurementBus,
+    renderer: str,
+    duration_ms_bucket: str,
+    status: str = "ok",
+    reason_code: Optional[str] = None,
+    run_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    app: Optional[Mapping[str, Any]] = None,
+) -> None:
+    try:
+        event = MeasurementEvent(
+            document_type=DOCUMENT_TYPE,
+            schema_version=SCHEMA_VERSION,
+            event_name="workbench.session_finished",
+            event_version=1,
+            occurred_at=datetime.now(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            run_id=run_id or str(uuid.uuid4()),
+            session_id=session_id,
+            domain="workbench",
+            privacy_class=PrivacyClass.EXPORT_SAFE,
+            status=status,
+            reason_code=reason_code,
+            app=dict(
+                app
+                or {
+                    "app_version": "0.1.0",
+                    "git_sha": None,
+                    "analyzer_version": None,
+                    "search_backend": None,
+                }
+            ),
+            props={
+                "renderer": renderer,
+                "duration_ms_bucket": duration_ms_bucket,
+            },
+        )
+        bus.emit(event)
+        bus.flush()
+    except Exception:
+        return
+
+
+def emit_rt_callback_stats(
+    *,
+    bus: MeasurementBus,
+    buffer_size: int,
+    callback_mean_us: float,
+    callback_p95_us: float,
+    xrun_count: int,
+    status: str = "ok",
+    reason_code: Optional[str] = None,
+    run_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    app: Optional[Mapping[str, Any]] = None,
+) -> None:
+    try:
+        event = MeasurementEvent(
+            document_type=DOCUMENT_TYPE,
+            schema_version=SCHEMA_VERSION,
+            event_name="rt.callback_stats",
+            event_version=1,
+            occurred_at=datetime.now(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            run_id=run_id or str(uuid.uuid4()),
+            session_id=session_id,
+            domain="rt",
+            privacy_class=PrivacyClass.EXPORT_SAFE,
+            status=status,
+            reason_code=reason_code,
+            app=dict(
+                app
+                or {
+                    "app_version": "0.1.0",
+                    "git_sha": None,
+                    "analyzer_version": None,
+                    "search_backend": None,
+                }
+            ),
+            props={
+                "buffer_size": buffer_size,
+                "callback_mean_us": callback_mean_us,
+                "callback_p95_us": callback_p95_us,
+                "xrun_count": xrun_count,
+            },
+        )
+        bus.emit(event)
+        bus.flush()
+    except Exception:
+        return
+
+
+def emit_process_failure(
+    *,
+    bus: MeasurementBus,
+    component: str,
+    reason_code: str,
+    run_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    app: Optional[Mapping[str, Any]] = None,
+) -> None:
+    try:
+        event = MeasurementEvent(
+            document_type=DOCUMENT_TYPE,
+            schema_version=SCHEMA_VERSION,
+            event_name="process.failure",
+            event_version=1,
+            occurred_at=datetime.now(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            run_id=run_id or str(uuid.uuid4()),
+            session_id=session_id,
+            domain="eng",
+            privacy_class=PrivacyClass.EXPORT_SAFE,
+            status="error",
+            reason_code=reason_code,
+            app=dict(
+                app
+                or {
+                    "app_version": "0.1.0",
+                    "git_sha": None,
+                    "analyzer_version": None,
+                    "search_backend": None,
+                }
+            ),
+            props={"component": component},
+        )
+        bus.emit(event)
+        bus.flush()
+    except Exception:
+        return
+
+
 def make_match_query_finished_observer(
     *,
     config: Optional[Mapping[str, Any]] = None,
     env: Optional[Mapping[str, str]] = None,
+    run_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> tuple[Optional[Any], Optional[str]]:
     """Return ``(observer|None, session_id|None)`` for Workbench composition.
@@ -161,7 +299,8 @@ def make_match_query_finished_observer(
         if mode is MeasurementMode.OFF:
             return None, None
         bus = build_bus(config=config, env=env)
-        resolved_session = session_id or str(uuid.uuid4())
+        resolved_run = run_id if run_id is not None else str(uuid.uuid4())
+        resolved_session = session_id if session_id is not None else str(uuid.uuid4())
 
         def _observer(
             *,
@@ -176,7 +315,7 @@ def make_match_query_finished_observer(
                     result_count=max(0, int(result_count)),
                     status=status,
                     session_id=resolved_session,
-                    run_id=str(uuid.uuid4()),
+                    run_id=resolved_run,
                 )
             except Exception:
                 return

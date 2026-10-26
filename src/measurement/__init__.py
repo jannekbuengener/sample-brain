@@ -19,6 +19,9 @@ from .contract import (
 from .emit import (
     emit_match_query_finished,
     emit_pipeline_stage_finished,
+    emit_process_failure,
+    emit_rt_callback_stats,
+    emit_workbench_session_finished,
     make_match_query_finished_observer,
     record_analyze_stage_safe,
 )
@@ -54,6 +57,9 @@ __all__ = [
     "build_stage_finished_report",
     "emit_match_query_finished",
     "emit_pipeline_stage_finished",
+    "emit_process_failure",
+    "emit_rt_callback_stats",
+    "emit_workbench_session_finished",
     "format_match_report_text",
     "format_report_text",
     "make_match_query_finished_observer",

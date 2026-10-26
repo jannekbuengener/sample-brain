@@ -121,9 +121,9 @@ def test_one_valid_stage_finished(tmp_path: Path) -> None:
 def test_multiple_analyze_events_aggregates(tmp_path: Path) -> None:
     db = tmp_path / "measurement.db"
     sink = SidecarSqliteSink(db)
-    sink.write(_stage_event(run_id="r1", wall_ms=10, items_ok=1, status="ok"))
-    sink.write(_stage_event(run_id="r2", wall_ms=30, items_ok=2, items_fail=1, status="ok"))
-    sink.write(_stage_event(run_id="r3", wall_ms=50, items_ok=0, status="error"))
+    sink.write(_stage_event(run_id="550e8400-e29b-41d4-a716-446655440001", wall_ms=10, items_ok=1, status="ok"))
+    sink.write(_stage_event(run_id="550e8400-e29b-41d4-a716-446655440002", wall_ms=30, items_ok=2, items_fail=1, status="ok"))
+    sink.write(_stage_event(run_id="550e8400-e29b-41d4-a716-446655440003", wall_ms=50, items_ok=0, status="error"))
     sink.flush()
     report = build_stage_finished_report(db)
     assert report.events == 3
@@ -142,27 +142,27 @@ def test_version_grouping(tmp_path: Path) -> None:
     db = tmp_path / "measurement.db"
     sink = SidecarSqliteSink(db)
     sink.write(
-        _stage_event(run_id="a", app_version="0.1.0", analyzer_version="a1", git_sha="g1")
+        _stage_event(run_id="550e8400-e29b-41d4-a716-446655440001", app_version="0.1.0", analyzer_version="a1", git_sha="abc1234")
     )
     sink.write(
-        _stage_event(run_id="b", app_version="0.1.0", analyzer_version="a1", git_sha="g1")
+        _stage_event(run_id="550e8400-e29b-41d4-a716-446655440002", app_version="0.1.0", analyzer_version="a1", git_sha="abc1234")
     )
     sink.write(
-        _stage_event(run_id="c", app_version="0.2.0", analyzer_version="a2", git_sha="g2")
+        _stage_event(run_id="550e8400-e29b-41d4-a716-446655440003", app_version="0.2.0", analyzer_version="a2", git_sha="def5678")
     )
     sink.flush()
     report = build_stage_finished_report(db)
     versions = report.by_app
     assert len(versions) == 2
     keys = {(v["app_version"], v["analyzer_version"], v["git_sha"]) for v in versions}
-    assert ("0.1.0", "a1", "g1") in keys
-    assert ("0.2.0", "a2", "g2") in keys
+    assert ("0.1.0", "a1", "abc1234") in keys
+    assert ("0.2.0", "a2", "def5678") in keys
 
 
 def test_malformed_payload_counted(tmp_path: Path) -> None:
     db = tmp_path / "measurement.db"
     sink = SidecarSqliteSink(db)
-    sink.write(_stage_event(run_id="good", wall_ms=11))
+    sink.write(_stage_event(run_id="550e8400-e29b-41d4-a716-446655440000", wall_ms=11))
     sink.flush()
     with sqlite3.connect(db) as conn:
         conn.execute(
@@ -192,7 +192,7 @@ def test_malformed_payload_counted(tmp_path: Path) -> None:
 def test_unknown_event_skipped(tmp_path: Path) -> None:
     db = tmp_path / "measurement.db"
     sink = SidecarSqliteSink(db)
-    sink.write(_stage_event(run_id="good", wall_ms=9))
+    sink.write(_stage_event(run_id="550e8400-e29b-41d4-a716-446655440000", wall_ms=9))
     sink.flush()
     with sqlite3.connect(db) as conn:
         conn.execute(
@@ -234,7 +234,7 @@ def test_privacy_no_forbidden_fields_in_output(tmp_path: Path) -> None:
 def test_reader_is_read_only(tmp_path: Path) -> None:
     db = tmp_path / "measurement.db"
     sink = SidecarSqliteSink(db)
-    sink.write(_stage_event(run_id="r1"))
+    sink.write(_stage_event(run_id="550e8400-e29b-41d4-a716-446655440000"))
     sink.flush()
     before = db.read_bytes()
     mtime = db.stat().st_mtime_ns
