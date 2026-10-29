@@ -20,6 +20,13 @@ LIVE_KIT_VISIBILITY_PREF_KEY = "live_kit_visible"
 _LIVE_KIT_VISIBILITY_FILENAME = "live_kit_edit_visibility.json"
 _VISIBILITY_SCHEMA_VERSION = 1
 
+# #1207 Kit HUD presentation ownership (not musical kit authority).
+LIVE_KIT_HUD_MODE_HIDDEN = "hidden"
+LIVE_KIT_HUD_MODE_TRANSIENT = "transient"
+LIVE_KIT_HUD_MODE_MANUAL = "manual"
+# Starting point from issue direction (~8–10s); timer owns presentation only.
+LIVE_KIT_HUD_TRANSIENT_MS = 9000
+
 
 def visible_live_kit_slot_keys(
     *,
@@ -125,6 +132,10 @@ def try_save_live_kit_visibility_preference(
 
 
 __all__ = [
+    "LIVE_KIT_HUD_MODE_HIDDEN",
+    "LIVE_KIT_HUD_MODE_MANUAL",
+    "LIVE_KIT_HUD_MODE_TRANSIENT",
+    "LIVE_KIT_HUD_TRANSIENT_MS",
     "LIVE_KIT_VISIBILITY_PREF_KEY",
     "edit_docking_materialization_for_live_kit",
     "live_kit_visibility_preference_path",

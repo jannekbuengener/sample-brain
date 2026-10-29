@@ -304,10 +304,11 @@ def test_runtime_browser_collapse_gates_reveal_control_and_open_state(
 
 
 def test_closed_live_kit_has_no_phantom_bottom_geometry():
-    pane = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:4000]
-    assert "height: bottomExpanded" in pane
+    pane = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:4500]
+    assert "height: kitHudExpanded" in pane or "height: bottomExpanded" in pane
     assert ": 0" in pane
-    assert "bottomExpanded" in pane
+    assert "kitHudExpanded" in pane
+    assert "bottomExpanded" in pane  # compat alias
     adapter = _adapter()
     adapter.apply_live_kit_visibility_preference()
     assert adapter.live_kit_is_visible() is False

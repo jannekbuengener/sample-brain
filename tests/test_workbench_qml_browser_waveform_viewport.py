@@ -74,7 +74,7 @@ def test_browser_virtualization_and_interaction_contracts_stay_green():
     assert 'objectName: "browserSearch"' in QML_SOURCE
     assert (
         'else if (event.key === Qt.Key_Escape) '
-        '{ window.interaction.stopPreview(); event.accepted = true }'
+        '{ window.interaction.escapeLiveKitContext(); event.accepted = true }'
     ) in browser
 
 

@@ -52,12 +52,14 @@ def test_first_successful_slot_assignment_auto_opens_once_and_closes_harmony_non
 
     assert state.assignment_for("Kick + Bass", "Kick") is not None
     assert adapter.live_kit_drawer_open is True
+    assert adapter.live_kit_hud_mode == "transient"
     assert adapter.live_kit_auto_disclosure_consumed is True
     assert adapter.harmonic_match_open is False
     assert adapter.view_model.harmony_rows is preserved_rows
 
 
 def test_later_assignment_respects_manual_drawer_close_and_manually_reopened_harmony():
+    """#1207: after explicit close, a later successful Add shows transient HUD again."""
     adapter, state = _adapter()
     adapter.request_add_to_kit(0)
     assert adapter.assign_live_kit_slot("Kick + Bass", "Kick") is True
@@ -68,8 +70,9 @@ def test_later_assignment_respects_manual_drawer_close_and_manually_reopened_har
     assert adapter.assign_live_kit_slot("Kick + Bass", "Bass") is True
 
     assert state.assignment_for("Kick + Bass", "Bass") is not None
-    assert adapter.live_kit_drawer_open is False
-    assert adapter.harmonic_match_open is True
+    assert adapter.live_kit_drawer_open is True
+    assert adapter.live_kit_hud_mode == "transient"
+    assert adapter.harmonic_match_open is False
 
 
 @pytest.mark.parametrize(
@@ -93,11 +96,12 @@ def test_drawer_height_grows_per_real_row_and_caps_with_internal_overflow(
 
 
 def test_qml_declares_browser_scoped_overlay_and_does_not_keep_the_bottom_band():
+    """#1207: upper-right Kit HUD overlay; no Browser bottom-margin reservation."""
     assert 'objectName: "liveKitOverlayDrawer"' in QML_SOURCE
     assert "property bool liveKitDrawerOpen: window.interaction.liveKitDrawerOpen" in QML_SOURCE
     assert "x: upperWorkspaceRow.x + browserPane.x" in QML_SOURCE
-    assert "width: browserPane.width" in QML_SOURCE
-    assert "bottomMargin: liveKitOverlayDrawer.visible ? liveKitOverlayDrawer.height : 0" in QML_SOURCE
+    assert "kitHudMaxWidth" in QML_SOURCE
+    assert "bottomMargin: liveKitOverlayDrawer.visible ? liveKitOverlayDrawer.height : 0" not in QML_SOURCE
     upper_workspace_start = QML_SOURCE.index('id: upperWorkspaceRow')
     assert "height: parent.height" in QML_SOURCE[upper_workspace_start : upper_workspace_start + 500]
     assert "bottomRackHeightRatio, 0.24" not in QML_SOURCE

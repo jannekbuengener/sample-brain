@@ -103,7 +103,7 @@ def test_v7_touched_qml_style_has_no_foreign_or_unapproved_fallback_colors() -> 
 
 
 def test_v7_background_slice_keeps_current_single_workspace_pane_geometry_contracts() -> None:
-    """#954 supersedes only the historical permanent bottom-band geometry."""
+    """#954/#1207: Kit is overlay HUD, not a permanent bottom-band pane."""
     library = _qml_block("libraryPane")
     browser = _qml_block("browserPane")
     harmony = _qml_block("harmonyPane")
@@ -116,11 +116,9 @@ def test_v7_background_slice_keeps_current_single_workspace_pane_geometry_contra
     assert "width: layoutModel.harmonyWidth" in harmony
     assert "height: parent.height" in harmony
     assert "x: upperWorkspaceRow.x + browserPane.x" in bottom_rack
-    assert "y: parent.height - height" in bottom_rack
-    assert "width: browserPane.width" in bottom_rack
-    # #1077: auto row height or clamped user height; still capped at 40%.
-    assert "maximumHeight: Math.round(parent.height * 0.40)" in bottom_rack
+    assert "y: kitHudMargin" in bottom_rack
+    assert "kitHudMaxWidth" in bottom_rack
     assert "autoHeight: Math.min(requestedHeight, maximumHeight)" in bottom_rack
     assert "userHeightPx: window.interaction.liveKitUserHeightPx" in bottom_rack
-    assert "height: bottomExpanded" in bottom_rack
+    assert "height: kitHudExpanded" in bottom_rack or "height: bottomExpanded" in bottom_rack
     assert "bottomRackHeightRatio" not in bottom_rack

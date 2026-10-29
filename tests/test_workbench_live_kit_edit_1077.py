@@ -700,6 +700,7 @@ def test_toggle_drawer_remains_functional_when_preference_write_raises(
 def test_assign_auto_disclosure_persists_fail_soft(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """#1207: successful Add opens transient HUD; preference write is not required."""
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     adapter, composition, kit_state = _production_composed_adapter(
         monkeypatch, active_source=True
@@ -718,6 +719,8 @@ def test_assign_auto_disclosure_persists_fail_soft(
     assert adapter.assign_live_kit_slot("Kick + Bass", "Kick") is True
     assert adapter.view_model.live_kit_materialized is True
     assert adapter.live_kit_is_visible() is True
+    assert adapter.live_kit_hud_mode == "transient"
+    assert adapter._live_kit_visibility_desired is not True
     assert kit_state.assignment_for("Kick + Bass", "Kick") is not None
     assert composition.live_kit_revealed is True
 
@@ -914,6 +917,7 @@ def test_step_sequencer_nav_is_not_a_top_level_control():
 def test_auto_disclosure_updates_session_visibility_desired(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """#1207: transient Add must not claim manual reopen / restore authority."""
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     save_live_kit_visibility_preference(False, state_dir=tmp_path)
     adapter, composition, _kit = _production_composed_adapter(
@@ -924,7 +928,8 @@ def test_auto_disclosure_updates_session_visibility_desired(
     adapter._pending_live_kit_row = _row("first.wav")
     adapter._live_kit_auto_disclosure_consumed = False
     assert adapter.assign_live_kit_slot("Kick + Bass", "Kick") is True
-    assert adapter._live_kit_visibility_desired is True
+    assert adapter.live_kit_hud_mode == "transient"
+    assert adapter._live_kit_visibility_desired is not True
     composition.clear_live_kit_disclosure()
     adapter.suspend_live_kit_for_analysis()
     adapter.view_model.set_workspace_materialization(
@@ -933,8 +938,8 @@ def test_auto_disclosure_updates_session_visibility_desired(
         browser_materialized=True,
         live_kit_materialized=False,
     )
-    assert adapter.restore_live_kit_after_active_source() is True
-    assert adapter.live_kit_is_visible() is True
+    assert adapter.restore_live_kit_after_active_source() is False
+    assert adapter.live_kit_is_visible() is False
 
 
 def test_session_close_survives_stale_preference_on_source_restore(
