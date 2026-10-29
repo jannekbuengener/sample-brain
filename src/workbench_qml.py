@@ -4979,6 +4979,15 @@ ApplicationWindow {
                             }
                         }
                     }
+                    // #1281: settle timer lives on the pane (not inside browserList) so playhead
+                    // contracts stay free of per-list Timer clutter; presentation-only.
+                    Timer {
+                        id: browserHoverSettleTimer
+                        objectName: "browserHoverSettleTimer"
+                        interval: 120
+                        repeat: false
+                        onTriggered: browser.hoverScrollSuppressing = false
+                    }
                     // All Samples list-viewport reuses Clean-Start canvas fill (theme.surfaceRoot).
                     // Outer browserPane chrome stays surfaceBrowser; Library/Harmony/Live Kit unchanged.
                     Rectangle {
@@ -4988,6 +4997,19 @@ ApplicationWindow {
                         Layout.fillHeight: true
                         color: theme.surfaceRoot
                         ListView { id: browser; objectName: "browserList"; anchors.fill: parent; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
+                        // #1281: presentation-only waveform hover (not product state).
+                        property int hoveredWaveformIndex: -1
+                        property bool hoverScrollSuppressing: false
+                        readonly property bool hoverGeometryAllowed: !window.screenData.brandReducedMotion
+                        readonly property real waveformHoverScalePrimary: 1.024
+                        readonly property real waveformHoverScaleNeighbour: 1.007
+                        property int hoverSettleMs: 120
+                        function setHoveredWaveform(i) { hoveredWaveformIndex = i }
+                        function clearHoveredWaveform(i) { if (hoveredWaveformIndex === i) hoveredWaveformIndex = -1 }
+                        onMovementStarted: { hoverScrollSuppressing = true; browserHoverSettleTimer.stop() }
+                        onMovementEnded: browserHoverSettleTimer.restart()
+                        onFlickStarted: { hoverScrollSuppressing = true; browserHoverSettleTimer.stop() }
+                        onFlickEnded: browserHoverSettleTimer.restart()
                         function requestVisibleWaveforms() {
                             if (rowHeight <= 0 || height <= 0)
                                 return
@@ -5011,7 +5033,9 @@ ApplicationWindow {
                                 }
                             }
                         }
-                        delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
+                        delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : "transparent"; border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
+                            // #1281: freeze logical index for pool clear (index may change on reuse).
+                            property int logicalIndex: index
                             Component.onCompleted: window.browserDelegateCreations += 1
                             property string outboundUrl: window.interaction.outboundFileUrl(index)
                             // #1073: internal Sample payload from the frozen #1072 descriptor.
@@ -5091,8 +5115,15 @@ ApplicationWindow {
                                     window.interaction.selectRow(index)
                                 }
                                 // #1210: stable row-family hint (no row identity); leave restores selection context.
-                                onEntered: contextHintState.reportHover("browser.sample_row")
-                                onExited: contextHintState.clearHover("browser.sample_row")
+                                // #1281: row pointer drives waveform-hover index only (presentation).
+                                onEntered: {
+                                    contextHintState.reportHover("browser.sample_row")
+                                    browser.setHoveredWaveform(index)
+                                }
+                                onExited: {
+                                    contextHintState.clearHover("browser.sample_row")
+                                    browser.clearHoveredWaveform(index)
+                                }
                             }
                             ListView.onPooled: {
                                 // Virtualized reuse must not keep a stale hover owner.
@@ -5102,17 +5133,68 @@ ApplicationWindow {
                                     contextHintState.clearHover("browser.audition")
                                 if (favoriteMouseArea.containsMouse)
                                     contextHintState.clearHover("browser.favorite")
+                                browser.clearHoveredWaveform(browserRow.logicalIndex)
+                            }
+                            ListView.onReused: {
+                                browserRow.logicalIndex = index
                             }
                             RowLayout { id: rowBody; anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
                                 Item { id: waveformSurface; objectName: "browserWaveformSurface"; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
+                                    // #1281: transform/presentation only — layout height stays densityWaveformHeight.
+                                    property int rowIndex: index
+                                    readonly property bool isPrimaryHover: browser.hoveredWaveformIndex === index
+                                    readonly property bool isNeighbourHover: browser.hoveredWaveformIndex >= 0 && Math.abs(index - browser.hoveredWaveformIndex) === 1
+                                    readonly property string waveformHoverRole: isPrimaryHover ? "primary" : (isNeighbourHover ? "neighbour" : "none")
+                                    readonly property bool waveformHoverLuminanceActive: isPrimaryHover || isNeighbourHover
+                                    readonly property real waveformHoverScale: {
+                                        if (!isPrimaryHover && !isNeighbourHover)
+                                            return 1.0
+                                        if (browser.hoverScrollSuppressing || !browser.hoverGeometryAllowed)
+                                            return 1.0
+                                        return isPrimaryHover ? browser.waveformHoverScalePrimary : browser.waveformHoverScaleNeighbour
+                                    }
+                                    readonly property real waveformHoverLiftY: {
+                                        if (waveformHoverScale === 1.0)
+                                            return 0
+                                        return isPrimaryHover ? -2 : -1
+                                    }
+                                    transform: [
+                                        Scale {
+                                            origin.x: waveformSurface.width / 2
+                                            origin.y: waveformSurface.height / 2
+                                            xScale: waveformSurface.waveformHoverScale
+                                            yScale: waveformSurface.waveformHoverScale
+                                        },
+                                        Translate { y: waveformSurface.waveformHoverLiftY }
+                                    ]
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 5
+                                        z: -1
+                                        visible: waveformSurface.waveformHoverLuminanceActive && !browser.hoverScrollSuppressing
+                                        color: theme.hoverSurface
+                                        opacity: waveformSurface.isPrimaryHover ? 0.55 : 0.28
+                                    }
                                     Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
                                         property bool waveformSelected: index === window.screenData.selectedBrowserIndex
+                                        property string hoverRole: waveformSurface.waveformHoverRole
+                                        property bool scrollQuiet: browser.hoverScrollSuppressing
                                         onEnvelopeChanged: requestPaint()
                                         onWaveformSelectedChanged: requestPaint()
+                                        onHoverRoleChanged: requestPaint()
+                                        onScrollQuietChanged: requestPaint()
                                         onPaint: {
                                             var context = getContext("2d")
                                             context.clearRect(0, 0, width, height)
-                                            context.strokeStyle = waveformSelected ? theme.waveformActive : theme.waveformDefault
+                                            // Keep selected ternary for paint contracts; hover only retints non-selected.
+                                            var stroke = waveformSelected ? theme.waveformActive : theme.waveformDefault
+                                            if (!waveformSelected && hoverRole === "primary" && !scrollQuiet)
+                                                stroke = theme.textSecondary
+                                            else if (!waveformSelected && hoverRole === "neighbour" && !scrollQuiet)
+                                                stroke = theme.textMuted
+                                            else if (!waveformSelected && (hoverRole === "primary" || hoverRole === "neighbour"))
+                                                stroke = theme.waveformDefault
+                                            context.strokeStyle = stroke
                                             context.lineWidth = 1.2
                                             context.beginPath()
                                             var points = envelope || []
@@ -5209,6 +5291,34 @@ ApplicationWindow {
                             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
                         }
                     }
+                        // #1281: short dark edge immersion on sample viewport only (not search/header).
+                        // Stacked surfaceRoot bands approximate the MagicPath edge mask (no shader path).
+                        Item {
+                            id: browserEdgeImmersionTop
+                            objectName: "browserEdgeImmersionTop"
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            height: 32
+                            z: 20
+                            enabled: false
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 10; color: theme.surfaceRoot; opacity: 0.92 }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.topMargin: 10; height: 10; color: theme.surfaceRoot; opacity: 0.55 }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.topMargin: 20; height: 12; color: theme.surfaceRoot; opacity: 0.22 }
+                        }
+                        Item {
+                            id: browserEdgeImmersionBottom
+                            objectName: "browserEdgeImmersionBottom"
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: 32
+                            z: 20
+                            enabled: false
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 20; height: 12; color: theme.surfaceRoot; opacity: 0.22 }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 10; height: 10; color: theme.surfaceRoot; opacity: 0.55 }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 10; color: theme.surfaceRoot; opacity: 0.92 }
+                        }
                     }
                 }
             }

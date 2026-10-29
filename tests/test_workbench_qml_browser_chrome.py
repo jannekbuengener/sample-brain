@@ -196,19 +196,25 @@ def test_browser_density_waveform_and_divider_invariants():
 
 
 def test_browser_alternating_row_shading_preserves_state_priority():
-    """#781 + playlist workspace surface: selection > hover > transparent base.
+    """#781 + #1281: selection > transparent base; hover is waveform-only.
 
     Odd/even panel zebra was visually identical to the old browserPane fill.
     With the list-viewport on theme.surfaceRoot (Clean-Start canvas reuse),
     opaque odd-row panel fills would invent new striping — keep normal rows
     transparent so the reused workspace surface remains visible and uniform.
+    #1281 cancels full-row hover card elevation; ordinary hover lives on the
+    waveform presentation path only.
     """
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
     expected = (
         'color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface '
-        ': (rowSelection.containsMouse ? theme.surfaceElevated : "transparent")'
+        ': "transparent"'
     )
     assert expected in delegate
+    assert (
+        'rowSelection.containsMouse ? theme.surfaceElevated : "transparent"'
+        not in delegate
+    )
     assert 'index % 2 === 1 ? theme.surfacePanel' not in delegate
     assert "reuseItems: true" in QML_SOURCE
 
@@ -630,9 +636,17 @@ def test_browser_column_resize_reuses_shared_header_row_geometry():
     assert "contextAddToKit" in QML_SOURCE
     # Horizontal row divider remains (#781 / density); base row fill is transparent
     # so the playlist workspace surface (surfaceRoot) stays visible.
+    # #1281: ordinary hover is waveform-only — no full-row elevated card fill.
     delegate = _browser_delegate_full(QML_SOURCE)
     assert "height: window.densityDividerHeight" in delegate
-    assert 'rowSelection.containsMouse ? theme.surfaceElevated : "transparent"' in delegate
+    assert (
+        'rowSelection.containsMouse ? theme.surfaceElevated : "transparent"'
+        not in delegate
+    )
+    assert (
+        'color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface '
+        ': "transparent"'
+    ) in delegate
     assert 'index % 2 === 1 ? theme.surfacePanel' not in QML_SOURCE
 
 

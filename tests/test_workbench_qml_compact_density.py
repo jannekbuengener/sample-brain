@@ -19,7 +19,7 @@ from src.workbench_qml import QML_SOURCE
 
 BROWSER_ROW_DELEGATE_MARKER = "delegate: Rectangle { id: browserRow"
 HARMONIC_LIST_MARKER = 'objectName: "harmonicMatchList"'
-BROWSER_ROW_DELEGATE_SPAN = 20000  # #1210 hover/pool wiring grows the delegate prefix
+BROWSER_ROW_DELEGATE_SPAN = 28000  # #1210/#1281 hover/pool/waveform presentation grows the delegate
 HARMONIC_LIST_SPAN = 12000
 _SHARED_DENSITY_ROLES = (
     "densityRowHeight",
@@ -126,7 +126,7 @@ def test_interaction_contracts_preserved_under_compact_density():
     assert 'objectName: "browserSearch"' in QML_SOURCE
     # Keyboard nav is owned by the browser ListView, not the search field.
     # Span covers viewport waveform hooks + Keys handlers.
-    browser_keys = _snippet(QML_SOURCE, 'objectName: "browserList"', 1800)
+    browser_keys = _snippet(QML_SOURCE, 'objectName: "browserList"', 3600)
     assert "Keys.onPressed" in browser_keys
     assert "navigateBrowser" in browser_keys
 
