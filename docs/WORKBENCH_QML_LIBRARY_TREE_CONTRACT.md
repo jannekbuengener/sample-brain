@@ -166,8 +166,17 @@ This supersedes neutral filled active rows and enclosing selection frames.
 
 All measurements are logical UI pixels; sidebar width stays layout-solver-owned.
 
+#1293 owns Library **rail vertical inset** relative to the workspace row (not
+Program Chrome / footer height duplication): top `8` / bottom `18` logical DIP
+inside an unpainted `libraryRailHost` slot. Browser and the right workspace
+column keep full workspace height. Gaps above/below the rail reveal the
+existing Appearance V2 `surfaceRoot` workspace authority — no extra card,
+frame, or local color fill. MagicPath revision `466430376995328000` is
+proportional visual evidence only.
+
 | Role | Contract |
 |---|---|
+| Rail vertical inset (#1293) | top 8 / bottom 18 logical DIP; Browser stays full height |
 | Header / Add Source | 52 high / 36 x 36, aligned right |
 | Primary row | 35 high, 36 pitch; pane inset 6, content padding 10 |
 | Icon / icon-label gap | 20 x 20 / 6 |

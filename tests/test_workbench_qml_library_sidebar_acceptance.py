@@ -972,10 +972,16 @@ class TestNarrowWindow:
         source = workbench_qml.QML_SOURCE
         # Minimum width constraints exist
         assert "minimumWidth: 1120" in source
-        # libraryPane width is controlled by layoutModel.libraryWidth
+        # #1293: host owns layoutModel.libraryWidth; painted pane fills host width.
+        host = source.split('id: libraryRailHost', 1)[1].split(
+            'id: libraryPane', 1
+        )[0]
         pane = source.split('id: libraryPane', 1)[1].split('ColumnLayout {', 1)[0]
-        assert "width: layoutModel.libraryWidth" in pane
-        assert "visible: width > 0" in pane
+        assert "width: layoutModel.libraryWidth" in host
+        assert "visible: width > 0" in host
+        assert "anchors.left: parent.left" in pane
+        assert "anchors.right: parent.right" in pane
+        assert "visible: width > 0 && height > 0" in pane
 
     def test_narrow_window_no_absurd_clipping(self, qml_engine):
         engine, window = qml_engine

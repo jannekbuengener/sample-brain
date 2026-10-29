@@ -109,8 +109,13 @@ def test_v7_background_slice_keeps_current_single_workspace_pane_geometry_contra
     harmony = _qml_block("harmonyPane")
     bottom_rack = _qml_block("bottomRackPane", size=4500)
 
-    assert "width: layoutModel.libraryWidth" in library
-    assert "height: parent.height" in library
+    # #1293: Library rail is vertically inset inside libraryRailHost; host width
+    # remains layoutModel.libraryWidth. Browser keeps full workspace height.
+    assert "libraryMetrics.railTopInset" in QML_SOURCE or "railTopInset" in QML_SOURCE
+    assert "width: layoutModel.libraryWidth" in QML_SOURCE.split(
+        'objectName: "libraryRailHost"', 1
+    )[1][:400]
+    assert "height: parent.height" not in library.split("ColumnLayout", 1)[0]
     assert "width: visible ? layoutModel.browserWidth : 0" in browser
     assert "height: parent.height" in browser
     assert "width: layoutModel.harmonyWidth" in harmony
