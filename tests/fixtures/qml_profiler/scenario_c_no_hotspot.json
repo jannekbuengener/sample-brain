@@ -1,0 +1,47 @@
+{
+  "schema": "sample_brain_qml_profile_v1",
+  "reproduction": {
+    "build_sha": "c5c5877eb899303fde0bbed84f2502fbf81d094d",
+    "surface": "screen1.browserList",
+    "precondition": "Library revealed; synthetic 80 rows",
+    "dataset_scale": "synthetic_80_rows",
+    "user_action": "scroll contentY 0->max once",
+    "capture_window": "warmup_200ms + single_scroll + cooldown_200ms",
+    "observed_symptom": "user reported lag; not observed in capture"
+  },
+  "tool": {
+    "name": "repo_instrumentation",
+    "version": "PySide6-6.11.2-pattern",
+    "discovery_notes": "bounded capture completed; costs flat"
+  },
+  "events": [
+    {
+      "category": "delegate_lifecycle",
+      "component": "browserRow",
+      "source": "src/workbench_qml.py:browserList delegate",
+      "line": null,
+      "count": 4,
+      "duration_ms": 1.2,
+      "details": "few creates; virtualization appears intact"
+    },
+    {
+      "category": "frame_render",
+      "component": "browserList",
+      "source": "src/workbench_qml.py:browserList",
+      "line": null,
+      "count": 6,
+      "duration_ms": 1.5,
+      "details": "flat frame cost"
+    },
+    {
+      "category": "python_bridge",
+      "component": "interaction.refreshState",
+      "source": "src/workbench_qml.py",
+      "line": null,
+      "count": 1,
+      "duration_ms": 0.8,
+      "details": "single refresh outside scroll"
+    }
+  ],
+  "confounders": []
+}

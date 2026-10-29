@@ -1,0 +1,22 @@
+# Naive pre-skill performance "answer" for Browser scroll jank.
+# Intentionally incomplete — used as RED baseline contrast, not as guidance.
+scenario: browser_scroll_jank_screen1
+symptom: "Browser scroll feels janky with waveforms visible"
+reproduction: null
+build_sha: null
+tool_discovery: skipped
+assumed_tool: qmlprofiler  # not present in live PySide6 6.11.2 wheel
+measured_hotspots: []
+source_mapping: []
+hypothesis: "reuseItems is broken / bindings are too expensive / cache waveforms"
+evidence_class: speculative
+recommended_action: "rewrite Browser delegate and add caching"
+verdict: guessed_fix_without_measurement
+failures:
+  - guessed_virtualization_without_trace
+  - assumed_bindings_expensive_from_source_read
+  - wrong_workload_risk_startup_vs_scroll
+  - no_source_mapped_hotspot
+  - may_miss_python_bridge_dominance
+  - invented_or_imported_universal_16ms_threshold
+  - hard_requires_absent_qmlprofiler_cli
