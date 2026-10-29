@@ -28,20 +28,22 @@ from src import workbench_theme as theme
 PRESET_ORDER = ("Blood", "Carbon", "Arctic", "Rose", "Forest")
 PURE_BLACK = "#000000"
 
-# Blood noir TARGET (docs/assets/themes/README.md) — deep/zinc solid map
-BLOOD_CHROME = "#020203"
-BLOOD_WORKSPACE = "#040405"
-BLOOD_PANEL = "#080809"
-BLOOD_DIVIDER = "#19191a"
+# Blood canvas TARGET after #1205 MagicPath convergence — cool near-black map
+BLOOD_CHROME = "#0b0d10"
+BLOOD_WORKSPACE = "#0d0f12"
+BLOOD_PANEL = "#111316"
+BLOOD_DIVIDER = "#212326"
 BLOOD_TEXT_PRIMARY = "#e4e6ea"
-BLOOD_TEXT_SECONDARY = "#68696b"
+BLOOD_TEXT_SECONDARY = "#6d6f72"
 
-# Previous polish values that Owner rejected as too open/gray — must stay darker.
+# Previous polish values that Owner rejected as open/gray tool slabs.
 PRIOR_OPEN_CHROME = "#050506"
 PRIOR_OPEN_WORKSPACE = "#0b0b0c"
 PRIOR_OPEN_PANEL = "#0f0f11"
 PRIOR_OPEN_DIVIDER = "#2a2a2c"
-# Mid noir pass before Superdesign deep-black floor tighten.
+# Pre-#1205 V7 denser floor (superseded for canvas visual target only).
+PRIOR_V7_CHROME = "#020203"
+PRIOR_V7_WORKSPACE = "#040405"
 PRIOR_NOIR_CHROME = "#030304"
 PRIOR_NOIR_WORKSPACE = "#060607"
 PRIOR_ATMOSPHERE_WORKSPACE = "#050506"
@@ -181,7 +183,7 @@ def test_dark_surface_hierarchy_luminance_steps_for_all_presets() -> None:
 
 
 def test_blood_noir_density_darker_than_prior_open_gray_polish() -> None:
-    """Owner rejection guard: Blood must stay denser than the open-gray pass."""
+    """#1205 canvas target stays calm/cool; reject open-gray tool slabs and pure black."""
     tokens = theme.resolve_theme("Blood").as_dict()
     assert _normalize_hex(tokens["background"]) == BLOOD_CHROME
     assert _normalize_hex(tokens["surfaceWorkspace"]) == BLOOD_WORKSPACE
@@ -190,29 +192,37 @@ def test_blood_noir_density_darker_than_prior_open_gray_polish() -> None:
     assert _normalize_hex(tokens["textPrimary"]) == BLOOD_TEXT_PRIMARY
     assert _normalize_hex(tokens["textSecondary"]) == BLOOD_TEXT_SECONDARY
 
-    assert _relative_luminance(tokens["background"]) < _relative_luminance(
-        PRIOR_OPEN_CHROME
-    )
-    assert _relative_luminance(tokens["background"]) < _relative_luminance(
-        PRIOR_NOIR_CHROME
-    )
-    assert _relative_luminance(tokens["surfaceWorkspace"]) < _relative_luminance(
-        PRIOR_OPEN_WORKSPACE
-    )
-    assert _relative_luminance(tokens["surfaceWorkspace"]) < _relative_luminance(
-        PRIOR_NOIR_WORKSPACE
-    )
-    assert _relative_luminance(tokens["surfaceWorkspace"]) < _relative_luminance(
-        PRIOR_ATMOSPHERE_WORKSPACE
-    )
-    assert _relative_luminance(tokens["surface"]) < _relative_luminance(PRIOR_OPEN_PANEL)
+    # Cool near-black (B >= R), not the rejected open-gray charcoal slab.
+    chrome_r, _chrome_g, chrome_b = _parse_rgb(tokens["background"])
+    workspace_r, _workspace_g, workspace_b = _parse_rgb(tokens["surfaceWorkspace"])
+    assert chrome_b >= chrome_r
+    assert workspace_b >= workspace_r
+    assert _normalize_hex(tokens["surfaceWorkspace"]) != PRIOR_OPEN_WORKSPACE
+    assert _normalize_hex(tokens["background"]) != PRIOR_V7_CHROME
+    assert _normalize_hex(tokens["surfaceWorkspace"]) != PRIOR_V7_WORKSPACE
+    # Reject the old open-gray divider/tool-frame family; panels may sit above
+    # the cooler #1205 canvas without reverting to card-slab chrome.
     assert _relative_luminance(tokens["divider"]) < _relative_luminance(
         PRIOR_OPEN_DIVIDER
     )
-    # Superdesign deep-black floor maps short of pure black product surfaces.
+    assert _normalize_hex(tokens["surface"]) != PRIOR_OPEN_PANEL
     assert _normalize_hex(tokens["background"]) != PURE_BLACK
-    # Panels stay near reference zinc-black (#09090b) without opening to surface-gray.
     assert _relative_luminance(tokens["surface"]) < _relative_luminance("#18181b")
+    assert _relative_luminance(tokens["surfaceWorkspace"]) > _relative_luminance(
+        PRIOR_V7_WORKSPACE
+    )
+    assert _relative_luminance(tokens["surfaceWorkspace"]) > _relative_luminance(
+        PRIOR_ATMOSPHERE_WORKSPACE
+    )
+    assert _relative_luminance(tokens["background"]) > _relative_luminance(
+        PRIOR_NOIR_CHROME
+    )
+    assert _relative_luminance(tokens["background"]) > _relative_luminance(
+        PRIOR_OPEN_CHROME
+    )
+    assert _relative_luminance(tokens["surfaceWorkspace"]) > _relative_luminance(
+        PRIOR_NOIR_WORKSPACE
+    )
 
 
 def test_qml_semantics_map_hierarchy_roles() -> None:

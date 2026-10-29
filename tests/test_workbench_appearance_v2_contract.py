@@ -181,12 +181,12 @@ def test_contrast_scope_anchors_and_golden_vectors(contract: dict) -> None:
     default = contract["golden_cases"]["blood_dark_contrast_default"]
     high = contract["golden_cases"]["blood_dark_contrast_high"]
     assert [low["input"]["contrast"], default["input"]["contrast"], high["input"]["contrast"]] == [25, 50, 75]
-    assert low["tokens"]["text.secondary"] == "#595a5c"
-    assert default["tokens"]["text.secondary"] == "#68696b"
-    assert high["tokens"]["text.secondary"] == "#76777a"
-    assert low["tokens"]["surface.panel"] == "#070708"
-    assert default["tokens"]["surface.panel"] == "#080809"
-    assert high["tokens"]["surface.panel"] == "#0b0c0d"
+    assert low["tokens"]["text.secondary"] == "#5f6164"
+    assert default["tokens"]["text.secondary"] == "#6d6f72"
+    assert high["tokens"]["text.secondary"] == "#7b7d80"
+    assert low["tokens"]["surface.panel"] == "#101215"
+    assert default["tokens"]["surface.panel"] == "#111316"
+    assert high["tokens"]["surface.panel"] == "#141619"
     for case in (low, default, high):
         assert case["tokens"]["accent.base"] == "#8f0e24"
         assert case["tokens"]["status.error"] == contract["protected_status_palette"]["dark"]["error"]

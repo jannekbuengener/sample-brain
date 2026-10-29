@@ -24,7 +24,7 @@ from src import workbench_theme as theme
 PRESET_ORDER = ("Blood", "Carbon", "Arctic", "Rose", "Forest")
 BLOOD_A_ACCENT = "#8f0e24"
 BLOOD_B_ACCENT = "#d4143a"
-BLOOD_BACKGROUND = "#020203"
+BLOOD_BACKGROUND = "#0b0d10"
 BLOOD_FOREGROUND = "#e4e6ea"
 
 BASE_KEYS = frozenset({"accent", "background", "foreground"})
