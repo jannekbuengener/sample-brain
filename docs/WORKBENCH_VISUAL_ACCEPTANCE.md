@@ -279,10 +279,11 @@ a visible runtime-root authority for the V7 Single Workspace.
   for evidence and compatibility only. After #929/#930 the Image is not
   composited as a visible full-screen root layer, so it cannot cover the V7
   chrome fill after asynchronous loading.
-- The visible runtime root is the Theme Core `surfaceHeader` / `background`
-  chrome fill. The working canvas is `surfaceRoot` / `surfaceWorkspace`; panels
-  retain their existing semantic solid fills. This is the required
-  chrome → workspace → surface hierarchy.
+- The visible Screen-1 base canvas is Theme Core `surfaceRoot` /
+  `surfaceWorkspace` (ApplicationWindow + calm/residual workspace). Program
+  chrome bands keep `surfaceHeader` / `background`. Panels retain elevated
+  semantic solid fills. This is the required chrome → workspace → surface
+  hierarchy (#1205 single canvas authority).
 - No crop, tint/Colorize, blur, opacity workaround, ambient-gradient, or glow
   variant of the historical asset is authorized. Accent (Blood A `#8f0e24`)
   stays functional only (Selection / Active / Toggle / Focus).
@@ -301,7 +302,8 @@ Layers:
 1. **Historical background reference** — unchanged evidence PNG above; not a
    color palette source and not a composited runtime root layer after #929/#930.
 2. **Theme Core base tokens** — `accent` / `background` / `foreground` (Blood A
-   default `#8f0e24` / `#020203` / `#e4e6ea`).
+   default `#8f0e24` / `#0b0d10` / `#e4e6ea`; canvas `#0d0f12` via
+   `surfaceWorkspace`).
 3. **Derived Theme Core tokens** — deterministic mixes (`textPrimary`,
    `textSecondary`, `surfaceWorkspace`, `surface`, `surfaceRaised`, `divider`,
    `hover`, `selected`, `focusRing`).

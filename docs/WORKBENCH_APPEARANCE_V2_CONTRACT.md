@@ -66,7 +66,7 @@ At V2 neutral Contrast (`50`), the existing dark preset result must remain exact
 | `selected` | `surface.selected` |
 | `focusRing` | `interaction.focus` |
 
-For default Blood this means the current V7 values remain unchanged at defaults, including `#020203` base background, `#e4e6ea` foreground, `#8f0e24` Accent and the existing derived surface ladder.
+For default Blood at V2 neutral Contrast this means Theme Core Blood defaults remain exact, including the #1205 canvas target (`background` `#0b0d10`, `surfaceWorkspace`/`surface.canvas` `#0d0f12`, `#e4e6ea` foreground, `#8f0e24` Accent and the derived surface ladder). Appearance V2 must not redefine the #1205 workspace visual target.
 
 Existing v1 named custom themes must retain their name, selected state when valid, and normalized `accent/background/foreground` triplet during #1254 migration.
 

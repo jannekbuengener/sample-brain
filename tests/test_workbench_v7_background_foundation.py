@@ -9,17 +9,19 @@ from src import workbench_theme as theme
 from src.workbench_qml import QML_SOURCE
 
 
+# Absolute Blood defaults after #1205 MagicPath canvas retarget (solid-fill
+# hierarchy architecture from #929/#930 remains; pixel floor superseded).
 V7_TOKENS = {
-    "chrome": "#020203",
-    "workspace": "#040405",
-    "surface": "#080809",
-    "raised": "#101011",
-    "hover": "#131314",
-    "hairline": "#19191a",
+    "chrome": "#0b0d10",
+    "workspace": "#0d0f12",
+    "surface": "#111316",
+    "raised": "#181a1d",
+    "hover": "#1b1d20",
+    "hairline": "#212326",
     "accent": "#8f0e24",
-    "selected": "#21050a",
+    "selected": "#280d14",
     "foreground": "#e4e6ea",
-    "muted": "#68696b",
+    "muted": "#6d6f72",
 }
 
 
@@ -68,8 +70,9 @@ def test_v7_root_uses_chrome_while_workspace_uses_workspace_depth() -> None:
     root_end = QML_SOURCE.index("QtObject {", root_start)
     root = QML_SOURCE[root_start:root_end]
 
-    assert "color: theme.surfaceHeader" in root
-    assert "color: theme.surfaceRoot" not in root
+    # #1205: residual/collapsed gaps share canvas authority (surfaceRoot), not chrome.
+    assert "color: theme.surfaceRoot" in root
+    assert "color: theme.surfaceHeader" not in root
 
     background_match = re.search(
         r'Image\s*\{[^}]*objectName:\s*"screen1Background".*?\}',

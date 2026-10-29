@@ -19,26 +19,31 @@ component redesign.
 - Draft: `2fa91842-f07f-4d70-9d12-de9622744191`
 - Accepted version: `7`
 
-### Locked V7 tokens
+### Locked V7 tokens (architecture) + #1205 canvas retarget
+
+Solid-fill hierarchy from #929/#930 remains authoritative. #1205 retargets the
+default Blood canvas visual to the MagicPath calm near-black
+(`surfaceWorkspace` / `surfaceRoot` → `#0d0f12`) without scattering literals in
+QML and without implementing Appearance V2.
 
 | Semantic role | Theme Core token | Exact value |
 |---|---|---|
-| Chrome / background | `background` | `#020203` |
-| Workspace | `surfaceWorkspace` | `#040405` |
-| Surface / panel | `surface` | `#080809` |
-| Raised | `surfaceRaised` | `#101011` |
-| Hover | `hover` | `#131314` |
-| Hairline | `divider` | `#19191a` |
+| Chrome / background | `background` | `#0b0d10` |
+| Workspace / canvas | `surfaceWorkspace` | `#0d0f12` |
+| Surface / panel | `surface` | `#111316` |
+| Raised | `surfaceRaised` | `#181a1d` |
+| Hover | `hover` | `#1b1d20` |
+| Hairline | `divider` | `#212326` |
 | Blood-A accent | `accent` / `focusRing` | `#8f0e24` |
-| Selected deep red | `selected` | `#21050a` |
+| Selected deep red | `selected` | `#280d14` |
 | Primary foreground | `foreground` / `textPrimary` | `#e4e6ea` |
-| Muted foreground | `textSecondary` | `#68696b` |
+| Muted foreground | `textSecondary` | `#6d6f72` |
 
-These values are exact for the default Blood-A foundation. Their runtime source
-remains `presets.v1.json` plus the deterministic derivation in
+These values are exact for the default Blood-A foundation after #1205. Their
+runtime source remains `presets.v1.json` plus the deterministic derivation in
 `src/workbench_theme.py`; QML consumes only the semantic `themeAuthority`
-facade. Existing preference infrastructure is not a second V7 authority and is
-not migrated by this background/depth slice.
+facade. Historical screenshot ~`#0A0E0F` is directional evidence only. Existing
+preference infrastructure is not a second authority.
 
 ### V7 runtime color rule — solid fills only
 
@@ -135,12 +140,12 @@ was still too bright/gray for cinematic noir.
 
 | Role | QML semantic | Theme Core token | CURRENT (pre-noir) | TARGET (noir) |
 |------|--------------|------------------|--------------------|---------------|
-| Program Chrome (header / footer band) | `surfaceHeader` | `background` | `#050506` (Blood) | ink floor `#020203` (Blood); deepest role short of pure black |
-| Main Workspace (root / calm canvas) | `surfaceRoot` | `surfaceWorkspace` | `#0b0b0c` @ `0.025` → mid `#050506` @ `0.012` | `#040405` @ `0.008` — deeper ink workspace |
-| Panels (Library / Browser / Live Kit / Harmonic) | `surfacePanel` / `surfaceBrowser` | `surface` | `#0f0f11` @ `0.045` | `#080809` @ `0.028` — one panel family, near zinc-black |
+| Program Chrome (header / footer band) | `surfaceHeader` | `background` | `#050506` (Blood) | cool ink floor `#0b0d10` (Blood; #1205) |
+| Main Workspace (root / calm canvas) | `surfaceRoot` | `surfaceWorkspace` | `#0b0b0c` @ `0.025` → mid `#050506` @ `0.012` | `#0d0f12` @ `0.008` — MagicPath calm canvas (#1205) |
+| Panels (Library / Browser / Live Kit / Harmonic) | `surfacePanel` / `surfaceBrowser` | `surface` | `#0f0f11` @ `0.045` | `#111316` @ `0.028` — one panel family above canvas |
 | Elevated / hover lifts | `surfaceElevated` / `hoverSurface` | `surfaceRaised` / `hover` | `0.09` / `0.11` | `0.06` / `0.075` — quieter lifts |
-| Borders / dividers | `borderSubtle` / `dividerDefault` | `divider` | `#2a2a2c` @ `0.16` | `#19191a` @ `0.10` — fine restrained edges |
-| Typography | `textPrimary` / `textSecondary` | `foreground` / mix | `#eceef1` / `#848587` @ `0.45` | `#e4e6ea` / `#68696b` @ `0.55` — calmer, finer mood |
+| Borders / dividers | `borderSubtle` / `dividerDefault` | `divider` | `#2a2a2c` @ `0.16` | `#212326` @ `0.10` — fine restrained edges |
+| Typography | `textPrimary` / `textSecondary` | `foreground` / mix | `#eceef1` / `#848587` @ `0.45` | `#e4e6ea` / `#6d6f72` @ `0.55` — calmer, finer mood |
 
 **Feel:** cinematic noir — very dark, elegant, deep, premium, calm, little visible
 UI mass. No flat `#000000` product surfaces. No open gray tool slabs. Depth comes
@@ -160,9 +165,9 @@ atmosphere overlays — not a weaker opacity.
 | Soft-ellipse PNG overlays | Theme `atmosphereWorkspace` / `atmospherePanel` Images | **Removed** — no PNG cache, no stop mixes, no QML Image bindings |
 | Accent bleed into atmosphere cores | tiny accent/fg mixes | **Removed** — no atmosphere exception |
 | Library / Browser / Live Kit / Harmonic / calm canvas | solid fill + atmosphere Image | **Solid Theme fills only** (`surface` / `surfaceWorkspace`) |
-| Workspace root | `#040405` @ `0.008` | keep solid hierarchy |
-| Panel solids | `#080809` family | keep one panel family via solids |
-| Dividers | `#19191a` | keep fine/restrained edges |
+| Workspace root | `#0d0f12` @ `0.008` | keep solid hierarchy (#1205 canvas) |
+| Panel solids | `#111316` family | keep one panel family via solids |
+| Dividers | `#212326` | keep fine/restrained edges |
 
 **Feel:** very dark, calm, deep, uniform, elegant, minimal, cinematic/noir —
 depth from chrome → workspace → panel solids only. No visible glow, no
@@ -190,13 +195,13 @@ How that page builds background / atmosphere (concrete tokens):
 
 | Technique | Reference values | Map into Sample Brain? |
 |-----------|------------------|------------------------|
-| Deep black floor | `#000000` | Yes → Theme `background` ink floor `#020203` (never pure `#000000`) |
-| Zinc / mid dark | `#09090b` | Yes → panels land near this via `surface` mix (`#080809` Blood) |
-| Surface gray (cards) | `#18181b` | Partial → `surfaceRaised` stays darker/quieter (`#101011`) for low UI mass |
+| Deep black floor | `#000000` | Yes → Theme `background` cool ink `#0b0d10` (never pure `#000000`) |
+| Zinc / mid dark | `#09090b` | Yes → panels land via `surface` mix (`#111316` Blood after #1205) |
+| Surface gray (cards) | `#18181b` | Partial → `surfaceRaised` stays quieter (`#181a1d`) for low UI mass |
 | Warm radial atmosphere | `radial-gradient(ellipse at center, …)` | **No** — Owner rejected glow/atmosphere lighting; solids only |
 | Grain / noise overlay | 15% opacity, `mix-blend-overlay` | No — landing-page film grain; not Workbench surface hierarchy |
 | Glass / blur | not a core requirement; sharp architectural edges | No |
-| Typography mood | fg `#e5e5e5`, muted `#888`, extreme display scale | Partial → Theme `foreground` `#e4e6ea` + calmer `textSecondary` `#68696b` (Schrift / Minimalismus); no display-font / layout copy |
+| Typography mood | fg `#e5e5e5`, muted `#888`, extreme display scale | Partial → Theme `foreground` `#e4e6ea` + calmer `textSecondary` `#6d6f72` (Schrift / Minimalismus); no display-font / layout copy |
 | Selection red | `#ef4444` | No — Blood accent remains `#8f0e24` (product accent contract) |
 
 **Mapped in this slice:** deeper Theme-owned solid hierarchy (chrome → workspace →

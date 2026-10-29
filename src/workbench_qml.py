@@ -2355,7 +2355,9 @@ ApplicationWindow {
     visible: false
     width: 1600; height: 900
     minimumWidth: 1120; minimumHeight: 640
-    color: theme.surfaceHeader
+    // #1205: ApplicationWindow fills the Screen-1 canvas authority so residual
+    // collapse/empty gaps cannot flash chrome/header black underneath panels.
+    color: theme.surfaceRoot
     // Single QML call site for Harmonic Match toggle (#1204 disclosure reuses this).
     function activateHarmonicMatchToggle() {
         window.interaction.toggleHarmonicMatch()

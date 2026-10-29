@@ -197,8 +197,8 @@ def mix_hex(color_a: str, color_b: str, amount: float) -> str:
 def _blood_a_base() -> ThemeBase:
     return ThemeBase(
         accent=BLOOD_A_ACCENT,
-        # Superdesign cinematic-noir deep-black floor (#000000) → ink short of pure black.
-        background="#020203",
+        # #1205 MagicPath calm near-black canvas: chrome #0b0d10 → workspace #0d0f12.
+        background="#0b0d10",
         foreground="#e4e6ea",
     )
 
@@ -302,7 +302,7 @@ def blood_variants() -> dict[str, dict[str, str]]:
     if "B" not in out:
         out["B"] = ThemeBase(
             accent=BLOOD_B_ACCENT,
-            background="#020203",
+            background="#0b0d10",
             foreground="#e4e6ea",
         ).as_dict()
     return out
@@ -666,13 +666,13 @@ def theme_tokens_to_qml_semantics(tokens: Mapping[str, Any] | ThemeTokens) -> di
             continue
         out[qml_name] = normalized
     # #1248: Library-only semantic seam, no persisted/derived schema expansion.
-    # Per-channel luminance fractions project the approved #15171a reference
-    # between the existing Blood base (#020203) and foreground (#e4e6ea).
+    # Per-channel fractions project the approved #15171a reference between the
+    # current Blood chrome (#0b0d10, #1205) and foreground (#e4e6ea).
     # Other presets/custom bases retain that relative surface hierarchy.
     background = _normalize_hex(source.get("background"))
     foreground = _normalize_hex(source.get("foreground"))
     if background and foreground:
-        fractions = (19 / 226, 21 / 228, 23 / 231)
+        fractions = (10 / 217, 10 / 217, 10 / 218)
         channels = []
         for offset, fraction in zip((1, 3, 5), fractions):
             low = int(background[offset:offset + 2], 16)

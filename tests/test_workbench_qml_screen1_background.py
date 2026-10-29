@@ -278,10 +278,10 @@ def test_qml_runtime_paints_v7_chrome_while_historical_background_stays_hidden()
         # Runtime proof: an opaque historical image cannot cover the actual V7
         # ApplicationWindow chrome layer after asynchronous loading.
         assert not background.isVisible()
-        assert window.property("color").name().lower() == "#020203"
+        assert window.property("color").name().lower() == "#0d0f12"
         assert window.property("accent").name() == "#8f0e24"
-        assert window.property("panel").name() == "#080809"
-        assert window.property("panelAlt").name() == "#101011"
+        assert window.property("panel").name() == "#111316"
+        assert window.property("panelAlt").name() == "#181a1d"
     finally:
         window.close()
         app.processEvents()
