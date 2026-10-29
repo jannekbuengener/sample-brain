@@ -241,8 +241,15 @@ def test_existing_785_compatibility_properties_remain_correct(tmp_path: Path) ->
     bridge = _bridge(tmp_path)
     blood = theme.resolve_theme("Blood", state_dir=tmp_path)
     mapped = theme.theme_tokens_to_qml_semantics(blood)
+    # #1257 overlays true V2 text.disabled onto the textDisabled facade slot
+    # (legacy #785 map aliased it to textSecondary). Other compat props remain.
     for name in COMPAT_785_PROPS:
+        if name == "textDisabled":
+            continue
         assert getattr(bridge, name).lower() == mapped[name].lower()
+    snap = appearance.resolve_appearance()
+    assert str(bridge.textDisabled).lower() == snap.tokens.text_disabled.lower()
+    assert str(bridge.textDisabled).lower() != mapped["textDisabled"].lower()
 
 
 # --- Live coherent updates ---------------------------------------------------

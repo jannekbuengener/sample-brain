@@ -6,7 +6,7 @@
 **Persistence migration:** [#1254](https://github.com/jannekbuengener/sample-brain/issues/1254) → versioned `screen1_theme_preferences.json` in Theme Core (`schema_version` 2; exit `APPEARANCE_V2_PREFERENCES_MIGRATED`)
 **QML bridge:** [#1255](https://github.com/jannekbuengener/sample-brain/issues/1255)
 **Settings UI:** [#1256](https://github.com/jannekbuengener/sample-brain/issues/1256)
-**Screen-1 adoption:** [#1257](https://github.com/jannekbuengener/sample-brain/issues/1257)
+**Screen-1 adoption:** [#1257](https://github.com/jannekbuengener/sample-brain/issues/1257) → active Screen-1 consumers bind V2 semantic roles via `themeAuthority` (exit `SCREEN1_APPEARANCE_V2_TOKENIZED`; audit [`assets/themes/screen1_appearance_v2_hardcoded_color_audit_1257.md`](assets/themes/screen1_appearance_v2_hardcoded_color_audit_1257.md))
 **Final acceptance:** [#1258](https://github.com/jannekbuengener/sample-brain/issues/1258)
 **Machine-readable companion:** [`assets/themes/appearance.v2.contract.json`](assets/themes/appearance.v2.contract.json)
 

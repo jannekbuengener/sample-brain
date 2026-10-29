@@ -1267,10 +1267,32 @@ def theme_tokens_to_qml_semantics(tokens: Mapping[str, Any] | ThemeTokens) -> di
 
 
 APPEARANCE_V2_QML_BRIDGE_EXIT = "APPEARANCE_V2_QML_BRIDGE_LIVE"
+SCREEN1_APPEARANCE_V2_TOKENIZED_EXIT = "SCREEN1_APPEARANCE_V2_TOKENIZED"
+
+# #1257: overlay true V2 roles onto the #785 camelCase facade. Keeps legacy
+# surface/text/accent compat names while correcting aliases that blocked
+# protected status, muted/disabled text, and interaction pressed semantics.
+_V2_SEMANTIC_OVERLAY_KEYS: tuple[tuple[str, str], ...] = (
+    ("textDisabled", "text.disabled"),
+    ("textMuted", "text.muted"),
+    ("textOnAction", "accent.onAccent"),
+    ("statusError", "status.error"),
+    ("statusWarning", "status.warning"),
+    ("statusSuccess", "status.success"),
+    ("statusInfo", "status.info"),
+    ("accentHover", "accent.hover"),
+    ("accentActive", "accent.active"),
+    ("accentSubtle", "accent.subtle"),
+    ("interactionPressed", "interaction.pressed"),
+    ("interactionDisabled", "interaction.disabled"),
+    ("interactionSelection", "interaction.selection"),
+    ("borderDefault", "border.default"),
+    ("borderStrong", "border.strong"),
+)
 
 
 def project_appearance_snapshot_for_qml(snapshot: Any) -> dict[str, Any]:
-    """Project an AppearanceResolvedSnapshot into one renderer-facing payload (#1255).
+    """Project an AppearanceResolvedSnapshot into one renderer-facing payload (#1255/#1257).
 
     Returns a coherent dict with #785 compatibility semantics plus exact V2
     flat token keys. Callers must swap the whole payload atomically.
@@ -1289,6 +1311,12 @@ def project_appearance_snapshot_for_qml(snapshot: Any) -> dict[str, Any]:
             semantics[str(key)] = normalized
 
     flat_tokens = dict(snapshot.tokens.as_flat_dict())
+    # #1257 Screen-1 adoption: project true V2 roles into the facade.
+    for qml_name, token_key in _V2_SEMANTIC_OVERLAY_KEYS:
+        normalized = _normalize_hex(flat_tokens.get(token_key))
+        if normalized is not None:
+            semantics[qml_name] = normalized
+
     return {
         "legacy_tokens": legacy,
         "semantics": semantics,
@@ -1339,6 +1367,7 @@ __all__ = [
     "APPEARANCE_V2_EXIT",
     "APPEARANCE_V2_PREFERENCES_EXIT",
     "APPEARANCE_V2_QML_BRIDGE_EXIT",
+    "SCREEN1_APPEARANCE_V2_TOKENIZED_EXIT",
     "AppearanceProfileInput",
     "AppearanceRequestedState",
     "AppearanceResolvedSnapshot",
