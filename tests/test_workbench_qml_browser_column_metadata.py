@@ -110,10 +110,13 @@ def test_header_and_delegate_share_type_column_after_length():
         "text: modelData.type"
     )
 
-    # Shared width role — not a one-sided magic number in the delegate only.
-    assert "browserTypeColumnWidth" in header
-    assert "browserTypeColumnWidth" in delegate
+    # Shared effective width (#1211) — header + delegate consume the same truth.
+    assert "effectiveBrowserTypeColumnWidth" in header
+    assert "effectiveBrowserTypeColumnWidth" in delegate
+    assert "browserPane.effectiveBrowserTypeColumnWidth" in header
+    assert "browserPane.effectiveBrowserTypeColumnWidth" in delegate
     assert re.search(r"property int browserTypeColumnWidth:\s*\d+", QML_SOURCE)
+    assert "property int effectiveBrowserTypeColumnWidth:" in QML_SOURCE
 
     # Same narrow-mode visibility gate so Type cannot desync header vs row.
     assert header.count("visible: !browserPane.browserNarrowColumns") >= 1
