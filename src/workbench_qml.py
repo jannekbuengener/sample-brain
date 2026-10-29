@@ -5429,7 +5429,8 @@ ApplicationWindow {
                 // (zero permanent layout footprint; does not resize Browser).
                 objectName: "bottomRackPane"
                 readonly property int kitHudMargin: 10
-                readonly property int kitHudMaxWidth: 360
+                // Wide enough for #1123 readable cards (min 200) + Replace/Remove row chrome.
+                readonly property int kitHudMaxWidth: 440
                 x: upperWorkspaceRow.x + browserPane.x
                    + Math.max(0, browserPane.width - width) - kitHudMargin
                 y: kitHudMargin
@@ -5438,7 +5439,7 @@ ApplicationWindow {
                 width: (!window.interaction.browserCollapsed && browserPane.width > 0)
                        ? Math.min(
                              kitHudMaxWidth,
-                             Math.max(240, browserPane.width - kitHudMargin * 2)
+                             Math.max(220, browserPane.width - kitHudMargin * 2)
                          )
                        : 0
                 property bool liveKitDrawerOpen: window.interaction.liveKitDrawerOpen
@@ -5446,15 +5447,15 @@ ApplicationWindow {
                         || window.interaction.liveKitPendingAdd !== ""
                 // Compat alias — historical tests assert bottomExpanded.
                 readonly property bool bottomExpanded: kitHudExpanded
-                // #1123: horizontal group cards may wrap; height ≈ wrap rows + expanded slots.
-                // Keep cards wide enough that assigned slot name + file stay readable.
-                readonly property int groupCardMinWidth: 140
+                // #1123/#1207: wrap to fewer columns rather than squeeze slot controls.
+                // Assigned slot rows need ~172px for labels + audition + Replace/Remove.
+                readonly property int groupCardMinWidth: 200
                 readonly property int groupCardSpacing: 8
                 readonly property int groupCardWidth: {
                     var avail = Math.max(0, width - 28)
                     var gaps = groupCardSpacing * 3
                     var ideal = (avail - gaps) / 4
-                    return Math.max(groupCardMinWidth, Math.min(160, ideal))
+                    return Math.max(groupCardMinWidth, Math.min(220, ideal))
                 }
                 readonly property int groupFlowRows: {
                     var groups = window.screenData.liveKitGroups
