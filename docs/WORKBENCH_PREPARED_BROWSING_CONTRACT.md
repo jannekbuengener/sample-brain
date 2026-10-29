@@ -45,6 +45,16 @@
 - The existing Tk path-based loader remains compatible. Streaming decode stays
   outside this slice unless measured memory or interaction pressure requires it.
 
+## Lifecycle
+
+- **Wave 1** materializes a usable Library/Browser from essential analysis and
+  cached metadata. First usability must not wait on optional waveform
+  enrichment.
+- **Wave 2** is a separate bounded background enrichment phase that writes
+  versioned `sample_waveform_artifacts` after Wave 1. Active Browser
+  interaction, search/navigation, and native audition outrank Wave 2; the
+  loader pauses new background admission while preview is active.
+
 ## Acceptance boundary
 
 - Prepared publication is measured at 500, 2,200, and 5,000 rows; the 2,200-row
@@ -53,6 +63,10 @@
 - At least 20 rapid scope changes must produce no starvation or wrong-row
   mutation. Browser and native-audition dispatch p95 remains at most 25 ms while
   enrichment is active.
-- #1206 owns the later default-ROOT workload measurement. Its open state does
-  not widen this implementation into scanner, analyzer, audio-engine, or Browser
-  redesign work.
+- Intentional native Stop→Start under Wave-2 pressure must remain
+  `SB_DEVICE_OK` (see closed #1267). Physical/audible device proof stays a
+  separate runtime gate and is not claimed from snapshot evidence alone.
+- #1206 (aggregate registered-source root) and #1209 (native Screen-1 audio
+  baseline) are delivered acceptance dependencies. They do not authorize
+  scanner, analyzer, audio-engine, or Browser redesign work inside this
+  contract.
