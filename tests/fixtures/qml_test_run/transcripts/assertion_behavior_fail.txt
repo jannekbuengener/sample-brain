@@ -1,0 +1,10 @@
+============================= test session starts ==============================
+collected 1 item
+
+tests/test_example_qml_behavior.py::test_selected_row_projects_label FAILED [100%]
+
+    def test_selected_row_projects_label():
+>       assert window.property("statusText") == "ready"
+E       AssertionError: assert 'loading' == 'ready'
+
+============================== 1 failed in 0.80s ===============================

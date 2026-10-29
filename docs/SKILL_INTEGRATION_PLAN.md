@@ -138,3 +138,7 @@ Bei Bedarf einzeln anfragen â€“ nicht bulk-kopieren.
 - Keine neuen Security-Tools einfÃ¼hren
 - Keine Skills bulk ins Repo kopieren
 - Keine produktiven CodeÃ¤nderungen durch diesen Plan
+- `sample-brain-qml-test-run`
+- `sample-brain-qml-test-run` – QML/Component-Tests ausführen, beobachten und Fehlerschichten klassifizieren (kein zweites Harness, keine Root-Cause-Vermutung)
+| `sample-brain-qml-test-run` | QML/Component-pytest ausführen und Harness/Load/Behavior/Platform klassifizieren |
+QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)

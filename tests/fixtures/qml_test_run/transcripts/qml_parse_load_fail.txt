@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+collected 1 item
+
+tests/test_example_qml_load.py::test_screen_loads FAILED [100%]
+
+    def test_screen_loads():
+>       app, engine, window = _qml_engine(view_model)
+E       RuntimeError: QQmlApplicationEngine failed to load source: keine QML roots
+E       qrc:/screen1.qml:1: module "QtQuick" is not installed
+
+============================== 1 failed in 0.55s ===============================

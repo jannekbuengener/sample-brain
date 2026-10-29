@@ -38,6 +38,9 @@ The routing matrix below is generated. Do not hand-edit inside the markers; run:
 | Screen-1 UI/QML Visual Acceptance nach automatisierten Tests | `workflow-screen1-visual-acceptance` |
 | Repository-/Worktree-Hygiene | `workflow-repository-hygiene`, `sample-brain-repository-auditor` |
 | QML-Komponententests fÃ¼r Signale/Focus/Pointer/Lifecycle/Virtualisierung planen | `sample-brain-qml-component-test` |
+| PR vorbereiten / öffnen | `jMerta/create-pr` |
+| Qualitätsprüfung vor Merge | `jMerta/coding-guidelines-verify` |
+| QML/Component-Test ausführen und Fehlerschicht klassifizieren | `sample-brain-qml-test-run` |
 
 ## Security-Workflow-Audit (Priorität B, nur gezielt)
 
@@ -52,6 +55,7 @@ Priority B skills come from the external Anthropic-Cybersecurity-Skills package 
 | SAST-Pipeline | `integrating-sast-into-github-actions-pipeline` |
 | Supply-Chain in CI/CD | `detecting-supply-chain-attacks-in-ci-cd` |
 | Custom Semgrep-Regeln | `implementing-semgrep-for-custom-sast-rules` |
+| GitHub Actions härten | `securing-github-actions-workflows` |
 
 ## Default-Reihenfolge
 
@@ -76,6 +80,9 @@ Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first
 Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhÃ¤ngige lokale RÃ¼ckprÃ¼fung
 Screen-1 UI/QML visual change -> automated validation -> visual fixture/runtime evidence -> AGENT VISUAL ACCEPTANCE -> VISUAL_ACCEPT_PASS|FAIL
 QML-Interaktions-/Lifecycle-Coverage planen -> sample-brain-qml-component-test -> optional sample-brain-test-first
+Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung
+Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung
+QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)
 ```
 
 ## Screen-1 Visual Acceptance
