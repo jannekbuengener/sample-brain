@@ -64,7 +64,8 @@ def test_contract_docs_require_full_footer_centering_and_priority() -> None:
     assert "full footer width" in hint.lower() or "full footer midpoint" in hint.lower()
     assert "geometrically centered" in hint.lower() or "true center" in hint.lower()
     assert "RowLayout" in hint
-    assert "HOVER" in hint and "SELECTION" in hint and "DEFAULT" in hint
+    assert "HOVER" in hint and "FOCUS" in hint and "SELECTION" in hint and "DEFAULT" in hint
+    assert "#1210" in hint
     assert "selectedBrowserIndex" in hint or "browser sample selection" in hint.lower()
     assert "·" in hint  # sample selection compact separator
     assert "true center" in chrome.lower() or "full-width center" in chrome.lower()
@@ -453,15 +454,19 @@ def test_runtime_long_sample_selection_elides_without_overlap_or_jump(
         settle(app)
         assert long_name.split(".")[0][:20] in str(state.property("displayText") or "")
         assert float(footer.height()) == footer_h
-        left_right = float(left.x()) + float(left.width())
+        # Footer center uses its own leftBound/rightBound (scopes live in Library
+        # chrome after #1201); do not treat libraryScopeBar geometry as the
+        # footer hit-zone edge.
+        left_bound = float(display.property("leftBound") or 8.0)
         right_left = (
             float(right.x())
             if float(right.width()) > 2.0
             else float(footer.width()) - 8.0
         )
-        assert float(display.x()) >= left_right - 1.0
+        assert float(display.x()) >= left_bound - 1.0
         assert float(display.x()) + float(display.width()) <= right_left + 1.0
         assert abs(_center_x(display) - float(footer.width()) / 2.0) <= 2.0
+        assert left is not None  # Library scopes remain reachable outside footer.
     finally:
         window.close()
         app.processEvents()
