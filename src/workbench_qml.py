@@ -2671,6 +2671,8 @@ ApplicationWindow {
         readonly property color statusInfo: themeAuthority.statusInfo
     }
     // #1248 logical UI geometry, local to the Library presentation.
+    // #1293 rail vertical insets are Library presentation spacing (logical DIP),
+    // not duplicated Program Chrome / footer heights.
     QtObject {
         id: libraryMetrics
         readonly property int headerHeight: 52
@@ -2689,6 +2691,9 @@ ApplicationWindow {
         readonly property int sourceGap: 4
         readonly property int sourceRowHeight: 36
         readonly property int labelFadeWidth: 24
+        // MagicPath rev 466430376995328000 — proportional visual evidence as DIP.
+        readonly property int railTopInset: 8
+        readonly property int railBottomInset: 18
     }
     // #770 shared context-hint content seam (ephemeral UI state; placement is separate).
     QtObject {
@@ -3468,7 +3473,31 @@ ApplicationWindow {
         onWidthChanged: layoutModel.setContentWidth(width)
         Component.onCompleted: layoutModel.setContentWidth(width)
 
-        Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfaceLibrary; border.color: theme.borderSubtle
+        // #1293: Library is a bounded left rail. Host keeps full workspace-row
+        // height for elastic width ownership; painted pane is vertically inset so
+        // gaps reveal theme.surfaceRoot. Host is unpainted (no card/frame).
+        Item {
+            id: libraryRailHost
+            objectName: "libraryRailHost"
+            width: layoutModel.libraryWidth
+            height: parent.height
+            visible: width > 0
+            readonly property int topInset: Math.min(libraryMetrics.railTopInset, Math.max(0, height))
+            readonly property int bottomInset: Math.min(
+                libraryMetrics.railBottomInset,
+                Math.max(0, height - topInset)
+            )
+            Rectangle {
+                id: libraryPane
+                objectName: "libraryPane"
+                color: theme.surfaceLibrary
+                border.color: theme.borderSubtle
+                anchors.left: parent.left
+                anchors.right: parent.right
+                y: libraryRailHost.topInset
+                height: Math.max(0, libraryRailHost.height - libraryRailHost.topInset - libraryRailHost.bottomInset)
+                visible: width > 0 && height > 0
+                clip: true
             ColumnLayout { anchors.fill: parent; anchors.leftMargin: libraryMetrics.paneInset; anchors.rightMargin: libraryMetrics.paneInset; spacing: 0
                 RowLayout {
                     id: libraryHeaderRow
@@ -4156,6 +4185,7 @@ ApplicationWindow {
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                 }
                 }
+            }
             }
         }
         // #742 geometry: libraryRevealAffordance is an overlay sibling of workspaceRow
