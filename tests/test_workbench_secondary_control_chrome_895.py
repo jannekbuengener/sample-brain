@@ -76,7 +76,8 @@ def test_library_add_remove_use_named_theme_bound_secondary_chrome() -> None:
     assert "background: Rectangle" in add
     assert "theme.textSecondary" in add or "theme.textPrimary" in add
     assert "theme.borderSubtle" in add
-    assert "theme.focusRing" in add or "theme.selectionBorder" in add
+    # #1248 Library focus + #1257 pressed semantics (not Accent focusRing).
+    assert "theme.libraryFocusRing" in add or "theme.interactionPressed" in add
     assert "theme.hoverSurface" in add or "theme.surfaceElevated" in add
     for bright in _FORBIDDEN_BRIGHT_FILLS:
         assert bright not in add.lower() and bright not in add
@@ -90,7 +91,7 @@ def test_library_add_remove_use_named_theme_bound_secondary_chrome() -> None:
 def test_browser_search_is_dark_theme_native_field() -> None:
     block = _browser_search_block()
     assert "placeholderText: \"Search samples\"" in block
-    assert "placeholderTextColor: theme.textSecondary" in block
+    assert "placeholderTextColor: theme.textMuted" in block
     assert "color: theme.textPrimary" in block
     assert "background: Rectangle" in block
     assert "theme.borderSubtle" in block

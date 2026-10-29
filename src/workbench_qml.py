@@ -2627,7 +2627,7 @@ ApplicationWindow {
     readonly property bool programChromeMotionEnabled:
         !window.screenData.brandReducedMotion
         && window.screenData.brandMotionMode !== "off"
-    // Screen-1 Theme / Appearance Authority (#785 + #1255):
+    // Screen-1 Theme / Appearance Authority (#785 + #1255 + #1257):
     // Python AppearanceResolvedSnapshot is the sole truth; QML binds semantics.
     // No competing HEX palette / no QML-owned Appearance state machine.
     QtObject {
@@ -2643,9 +2643,12 @@ ApplicationWindow {
         readonly property color libraryRecordsAccent: themeAuthority.libraryRecordsAccent
         readonly property color surfaceElevated: themeAuthority.surfaceElevated
         readonly property color borderSubtle: themeAuthority.borderSubtle
+        readonly property color borderDefault: themeAuthority.borderDefault
+        readonly property color borderStrong: themeAuthority.borderStrong
         readonly property color dividerDefault: themeAuthority.dividerDefault
         readonly property color textPrimary: themeAuthority.textPrimary
         readonly property color textSecondary: themeAuthority.textSecondary
+        readonly property color textMuted: themeAuthority.textMuted
         readonly property color textDisabled: themeAuthority.textDisabled
         readonly property color textOnAction: themeAuthority.textOnAction
         readonly property color waveformDefault: themeAuthority.waveformDefault
@@ -2653,9 +2656,19 @@ ApplicationWindow {
         readonly property color selectionSurface: themeAuthority.selectionSurface
         readonly property color selectionBorder: themeAuthority.selectionBorder
         readonly property color actionActive: themeAuthority.actionActive
+        readonly property color accentHover: themeAuthority.accentHover
+        readonly property color accentActive: themeAuthority.accentActive
+        readonly property color accentSubtle: themeAuthority.accentSubtle
         readonly property color focusRing: themeAuthority.focusRing
         readonly property color libraryFocusRing: themeAuthority.libraryFocusRing
         readonly property color hoverSurface: themeAuthority.hoverSurface
+        readonly property color interactionPressed: themeAuthority.interactionPressed
+        readonly property color interactionDisabled: themeAuthority.interactionDisabled
+        readonly property color interactionSelection: themeAuthority.interactionSelection
+        readonly property color statusError: themeAuthority.statusError
+        readonly property color statusWarning: themeAuthority.statusWarning
+        readonly property color statusSuccess: themeAuthority.statusSuccess
+        readonly property color statusInfo: themeAuthority.statusInfo
     }
     // #1248 logical UI geometry, local to the Library presentation.
     QtObject {
@@ -3350,7 +3363,7 @@ ApplicationWindow {
                             visible: themeAuthority.isCustom
                             Layout.fillWidth: true
                             placeholderText: "Rename custom…"
-                            placeholderTextColor: theme.textSecondary
+                            placeholderTextColor: theme.textMuted
                             onAccepted: {
                                 themeAuthority.renameCurrentCustom(text)
                                 text = ""
@@ -3500,7 +3513,7 @@ ApplicationWindow {
                             border.width: 1
                             border.color: !libraryAddSourceButton.enabled ? theme.borderSubtle
                                           : (libraryAddSourceButton.activeFocus ? theme.libraryFocusRing
-                                             : (libraryAddSourceButton.pressed ? theme.selectionBorder : theme.borderSubtle))
+                                             : (libraryAddSourceButton.pressed ? theme.interactionPressed : theme.borderSubtle))
                             opacity: libraryAddSourceButton.enabled ? 1.0 : 0.4
                         }
                         onClicked: addSourceDialog.open()
@@ -4417,7 +4430,7 @@ ApplicationWindow {
                         text: window.screenData.analysisStatus === "scanning" ? "Analysiere Quelle …" :
                               window.screenData.analysisStatus === "analyzing" ? "Analysiere " + window.screenData.analysisSource :
                               window.screenData.analysisStatus === "error" ? window.screenData.analysisError : ""
-                        color: window.screenData.analysisStatus === "error" ? theme.actionActive : theme.textSecondary
+                        color: window.screenData.analysisStatus === "error" ? theme.statusError : theme.textSecondary
                         font.pixelSize: 15
                         wrapMode: Text.Wrap
                     }
@@ -4778,14 +4791,14 @@ ApplicationWindow {
                         ColumnLayout { Layout.fillWidth: true; spacing: 2
                             Label { text: window.screenData.browserContext; color: theme.textPrimary; font.pixelSize: window.textTitle; font.bold: true }
                             Label { text: window.screenData.browserRows.length + " samples"; color: theme.textSecondary; font.pixelSize: window.textCaption }
-                            Label { visible: window.screenData.errorMessage.length > 0; text: window.screenData.errorMessage; color: theme.actionActive; font.pixelSize: 11 }
+                            Label { visible: window.screenData.errorMessage.length > 0; text: window.screenData.errorMessage; color: theme.statusError; font.pixelSize: 11 }
                         }
                         Item { Layout.fillWidth: true }
                         TextField {
                             // #895: slim dark-native search — quiet fill, low-contrast border, calm placeholder.
                             objectName: "browserSearch"
                             placeholderText: "Search samples"
-                            placeholderTextColor: theme.textSecondary
+                            placeholderTextColor: theme.textMuted
                             color: theme.textPrimary
                             selectedTextColor: theme.textOnAction
                             selectionColor: theme.actionActive
@@ -4829,7 +4842,7 @@ ApplicationWindow {
                                   window.screenData.analysisStatus === "done" ? "Analyse abgeschlossen" :
                                   window.screenData.analysisStatus === "cancelled" ? "Analyse abgebrochen" :
                                   window.screenData.analysisStatus === "error" ? window.screenData.analysisError : ""
-                            color: window.screenData.analysisStatus === "error" ? theme.actionActive : theme.textSecondary
+                            color: window.screenData.analysisStatus === "error" ? theme.statusError : theme.textSecondary
                             font.pixelSize: 11
                         }
                         Label {
@@ -5624,7 +5637,7 @@ ApplicationWindow {
                                        : (liveKitDrawerHideButton.hovered ? theme.hoverSurface : "transparent")
                                 border.width: 1
                                 border.color: liveKitDrawerHideButton.activeFocus ? theme.focusRing
-                                              : (liveKitDrawerHideButton.pressed ? theme.selectionBorder : theme.borderSubtle)
+                                              : (liveKitDrawerHideButton.pressed ? theme.interactionPressed : theme.borderSubtle)
                             }
                             onClicked: window.interaction.toggleLiveKitDrawer()
                         }
@@ -5657,7 +5670,7 @@ ApplicationWindow {
                                 border.width: 1
                                 border.color: !liveKitExportButton.enabled ? theme.borderSubtle
                                               : (liveKitExportButton.activeFocus ? theme.focusRing
-                                                 : (liveKitExportButton.pressed ? theme.selectionBorder : theme.borderSubtle))
+                                                 : (liveKitExportButton.pressed ? theme.interactionPressed : theme.borderSubtle))
                                 opacity: liveKitExportButton.enabled ? 1.0 : 0.4
                             }
                             onClicked: exportKitDialog.open()
@@ -5670,7 +5683,7 @@ ApplicationWindow {
                                  && window.interaction.liveKitExportStatus.length > 0
                         Layout.fillWidth: true
                         text: window.interaction.liveKitExportStatus
-                        color: window.interaction.liveKitExportOk ? theme.textSecondary : theme.actionActive
+                        color: window.interaction.liveKitExportOk ? theme.textSecondary : theme.statusError
                         font.pixelSize: 11
                         wrapMode: Text.Wrap
                     }
@@ -8979,6 +8992,14 @@ def _qml_theme_authority_bridge(
             return self._color("borderSubtle")
 
         @Property(str, notify=themeChanged)
+        def borderDefault(self) -> str:
+            return self._color("borderDefault")
+
+        @Property(str, notify=themeChanged)
+        def borderStrong(self) -> str:
+            return self._color("borderStrong")
+
+        @Property(str, notify=themeChanged)
         def dividerDefault(self) -> str:
             return self._color("dividerDefault")
 
@@ -8989,6 +9010,10 @@ def _qml_theme_authority_bridge(
         @Property(str, notify=themeChanged)
         def textSecondary(self) -> str:
             return self._color("textSecondary")
+
+        @Property(str, notify=themeChanged)
+        def textMuted(self) -> str:
+            return self._color("textMuted")
 
         @Property(str, notify=themeChanged)
         def textDisabled(self) -> str:
@@ -9019,12 +9044,52 @@ def _qml_theme_authority_bridge(
             return self._color("actionActive")
 
         @Property(str, notify=themeChanged)
+        def accentHover(self) -> str:
+            return self._color("accentHover")
+
+        @Property(str, notify=themeChanged)
+        def accentActive(self) -> str:
+            return self._color("accentActive")
+
+        @Property(str, notify=themeChanged)
+        def accentSubtle(self) -> str:
+            return self._color("accentSubtle")
+
+        @Property(str, notify=themeChanged)
         def focusRing(self) -> str:
             return self._color("focusRing")
 
         @Property(str, notify=themeChanged)
         def hoverSurface(self) -> str:
             return self._color("hoverSurface")
+
+        @Property(str, notify=themeChanged)
+        def interactionPressed(self) -> str:
+            return self._color("interactionPressed")
+
+        @Property(str, notify=themeChanged)
+        def interactionDisabled(self) -> str:
+            return self._color("interactionDisabled")
+
+        @Property(str, notify=themeChanged)
+        def interactionSelection(self) -> str:
+            return self._color("interactionSelection")
+
+        @Property(str, notify=themeChanged)
+        def statusError(self) -> str:
+            return self._color("statusError")
+
+        @Property(str, notify=themeChanged)
+        def statusWarning(self) -> str:
+            return self._color("statusWarning")
+
+        @Property(str, notify=themeChanged)
+        def statusSuccess(self) -> str:
+            return self._color("statusSuccess")
+
+        @Property(str, notify=themeChanged)
+        def statusInfo(self) -> str:
+            return self._color("statusInfo")
 
         @Slot(str)
         def selectTheme(self, name: str) -> None:
