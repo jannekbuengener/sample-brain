@@ -665,3 +665,102 @@ def test_system_motion_remains_appearance_owned(tmp_path: Path) -> None:
     loaded = theme.load_appearance_preferences(state_dir=tmp_path)
     assert loaded.motion_mode == "system"
     assert display.load_display_preferences(state_dir=tmp_path).motion_mode == "reduced"
+
+
+def test_select_theme_updates_active_profile_when_separated(tmp_path: Path) -> None:
+    """#785 select_theme must sync the active separated profile, not only shared."""
+    carbon = theme.resolve_theme("Carbon")
+    arctic = theme.resolve_theme("Arctic")
+    forest = theme.resolve_theme("Forest")
+    theme.save_appearance_preferences(
+        appearance.AppearanceRequestedState(
+            mode="dark",
+            separate_light_dark=True,
+            dark=appearance.AppearanceProfileInput(
+                theme_ref="Carbon",
+                accent=carbon.accent,
+                background=carbon.background,
+                foreground=carbon.foreground,
+            ),
+            light=appearance.AppearanceProfileInput(
+                theme_ref="Arctic",
+                accent=arctic.accent,
+                background=arctic.background,
+                foreground=arctic.foreground,
+            ),
+        ),
+        state_dir=tmp_path,
+    )
+    theme.select_theme("Forest", state_dir=tmp_path)
+    assert theme.resolve_theme(state_dir=tmp_path).name == "Forest"
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.separate_light_dark is True
+    assert loaded.dark is not None
+    assert loaded.dark.theme_ref == "Forest"
+    # Inactive light profile must stay Arctic.
+    assert loaded.light is not None
+    assert loaded.light.theme_ref == "Arctic"
+    snap = appearance.resolve_appearance(loaded, platform_color_scheme="dark")
+    assert snap.theme_ref == "Forest"
+    assert snap.accent == forest.accent
+
+
+def test_load_materializes_named_custom_theme_ref_colors(tmp_path: Path) -> None:
+    """themeRef-only custom profiles must resolve via custom_themes on Appearance load."""
+    custom_accent = "#abcdef"
+    custom_bg = "#101214"
+    custom_fg = "#f0f2f4"
+    theme.create_custom_theme(
+        name="Desk Custom",
+        base_preset="Blood",
+        accent=custom_accent,
+        background=custom_bg,
+        foreground=custom_fg,
+        state_dir=tmp_path,
+    )
+    theme.save_appearance_preferences(
+        appearance.AppearanceRequestedState(
+            shared=appearance.AppearanceProfileInput(theme_ref="Desk Custom"),
+        ),
+        state_dir=tmp_path,
+    )
+    # Disk may keep themeRef without repeating the triplet; load must hydrate it.
+    raw = _raw(theme.theme_preferences_path(state_dir=tmp_path))
+    shared = raw["appearance"]["profiles"]["shared"]
+    assert shared.get("themeRef") == "Desk Custom"
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.shared is not None
+    assert loaded.shared.theme_ref == "Desk Custom"
+    assert loaded.shared.accent == custom_accent
+    assert loaded.shared.background == custom_bg
+    assert loaded.shared.foreground == custom_fg
+    snap = appearance.resolve_appearance(loaded)
+    assert snap.accent == custom_accent
+    assert snap.background == custom_bg
+    assert snap.foreground == custom_fg
+    assert theme.resolve_theme(state_dir=tmp_path).accent == custom_accent
+
+
+def test_load_custom_theme_ref_retains_explicit_color_overrides(tmp_path: Path) -> None:
+    theme.create_custom_theme(
+        name="Override Desk",
+        base_preset="Blood",
+        accent="#abcdef",
+        background="#101214",
+        foreground="#f0f2f4",
+        state_dir=tmp_path,
+    )
+    theme.save_appearance_preferences(
+        appearance.AppearanceRequestedState(
+            shared=appearance.AppearanceProfileInput(
+                theme_ref="Override Desk",
+                accent="#112233",
+            ),
+        ),
+        state_dir=tmp_path,
+    )
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.shared is not None
+    assert loaded.shared.accent == "#112233"
+    assert loaded.shared.background == "#101214"
+    assert loaded.shared.foreground == "#f0f2f4"

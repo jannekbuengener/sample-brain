@@ -757,6 +757,28 @@ def _atomic_write_json(path: Path, body: Mapping[str, Any]) -> None:
         raise
 
 
+def _apply_selection_to_profile(
+    profile: Mapping[str, Any] | None,
+    selected: str,
+    customs: Any,
+) -> dict[str, Any]:
+    """Copy a profile and point it at ``selected``, materializing custom colors."""
+    out = dict(profile or {})
+    out["themeRef"] = selected
+    if isinstance(customs, Mapping) and selected in customs:
+        entry = customs[selected]
+        if isinstance(entry, Mapping):
+            for key in ("accent", "background", "foreground"):
+                value = _normalize_hex(entry.get(key))
+                if value is not None:
+                    out[key] = value
+    else:
+        for key in ("accent", "background", "foreground"):
+            out.pop(key, None)
+    out.setdefault("contrast", 50)
+    return out
+
+
 def _sync_appearance_selection(store: dict[str, Any], selected: str) -> None:
     """Keep Appearance intent aligned with #785 selected/custom theme changes."""
     appearance = store.get("appearance")
@@ -770,23 +792,58 @@ def _sync_appearance_selection(store: dict[str, Any], selected: str) -> None:
         profiles = {}
     else:
         profiles = dict(profiles)
-    shared = dict(profiles.get("shared") or {})
-    shared["themeRef"] = selected
     customs = store.get("custom_themes") or {}
-    if isinstance(customs, Mapping) and selected in customs:
-        entry = customs[selected]
-        if isinstance(entry, Mapping):
-            for key in ("accent", "background", "foreground"):
-                value = _normalize_hex(entry.get(key))
-                if value is not None:
-                    shared[key] = value
-    else:
-        for key in ("accent", "background", "foreground"):
-            shared.pop(key, None)
-    shared.setdefault("contrast", 50)
-    profiles["shared"] = shared
+    profiles["shared"] = _apply_selection_to_profile(
+        profiles.get("shared"), selected, customs
+    )
+    # When Light/Dark are separated, resolve_appearance ignores shared — update
+    # the active scheme profile and leave the inactive one untouched.
+    if bool(appearance.get("separateLightDark")):
+        mode = str(appearance.get("mode") or "dark").strip().lower()
+        # Fail-closed: system (and unknown) map to dark, matching #1253 defaults.
+        active_key = "light" if mode == "light" else "dark"
+        profiles[active_key] = _apply_selection_to_profile(
+            profiles.get(active_key), selected, customs
+        )
     appearance["profiles"] = profiles
     store["appearance"] = appearance
+
+
+def _hydrate_profile_custom_colors(
+    profile: Any,
+    customs: Mapping[str, Any],
+) -> Any:
+    """Fill missing BG/FG/Accent from a named custom themeRef; keep explicit overrides."""
+    if not isinstance(profile, Mapping):
+        return profile
+    out = dict(profile)
+    ref = out.get("themeRef")
+    if not isinstance(ref, str) or not ref.strip():
+        return out
+    cleaned = ref.strip()
+    if cleaned not in customs:
+        return out
+    entry = customs[cleaned]
+    if not isinstance(entry, Mapping):
+        return out
+    for key in ("accent", "background", "foreground"):
+        if out.get(key) is not None:
+            continue
+        value = _normalize_hex(entry.get(key))
+        if value is not None:
+            out[key] = value
+    return out
+
+
+def _hydrate_appearance_custom_colors(
+    mapping: dict[str, Any],
+    customs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Materialize named custom palettes into Appearance profiles on load."""
+    hydrated = dict(mapping)
+    for key in ("shared", "dark", "light"):
+        hydrated[key] = _hydrate_profile_custom_colors(hydrated.get(key), customs)
+    return hydrated
 
 
 def _write_store(
@@ -887,9 +944,14 @@ def load_appearance_preferences(
     appearance_payload = store.get("appearance")
     if not isinstance(appearance_payload, Mapping):
         return AppearanceRequestedState()
-    return appearance_requested_from_mapping(
-        _appearance_mapping_from_store_payload(appearance_payload)
+    customs = store.get("custom_themes") or {}
+    if not isinstance(customs, Mapping):
+        customs = {}
+    mapping = _hydrate_appearance_custom_colors(
+        _appearance_mapping_from_store_payload(appearance_payload),
+        customs,
     )
+    return appearance_requested_from_mapping(mapping)
 
 
 def save_appearance_preferences(
