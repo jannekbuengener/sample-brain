@@ -85,6 +85,7 @@ from .workbench_qml_startup import (
     resolve_launch_workspace,
 )
 from .workbench_waveform import compute_waveform_envelope
+from .workbench_native_window_chrome import wire_theme_authority
 from .workbench_window_placement import show_window_on_primary_screen
 
 SCREEN1_QML_STATE_IDS = ("screen1-default-3panel", "screen1-harmonic-4panel")
@@ -10263,6 +10264,7 @@ def _qml_engine(
             "_screen1AnalysisCoordinator",
             analysis_coordinator,
         )
+    native_chrome = None
     try:
         engine.loadData(QML_SOURCE.encode("utf-8"), QUrl("qrc:/screen1.qml"))
         root_objects = engine.rootObjects()
@@ -10270,6 +10272,8 @@ def _qml_engine(
             raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine QML-Oberfläche laden.")
         root_window = root_objects[0]
         show_window_on_primary_screen(app, root_window)
+        # #1214: native caption inherits Appearance windowChrome.* (fail-soft).
+        native_chrome = wire_theme_authority(root_window, theme_authority)
     except BaseException:
         if waveform_loader is not None:
             waveform_loader.close()
@@ -10283,6 +10287,7 @@ def _qml_engine(
     engine._screen1_library_bridge = library_bridge
     engine._screen1_screen_model = screen_model
     engine._screen1_theme_authority = theme_authority
+    engine._screen1_native_window_chrome = native_chrome
     engine._screen1_live_kit = live_kit
     engine._screen1_session = session
     engine._screen1_channel_rack = channel_rack_controller
