@@ -19,7 +19,7 @@ from src.workbench_qml import QML_SOURCE
 
 BROWSER_ROW_DELEGATE_MARKER = "delegate: Rectangle { id: browserRow"
 HARMONIC_LIST_MARKER = 'objectName: "harmonicMatchList"'
-BROWSER_ROW_DELEGATE_SPAN = 14000  # Favorite column grows the compact row; include divider
+BROWSER_ROW_DELEGATE_SPAN = 20000  # #1210 hover/pool wiring grows the delegate prefix
 HARMONIC_LIST_SPAN = 12000
 _SHARED_DENSITY_ROLES = (
     "densityRowHeight",

@@ -68,7 +68,13 @@ def test_docs_gate_library_header_scope_presentation_authority() -> None:
     assert "scope:recordings" in nav
     assert "LibraryScopeKind.RECORDINGS" in nav or "RECORDINGS" in nav
     assert "library.scope.recordings" in hint
-    assert "library.scope.catalog" not in hint.split("### V1 semantic IDs", 1)[1].split(
+    # #1210 retitled the descriptor table; Catalog must remain absent from it.
+    ids_heading = (
+        "### Screen-1 semantic IDs"
+        if "### Screen-1 semantic IDs" in hint
+        else "### V1 semantic IDs"
+    )
+    assert "library.scope.catalog" not in hint.split(ids_heading, 1)[1].split(
         "`library.add_source`", 1
     )[0]
 

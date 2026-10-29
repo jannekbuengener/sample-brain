@@ -2414,6 +2414,15 @@ ApplicationWindow {
                 disclosureRoot.activateAction()
             }
         }
+        Keys.onReturnPressed: disclosureRoot.activateAction()
+        Keys.onEnterPressed: disclosureRoot.activateAction()
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Space) {
+                disclosureRoot.activateAction()
+                event.accepted = true
+            }
+        }
+        // #1210 hint routing after keyboard activation so frozen #845 windows keep Keys.*
         onHoveredChanged: {
             if (hintId.length === 0)
                 return
@@ -2429,14 +2438,6 @@ ApplicationWindow {
                 contextHintState.reportFocus(hintId)
             else
                 contextHintState.clearFocus(hintId)
-        }
-        Keys.onReturnPressed: disclosureRoot.activateAction()
-        Keys.onEnterPressed: disclosureRoot.activateAction()
-        Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Space) {
-                disclosureRoot.activateAction()
-                event.accepted = true
-            }
         }
     }
     title: "Sample Brain"
