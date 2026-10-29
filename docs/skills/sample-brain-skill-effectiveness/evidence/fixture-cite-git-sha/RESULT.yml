@@ -1,0 +1,38 @@
+# Behavioral evaluation — new candidate fixture eval-only-cite-git-sha
+# #1303 sample-brain-qml-review had no usable PR/merged revision at eval time
+# (local WIP only on skill/1303-sample-brain-qml-review; not treated as delivered).
+# Fixture is evaluation-only; NOT registered as production capability.
+target_skill: eval-only-cite-git-sha
+target_revision: c5c5877eb899303fde0bbed84f2502fbf81d094d
+skill_type: technique
+scenario_id: fixture-cite-sha-diagnosis
+inputs_comparable: true
+structural_only: false
+baseline:
+  ran: true
+  outcome: fail
+  failure_category: omitted_step
+  notes: >-
+    Without skill, handoff cited a commit under evidence.commit but omitted
+    required inspected_revision field from the technique contract.
+skill_enabled:
+  ran: true
+  skill_loaded: true
+  outcome: pass
+  notes: >-
+    With skill loaded, handoff included inspected_revision with full HEAD SHA
+    and findings list per required shape.
+delta:
+  improved: true
+  material_change: true
+  summary: >-
+    Baseline lacked required output shape; skill-enabled complied with
+    inspected_revision + findings contract.
+activation:
+  positive: used
+  negative: correctly_idle
+transfer:
+  variants_passed: 1
+  counterexamples_passed: 1
+  overconstraint: false
+verdict: EFFECTIVE
