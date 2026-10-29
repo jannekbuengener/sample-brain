@@ -5629,7 +5629,8 @@ ApplicationWindow {
         }
     }
 
-    // #725/#742 Library reveal — same #1204 hairline disclosure style; state stays #725.
+    // #725/#742 Library reveal — overlay, not a workspaceRow child.
+    // Same #1204 hairline disclosure style; reveal state authority stays #725.
     PanelDisclosureSeam {
         id: libraryRevealAffordance
         objectName: "libraryRevealAffordance"
