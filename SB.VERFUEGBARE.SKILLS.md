@@ -23,20 +23,21 @@ The routing matrix below is generated. Do not hand-edit inside the markers; run:
 | Neues Feature oder Issue planen | `sample-brain-issue-to-session-plan` |
 | Unklare Fehlerursache | `sample-brain-root-cause` |
 | Bekannter Defekt / fehlender Schutz | `sample-brain-regression-gap` |
-| Bug oder Fehlverhalten | `jMerta/bug-triage` ergänzend |
+| Bug oder Fehlverhalten | `jMerta/bug-triage` ergÃ¤nzend |
 | CI rot / fehlgeschlagene Checks | `jMerta/ci-fix` |
 | Dependency-Bump / CVE | `jMerta/dependency-upgrader` |
 | Doku driftet vom Code | `jMerta/docs-sync` |
 | Implementierungsplanung | `jMerta/plan-work` |
 | Wesentliche Produktivcode-Implementierung (vor Code) | `sample-brain-test-first` |
 | Commit vorbereiten | `jMerta/commit-work` |
-| PR vorbereiten / öffnen | `jMerta/create-pr` |
+| PR vorbereiten / Ã¶ffnen | `jMerta/create-pr` |
 | Commit + PR zusammen | `jMerta/commit-work`, `jMerta/create-pr` |
-| Qualitätsprüfung vor Merge | `jMerta/coding-guidelines-verify` |
+| QualitÃ¤tsprÃ¼fung vor Merge | `jMerta/coding-guidelines-verify` |
 | Klar abgegrenztes Issue explizit an Jules delegieren | `sample-brain-jules-dispatch` |
-| Skill-Effektivität / Baseline-vs-Skill Verhaltensvergleich | `sample-brain-skill-effectiveness` |
+| Skill-EffektivitÃ¤t / Baseline-vs-Skill Verhaltensvergleich | `sample-brain-skill-effectiveness` |
 | Screen-1 UI/QML Visual Acceptance nach automatisierten Tests | `workflow-screen1-visual-acceptance` |
 | Repository-/Worktree-Hygiene | `workflow-repository-hygiene`, `sample-brain-repository-auditor` |
+| QML-Komponententests fÃ¼r Signale/Focus/Pointer/Lifecycle/Virtualisierung planen | `sample-brain-qml-component-test` |
 
 ## Security-Workflow-Audit (Priorität B, nur gezielt)
 
@@ -46,7 +47,7 @@ Priority B skills come from the external Anthropic-Cybersecurity-Skills package 
 
 | Thema | Skill |
 |-------|-------|
-| GitHub Actions härten | `securing-github-actions-workflows` |
+| GitHub Actions hÃ¤rten | `securing-github-actions-workflows` |
 | Gitleaks erweitern/tunen | `implementing-secret-scanning-with-gitleaks` |
 | SAST-Pipeline | `integrating-sast-into-github-actions-pipeline` |
 | Supply-Chain in CI/CD | `detecting-supply-chain-attacks-in-ci-cd` |
@@ -70,10 +71,11 @@ Issue mit Governance-Slice -> sample-brain-issue-to-session-plan -> bestehender 
 Issue mit unbekanntem Slice -> sample-brain-issue-to-session-plan -> planning_blocked
 Unklarer Bug mit Produkt-/Verhaltensursache -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
 Unklarer Bug mit CI-/Tooling-/Infrastruktur-Ursache -> sample-brain-root-cause -> jMerta/ci-fix und agent sample-brain-ci-debugger
-Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung
+Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer spÃ¤teren genehmigten Produktcode-Aenderung
 Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first
-Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung
+Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhÃ¤ngige lokale RÃ¼ckprÃ¼fung
 Screen-1 UI/QML visual change -> automated validation -> visual fixture/runtime evidence -> AGENT VISUAL ACCEPTANCE -> VISUAL_ACCEPT_PASS|FAIL
+QML-Interaktions-/Lifecycle-Coverage planen -> sample-brain-qml-component-test -> optional sample-brain-test-first
 ```
 
 ## Screen-1 Visual Acceptance
