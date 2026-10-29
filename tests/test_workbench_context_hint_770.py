@@ -239,6 +239,10 @@ def test_1210_screen1_controls_wire_hover_through_single_hint_owner() -> None:
     )[0]
     assert 'clearHover("browser.context.add_to_kit")' in menu_block
     assert 'clearHover("browser.context.harmonic_matches")' in menu_block
+    assert "syncContextActionFocusHint" in menu_block
+    assert "onFocusedActionChanged" in menu_block
+    assert "onVisibleChanged" in seam_block
+    assert "clearFocus(hintId)" in seam_block
 
     # #1204 / #1211 interaction authority stays intact while hints are attached.
     assert "function resizeColumn(" in source

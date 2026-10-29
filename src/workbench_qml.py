@@ -2434,10 +2434,21 @@ ApplicationWindow {
         onActiveFocusChanged: {
             if (hintId.length === 0)
                 return
-            if (activeFocus)
+            if (activeFocus && visible)
                 contextHintState.reportFocus(hintId)
             else
                 contextHintState.clearFocus(hintId)
+        }
+        // Collapse/reveal can hide this seam while it still holds keyboard focus.
+        onVisibleChanged: {
+            if (hintId.length === 0)
+                return
+            if (!visible) {
+                contextHintState.clearHover(hintId)
+                contextHintState.clearFocus(hintId)
+            } else if (activeFocus) {
+                contextHintState.reportFocus(hintId)
+            }
         }
     }
     title: "Sample Brain"
@@ -4353,6 +4364,24 @@ ApplicationWindow {
                         border.width: 1
                         radius: 6
                     }
+                    function contextActionHintId(actionIndex) {
+                        return actionIndex === 0
+                            ? "browser.context.add_to_kit"
+                            : "browser.context.harmonic_matches"
+                    }
+                    function syncContextActionFocusHint() {
+                        if (!visible) {
+                            contextHintState.clearFocus("browser.context.add_to_kit")
+                            contextHintState.clearFocus("browser.context.harmonic_matches")
+                            return
+                        }
+                        var active = contextActionHintId(focusedAction)
+                        var other = contextActionHintId(focusedAction === 0 ? 1 : 0)
+                        contextHintState.clearFocus(other)
+                        contextHintState.reportFocus(active)
+                    }
+                    onOpened: syncContextActionFocusHint()
+                    onFocusedActionChanged: syncContextActionFocusHint()
                     onClosed: {
                         window.interaction.closeSampleContext()
                         contextHintState.clearHover("browser.context.add_to_kit")
