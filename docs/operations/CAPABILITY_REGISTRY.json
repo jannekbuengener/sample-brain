@@ -1521,6 +1521,46 @@
         "skill_contract_gap_count",
         "fallback_to_generic_flow_count"
       ]
+    },
+    {
+      "id": "sample-brain-qml-review",
+      "type": "skill",
+      "purpose": "Specialist review of Sample Brain PySide6/Qt Quick/QML surfaces for binding, delegate, virtualization, lifecycle, and Python↔QML authority defects.",
+      "problem_solved": "Generic code review misses QML-specific Sample Brain authority and virtualization failure modes.",
+      "trigger": [
+        "QML or Qt Quick review",
+        "PySide6/QML bridge behavior review",
+        "delegate/virtualization/lifecycle review",
+        "Python↔QML authority boundary review"
+      ],
+      "inputs": [
+        "QML or embedded QML_SOURCE paths/diff",
+        "optional helper scan output",
+        "optional live qmllint when available"
+      ],
+      "outputs": [
+        "PASS|HOLD|NOT_ACTIVATED",
+        "findings with severity/location/category/authority/repair/evidence"
+      ],
+      "authority": "local-repo",
+      "mutation_level": "read-only-review",
+      "dependencies": [
+        "docs/skills/sample-brain-qml-review/scripts/qml_review_scan.py"
+      ],
+      "fallback": "manual QML semantic review using the skill body without qmllint",
+      "canonical_source": "docs/skills/sample-brain-qml-review/SKILL.md",
+      "source_kind": "local",
+      "repo_areas": [
+        "screen-1",
+        "qml",
+        "review"
+      ],
+      "validation": "RED→GREEN fixture delta + mirror/registry/routing checks; does not auto-fix product code",
+      "lifecycle": "active",
+      "linked_kpis": [
+        "skill_contract_gap_count",
+        "repair_rounds_per_pr"
+      ]
     }
   ],
   "routing": {
@@ -1665,6 +1705,12 @@
         "capability_ids": [
           "sample-brain-skill-authoring"
         ]
+      },
+      {
+        "situation": "PySide6/Qt Quick/QML Review (Bindings, Delegates, Authority)",
+        "capability_ids": [
+          "sample-brain-qml-review"
+        ]
       }
     ],
     "priority_b_matrix": [
@@ -1724,7 +1770,8 @@
       "Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung",
       "QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)",
       "QML-/Qt-Quick-Performance-Slice -> sample-brain-qml-profiler -> bei HOTSPOT_PROVEN und unklarer Ursache sample-brain-root-cause -> bei durablem Schutz sample-brain-regression-gap -> sample-brain-test-first",
-      "Skill-Authoring-/Packaging-Slice -> sample-brain-skill-authoring -> optional sample-brain-skill-effectiveness oder manuelles RED/GREEN"
+      "Skill-Authoring-/Packaging-Slice -> sample-brain-skill-authoring -> optional sample-brain-skill-effectiveness oder manuelles RED/GREEN",
+      "QML-/Qt-Quick-Review-Slice -> sample-brain-qml-review -> bei bekanntem Defekt sample-brain-regression-gap -> sample-brain-test-first"
     ],
     "special_routes": {
       "screen1_visual_acceptance": {

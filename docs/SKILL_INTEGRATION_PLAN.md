@@ -149,3 +149,6 @@ QML-/Qt-Quick-Performance-Slice -> sample-brain-qml-profiler -> bei HOTSPOT_PROV
 - `sample-brain-skill-authoring` – Sample-Brain-spezifisches CREATE/EDIT/PACKAGE/REGISTER/VALIDATE/MAINTAIN für repository-owned Skills
 | `sample-brain-skill-authoring` | Repository-Skill erstellen, packen, registrieren, validieren oder retiren |
 Skill-Authoring-/Packaging-Slice -> sample-brain-skill-authoring -> optional sample-brain-skill-effectiveness oder manuelles RED/GREEN
+- `sample-brain-qml-review` – Specialist-Review für PySide6/Qt Quick/QML inkl. Authority-/Virtualisierungs-Risiken
+| `sample-brain-qml-review` | Review von PySide6/Qt Quick/QML (Bindings, Delegates, Virtualisierung, Authority) |
+QML-/Qt-Quick-Review-Slice -> sample-brain-qml-review -> bei bekanntem Defekt sample-brain-regression-gap -> sample-brain-test-first

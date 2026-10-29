@@ -51,6 +51,7 @@ The routing matrix below is generated. Do not hand-edit inside the markers; run:
 | QML/Component-Test ausführen und Fehlerschicht klassifizieren | `sample-brain-qml-test-run` |
 | PySide6/Qt Quick/QML Runtime-Profiling (Hotspots, Bridge, Delegates) | `sample-brain-qml-profiler` |
 | Repository-Skill erstellen/packen/registrieren/validieren/retiren | `sample-brain-skill-authoring` |
+| PySide6/Qt Quick/QML Review (Bindings, Delegates, Authority) | `sample-brain-qml-review` |
 
 ## Security-Workflow-Audit (Priorität B, nur gezielt)
 
@@ -95,6 +96,7 @@ Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unab
 QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)
 QML-/Qt-Quick-Performance-Slice -> sample-brain-qml-profiler -> bei HOTSPOT_PROVEN und unklarer Ursache sample-brain-root-cause -> bei durablem Schutz sample-brain-regression-gap -> sample-brain-test-first
 Skill-Authoring-/Packaging-Slice -> sample-brain-skill-authoring -> optional sample-brain-skill-effectiveness oder manuelles RED/GREEN
+QML-/Qt-Quick-Review-Slice -> sample-brain-qml-review -> bei bekanntem Defekt sample-brain-regression-gap -> sample-brain-test-first
 ```
 
 ## Screen-1 Visual Acceptance
