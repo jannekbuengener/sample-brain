@@ -2626,8 +2626,9 @@ ApplicationWindow {
     readonly property bool programChromeMotionEnabled:
         !window.screenData.brandReducedMotion
         && window.screenData.brandMotionMode !== "off"
-    // Screen-1 Theme Authority (#785): Theme Core owns colors; QML binds semantics.
-    // No competing HEX palette here — see docs/assets/themes/ and workbench_theme.py.
+    // Screen-1 Theme / Appearance Authority (#785 + #1255):
+    // Python AppearanceResolvedSnapshot is the sole truth; QML binds semantics.
+    // No competing HEX palette / no QML-owned Appearance state machine.
     QtObject {
         id: theme
         readonly property color surfaceRoot: themeAuthority.surfaceRoot
@@ -8434,37 +8435,301 @@ def _qml_theme_authority_bridge(
     *,
     state_dir: Path | None = None,
     env: dict[str, str] | None = None,
+    platform_color_scheme: str | None = None,
+    platform_reduce_motion: bool | None = None,
 ):
-    """Expose Theme Core (#785) as the sole Screen-1 color authority for QML."""
-    from PySide6.QtCore import QObject, Property, Signal, Slot
+    """Sole Screen-1 Appearance / Theme authority bridge for QML (#785 + #1255).
 
+    Projects one coherent AppearanceResolvedSnapshot into semantic QML properties.
+    QML sends typed intents; Python owns resolution and #1254 persistence.
+    """
+    from dataclasses import replace
+
+    from PySide6.QtCore import Property, QObject, Signal, Slot
+
+    from . import workbench_appearance as appearance_mod
     from . import workbench_theme as theme_mod
 
     class QmlThemeAuthorityBridge(QObject):
         themeChanged = Signal()
+        appearanceChanged = Signal(int)
 
         def __init__(self) -> None:
             super().__init__()
             self._state_dir = state_dir
             self._env = env
-            self._tokens = theme_mod.resolve_theme(state_dir=state_dir, env=env)
-            self._semantics = theme_mod.theme_tokens_to_qml_semantics(self._tokens)
-            self._draft_accent = self._tokens.accent
-            self._draft_background = self._tokens.background
-            self._draft_foreground = self._tokens.foreground
-            self._draft_name = self._tokens.name
+            self._platform_color_scheme = platform_color_scheme
+            self._platform_reduce_motion = platform_reduce_motion
+            self._generation = 0
+            self._requested = appearance_mod.AppearanceRequestedState()
+            self._snapshot = appearance_mod.resolve_appearance(self._requested)
+            self._projection: dict[str, object] = {}
+            self._tokens = self._snapshot.legacy_theme_tokens()
+            self._semantics: dict[str, str] = {}
+            self._v2_tokens: dict[str, str] = {}
+            self._draft_accent = self._snapshot.accent
+            self._draft_background = self._snapshot.background
+            self._draft_foreground = self._snapshot.foreground
+            self._draft_name = self._snapshot.theme_ref
+            self._reload()
 
-        def _reload(self, tokens: theme_mod.ThemeTokens | None = None) -> None:
-            self._tokens = tokens or theme_mod.resolve_theme(
+        def _resolve(
+            self, requested: appearance_mod.AppearanceRequestedState
+        ) -> appearance_mod.AppearanceResolvedSnapshot:
+            return appearance_mod.resolve_appearance(
+                requested,
+                platform_color_scheme=self._platform_color_scheme,
+                platform_reduce_motion=self._platform_reduce_motion,
+            )
+
+        def _legacy_with_persisted_base_preset(
+            self, legacy: theme_mod.ThemeTokens
+        ) -> theme_mod.ThemeTokens:
+            """Keep custom-theme base_preset metadata from #785 store (#1255)."""
+            if legacy.name in theme_mod.PRESET_ORDER:
+                return legacy
+            meta = theme_mod.resolve_theme(
+                legacy.name,
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            self._semantics = theme_mod.theme_tokens_to_qml_semantics(self._tokens)
-            self._draft_accent = self._tokens.accent
-            self._draft_background = self._tokens.background
-            self._draft_foreground = self._tokens.foreground
-            self._draft_name = self._tokens.name
-            self.themeChanged.emit()
+            if meta.name != legacy.name:
+                return legacy
+            if meta.base_preset == legacy.base_preset:
+                return legacy
+            return replace(legacy, base_preset=meta.base_preset)
+
+        def _apply_snapshot(
+            self,
+            snapshot: appearance_mod.AppearanceResolvedSnapshot,
+            *,
+            requested: appearance_mod.AppearanceRequestedState | None = None,
+            emit: bool = True,
+        ) -> None:
+            projection = theme_mod.project_appearance_snapshot_for_qml(snapshot)
+            legacy = self._legacy_with_persisted_base_preset(
+                projection["legacy_tokens"]  # type: ignore[arg-type]
+            )
+            projection["legacy_tokens"] = legacy
+            # Atomic local swap: readers always see one coherent generation.
+            self._snapshot = snapshot
+            if requested is not None:
+                self._requested = requested
+            self._projection = projection
+            self._tokens = legacy
+            self._semantics = dict(projection["semantics"])  # type: ignore[arg-type]
+            self._v2_tokens = dict(projection["tokens"])  # type: ignore[arg-type]
+            self._draft_accent = str(projection["accent"])
+            self._draft_background = str(projection["background"])
+            self._draft_foreground = str(projection["foreground"])
+            self._draft_name = str(projection["theme_ref"])
+            self._generation += 1
+            if emit:
+                self.themeChanged.emit()
+                self.appearanceChanged.emit(self._generation)
+
+        def _reload(self, tokens: theme_mod.ThemeTokens | None = None) -> None:
+            del tokens  # Appearance authority reloads from persisted intent.
+            requested = theme_mod.load_appearance_preferences(
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            snapshot = self._resolve(requested)
+            self._apply_snapshot(snapshot, requested=requested)
+
+        def _intended_primary_pair(
+            self, requested: appearance_mod.AppearanceRequestedState
+        ) -> tuple[str, str] | None:
+            """Return intended (foreground, background) for the active profile."""
+            profile = self._active_profile(requested)
+            scheme = self._active_scheme(requested)
+            theme_ref = (
+                profile.theme_ref
+                if profile is not None and isinstance(profile.theme_ref, str) and profile.theme_ref.strip()
+                else theme_mod.DEFAULT_PRESET_NAME
+            )
+            cleaned = theme_ref.strip()
+            base_name = (
+                cleaned if cleaned in theme_mod.PRESET_ORDER else theme_mod.DEFAULT_PRESET_NAME
+            )
+            if scheme == appearance_mod.MODE_LIGHT:
+                background = appearance_mod.LIGHT_FALLBACK_BACKGROUND
+                foreground = appearance_mod.LIGHT_FALLBACK_FOREGROUND
+            else:
+                base_tokens = theme_mod.resolve_theme(
+                    base_name, state_dir=self._state_dir, env=self._env
+                )
+                background = base_tokens.background
+                foreground = base_tokens.foreground
+            if profile is not None:
+                if profile.background is not None:
+                    background = profile.background
+                if profile.foreground is not None:
+                    foreground = profile.foreground
+            bg = theme_mod._normalize_hex(background)
+            fg = theme_mod._normalize_hex(foreground)
+            if bg is None or fg is None:
+                return None
+            return fg, bg
+
+        def _profile_primary_unreadable(
+            self, requested: appearance_mod.AppearanceRequestedState
+        ) -> bool:
+            pair = self._intended_primary_pair(requested)
+            if pair is None:
+                return False
+            foreground, background = pair
+            return appearance_mod.contrast_ratio(foreground, background) < 4.5
+
+        def _commit_requested(
+            self, requested: appearance_mod.AppearanceRequestedState
+        ) -> bool:
+            # Contract: reject unreadable profiles on commit; keep last valid state.
+            if self._profile_primary_unreadable(requested):
+                return False
+            path = theme_mod.save_appearance_preferences(
+                requested,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            if path is None:
+                return False
+            loaded = theme_mod.load_appearance_preferences(
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            snapshot = self._resolve(loaded)
+            self._apply_snapshot(snapshot, requested=loaded)
+            return True
+
+        def _active_scheme(
+            self, requested: appearance_mod.AppearanceRequestedState
+        ) -> str:
+            return appearance_mod.resolve_scheme(
+                requested.mode,
+                platform_color_scheme=self._platform_color_scheme,
+            )
+
+        def _active_profile(
+            self, requested: appearance_mod.AppearanceRequestedState
+        ) -> appearance_mod.AppearanceProfileInput | None:
+            if requested.separate_light_dark:
+                scheme = self._active_scheme(requested)
+                return requested.dark if scheme == appearance_mod.MODE_DARK else requested.light
+            return requested.shared
+
+        def _put_active_profile(
+            self,
+            requested: appearance_mod.AppearanceRequestedState,
+            profile: appearance_mod.AppearanceProfileInput | None,
+        ) -> appearance_mod.AppearanceRequestedState:
+            if requested.separate_light_dark:
+                scheme = self._active_scheme(requested)
+                if scheme == appearance_mod.MODE_LIGHT:
+                    return replace(requested, light=profile)
+                return replace(requested, dark=profile)
+            return replace(requested, shared=profile)
+
+        def _profile_with(
+            self,
+            profile: appearance_mod.AppearanceProfileInput | None,
+            *,
+            theme_ref: str | None = None,
+            background: str | None = None,
+            foreground: str | None = None,
+            accent: str | None = None,
+            contrast: int | None = None,
+            clear_overrides: bool = False,
+        ) -> appearance_mod.AppearanceProfileInput:
+            base = profile or appearance_mod.AppearanceProfileInput()
+            if clear_overrides:
+                return appearance_mod.AppearanceProfileInput(
+                    theme_ref=theme_ref if theme_ref is not None else base.theme_ref,
+                )
+            return appearance_mod.AppearanceProfileInput(
+                theme_ref=base.theme_ref if theme_ref is None else theme_ref,
+                background=base.background if background is None else background,
+                foreground=base.foreground if foreground is None else foreground,
+                accent=base.accent if accent is None else accent,
+                contrast=base.contrast if contrast is None else contrast,
+            )
+
+        def _selection_profile_for(
+            self,
+            selected: str,
+            *,
+            previous: appearance_mod.AppearanceProfileInput | None,
+        ) -> appearance_mod.AppearanceProfileInput:
+            """Point the active profile at ``selected`` with #785 selection semantics."""
+            contrast = (
+                previous.contrast
+                if previous is not None and previous.contrast is not None
+                else appearance_mod.DEFAULT_CONTRAST
+            )
+            if selected in theme_mod.PRESET_ORDER:
+                return appearance_mod.AppearanceProfileInput(
+                    theme_ref=selected,
+                    contrast=contrast,
+                )
+            meta = theme_mod.resolve_theme(
+                selected,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            if meta.name != selected:
+                return appearance_mod.AppearanceProfileInput(
+                    theme_ref=theme_mod.DEFAULT_PRESET_NAME,
+                    contrast=contrast,
+                )
+            return appearance_mod.AppearanceProfileInput(
+                theme_ref=selected,
+                background=meta.background,
+                foreground=meta.foreground,
+                accent=meta.accent,
+                contrast=contrast,
+            )
+
+        def _commit_theme_selection(self, name: str) -> bool:
+            cleaned = str(name).strip()
+            if not cleaned:
+                return False
+            available = set(self._available_names())
+            if cleaned not in available:
+                cleaned = theme_mod.DEFAULT_PRESET_NAME
+            requested = self._requested
+            profile = self._selection_profile_for(
+                cleaned,
+                previous=self._active_profile(requested),
+            )
+            return self._commit_requested(self._put_active_profile(requested, profile))
+
+        def _rewrite_theme_refs(
+            self,
+            requested: appearance_mod.AppearanceRequestedState,
+            *,
+            old_name: str,
+            new_name: str | None,
+        ) -> appearance_mod.AppearanceRequestedState:
+            """Rewrite profile themeRef values after custom rename/delete."""
+
+            def _one(
+                profile: appearance_mod.AppearanceProfileInput | None,
+            ) -> appearance_mod.AppearanceProfileInput | None:
+                if profile is None or profile.theme_ref != old_name:
+                    return profile
+                if new_name is None:
+                    return appearance_mod.AppearanceProfileInput(
+                        theme_ref=theme_mod.DEFAULT_PRESET_NAME,
+                        contrast=profile.contrast,
+                    )
+                return replace(profile, theme_ref=new_name)
+
+            return replace(
+                requested,
+                shared=_one(requested.shared),
+                dark=_one(requested.dark),
+                light=_one(requested.light),
+            )
 
         def _preview_from_draft(self) -> None:
             accent = theme_mod._normalize_hex(self._draft_accent)
@@ -8472,18 +8737,48 @@ def _qml_theme_authority_bridge(
             foreground = theme_mod._normalize_hex(self._draft_foreground)
             if accent is None or background is None or foreground is None:
                 return
-            base = theme_mod.ThemeBase(
-                accent=accent,
-                background=background,
-                foreground=foreground,
+            # Reject unreadable drafts instead of projecting #1253's Blood
+            # fail-closed identity over the in-progress custom theme.
+            if appearance_mod.contrast_ratio(foreground, background) < 4.5:
+                return
+            preview = appearance_mod.resolve_appearance(
+                appearance_mod.AppearanceRequestedState(
+                    mode=self._requested.mode,
+                    separate_light_dark=False,
+                    ui_font_size=self._requested.ui_font_size,
+                    code_font_size=self._requested.code_font_size,
+                    motion_mode=self._requested.motion_mode,
+                    shared=appearance_mod.AppearanceProfileInput(
+                        theme_ref=self._draft_name,
+                        background=background,
+                        foreground=foreground,
+                        accent=accent,
+                        contrast=self._snapshot.contrast,
+                    ),
+                ),
+                platform_color_scheme=self._platform_color_scheme,
+                platform_reduce_motion=self._platform_reduce_motion,
             )
-            preview = theme_mod._tokens_from_base(
-                base,
-                name=self._draft_name,
-                base_preset=self._tokens.base_preset,
+            identity_name = self._tokens.name
+            identity_base = self._tokens.base_preset
+            # Keep custom identity even if resolve unexpectedly fail-closes.
+            if (
+                identity_name not in theme_mod.PRESET_ORDER
+                and preview.theme_ref != identity_name
+            ):
+                return
+            # Draft preview is ephemeral: project without persistence.
+            self._apply_snapshot(preview, requested=self._requested)
+            # Restore editable draft + custom identity after snapshot apply.
+            self._draft_accent = accent
+            self._draft_background = background
+            self._draft_foreground = foreground
+            self._draft_name = identity_name
+            self._tokens = replace(
+                self._tokens,
+                name=identity_name,
+                base_preset=identity_base,
             )
-            self._semantics = theme_mod.theme_tokens_to_qml_semantics(preview)
-            self.themeChanged.emit()
 
         def _color(self, key: str) -> str:
             return str(self._semantics.get(key) or theme_mod.TEXT_ON_ACTION)
@@ -8494,6 +8789,102 @@ def _qml_theme_authority_bridge(
                 env=self._env,
             )
             return list(theme_mod.list_presets()) + customs
+
+        @Property(int, notify=appearanceChanged)
+        def snapshotGeneration(self) -> int:
+            return self._generation
+
+        @Property("QVariantMap", notify=appearanceChanged)
+        def tokenSnapshot(self) -> dict:
+            return dict(self._v2_tokens)
+
+        @Property(str, notify=appearanceChanged)
+        def themeRef(self) -> str:
+            return str(self._projection.get("theme_ref") or self._snapshot.theme_ref)
+
+        @Property(str, notify=appearanceChanged)
+        def modeRequested(self) -> str:
+            return str(self._projection.get("mode_requested") or self._snapshot.mode_requested)
+
+        @Property(str, notify=appearanceChanged)
+        def resolvedScheme(self) -> str:
+            return str(
+                self._projection.get("resolved_scheme") or self._snapshot.resolved_scheme
+            )
+
+        @Property(bool, notify=appearanceChanged)
+        def separateLightDark(self) -> bool:
+            return bool(
+                self._projection.get(
+                    "separate_light_dark", self._snapshot.separate_light_dark
+                )
+            )
+
+        @Property(int, notify=appearanceChanged)
+        def contrast(self) -> int:
+            return int(self._projection.get("contrast", self._snapshot.contrast))
+
+        @Property(int, notify=appearanceChanged)
+        def uiFontSize(self) -> int:
+            return int(self._projection.get("ui_font_size", self._snapshot.ui_font_size))
+
+        @Property(int, notify=appearanceChanged)
+        def codeFontSize(self) -> int:
+            return int(
+                self._projection.get("code_font_size", self._snapshot.code_font_size)
+            )
+
+        @Property(str, notify=appearanceChanged)
+        def motionModeRequested(self) -> str:
+            return str(
+                self._projection.get("motion_mode_requested")
+                or self._snapshot.motion_mode_requested
+            )
+
+        @Property(str, notify=appearanceChanged)
+        def motionEffective(self) -> str:
+            return str(
+                self._projection.get("motion_effective") or self._snapshot.motion_effective
+            )
+
+        @Property(str, notify=appearanceChanged)
+        def windowChromeBackground(self) -> str:
+            return str(
+                self._projection.get("window_chrome_background")
+                or self._snapshot.tokens.window_chrome_background
+            )
+
+        @Property(str, notify=appearanceChanged)
+        def windowChromeForeground(self) -> str:
+            return str(
+                self._projection.get("window_chrome_foreground")
+                or self._snapshot.tokens.window_chrome_foreground
+            )
+
+        @Property(str, notify=appearanceChanged)
+        def windowChromeBorder(self) -> str:
+            return str(
+                self._projection.get("window_chrome_border")
+                or self._snapshot.tokens.window_chrome_border
+            )
+
+        @Property(float, notify=appearanceChanged)
+        def typographyUiStandardSize(self) -> float:
+            return float(
+                self._projection.get(
+                    "typography_ui_standard_size",
+                    self._snapshot.typography.ui.standard.font_size,
+                )
+            )
+
+        @Property(float, notify=appearanceChanged)
+        def typographyCodeSize(self) -> float:
+            return float(
+                self._projection.get(
+                    "typography_code_size",
+                    self._snapshot.typography.code.font_size,
+                )
+            )
 
         @Property(str, notify=themeChanged)
         def selectedThemeName(self) -> str:
@@ -8636,12 +9027,125 @@ def _qml_theme_authority_bridge(
 
         @Slot(str)
         def selectTheme(self, name: str) -> None:
-            tokens = theme_mod.select_theme(
-                str(name),
-                state_dir=self._state_dir,
-                env=self._env,
+            # Platform-aware active profile (not #785 system→dark sync heuristic).
+            self._commit_theme_selection(name)
+
+        @Slot(str)
+        def setPreset(self, name: str) -> None:
+            self._commit_theme_selection(name)
+
+        @Slot(str)
+        def setMode(self, mode: str) -> None:
+            self._commit_requested(replace(self._requested, mode=str(mode)))
+
+        @Slot(bool)
+        def setSeparateLightDark(self, enabled: bool) -> None:
+            requested = self._requested
+            flag = bool(enabled)
+            if flag and not requested.separate_light_dark:
+                shared = requested.shared or appearance_mod.AppearanceProfileInput(
+                    theme_ref=self._snapshot.theme_ref,
+                    background=self._snapshot.background,
+                    foreground=self._snapshot.foreground,
+                    accent=self._snapshot.accent,
+                    contrast=self._snapshot.contrast,
+                )
+                dark = requested.dark or shared
+                light = requested.light or shared
+                requested = replace(
+                    requested,
+                    separate_light_dark=True,
+                    shared=shared,
+                    dark=dark,
+                    light=light,
+                )
+            else:
+                requested = replace(requested, separate_light_dark=flag)
+            self._commit_requested(requested)
+
+        @Slot(str)
+        def setBackground(self, value: str) -> None:
+            normalized = theme_mod._normalize_hex(value)
+            if normalized is None:
+                return
+            requested = self._requested
+            profile = self._profile_with(
+                self._active_profile(requested),
+                background=normalized,
             )
-            self._reload(tokens)
+            self._commit_requested(self._put_active_profile(requested, profile))
+
+        @Slot(str)
+        def setForeground(self, value: str) -> None:
+            normalized = theme_mod._normalize_hex(value)
+            if normalized is None:
+                return
+            requested = self._requested
+            profile = self._profile_with(
+                self._active_profile(requested),
+                foreground=normalized,
+            )
+            self._commit_requested(self._put_active_profile(requested, profile))
+
+        @Slot(str)
+        def setAccent(self, value: str) -> None:
+            normalized = theme_mod._normalize_hex(value)
+            if normalized is None:
+                return
+            requested = self._requested
+            profile = self._profile_with(
+                self._active_profile(requested),
+                accent=normalized,
+            )
+            self._commit_requested(self._put_active_profile(requested, profile))
+
+        @Slot(int)
+        def setContrast(self, value: int) -> None:
+            requested = self._requested
+            profile = self._profile_with(
+                self._active_profile(requested),
+                contrast=int(value),
+            )
+            self._commit_requested(self._put_active_profile(requested, profile))
+
+        @Slot(int)
+        def setUiFontSize(self, value: int) -> None:
+            self._commit_requested(replace(self._requested, ui_font_size=int(value)))
+
+        @Slot(int)
+        def setCodeFontSize(self, value: int) -> None:
+            self._commit_requested(replace(self._requested, code_font_size=int(value)))
+
+        @Slot(str)
+        def setMotionMode(self, mode: str) -> None:
+            self._commit_requested(replace(self._requested, motion_mode=str(mode)))
+
+        @Slot()
+        def resetCurrentProfile(self) -> None:
+            requested = self._requested
+            active = self._active_profile(requested)
+            theme_ref = (
+                active.theme_ref
+                if active is not None and active.theme_ref
+                else self._snapshot.theme_ref
+            )
+            if not theme_ref or theme_ref == "custom":
+                theme_ref = theme_mod.DEFAULT_PRESET_NAME
+            profile = appearance_mod.AppearanceProfileInput(theme_ref=theme_ref)
+            self._commit_requested(self._put_active_profile(requested, profile))
+
+        @Slot(str)
+        def setPlatformColorScheme(self, scheme: str) -> None:
+            token = str(scheme or "").strip().lower()
+            self._platform_color_scheme = token if token in {"light", "dark"} else None
+            snapshot = self._resolve(self._requested)
+            self._apply_snapshot(snapshot, requested=self._requested)
+
+        @Slot(bool)
+        def setPlatformReduceMotion(self, enabled: bool) -> None:
+            self._platform_reduce_motion = bool(enabled)
+            snapshot = self._resolve(self._requested)
+            self._apply_snapshot(snapshot, requested=self._requested)
 
         @Slot()
         def customizeSelectedPreset(self) -> None:
@@ -8669,12 +9173,7 @@ def _qml_theme_authority_bridge(
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            tokens = theme_mod.select_theme(
-                name,
-                state_dir=self._state_dir,
-                env=self._env,
-            )
-            self._reload(tokens)
+            self._commit_theme_selection(name)
 
         @Slot(str, str)
         def createCustomFromPreset(self, base_preset: str, name: str) -> None:
@@ -8684,12 +9183,7 @@ def _qml_theme_authority_bridge(
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            tokens = theme_mod.select_theme(
-                str(name),
-                state_dir=self._state_dir,
-                env=self._env,
-            )
-            self._reload(tokens)
+            self._commit_theme_selection(str(name))
 
         @Slot(str)
         def setBaseAccent(self, value: str) -> None:
@@ -8719,9 +9213,10 @@ def _qml_theme_authority_bridge(
         def saveCurrentCustom(self) -> None:
             if self._tokens.name in theme_mod.PRESET_ORDER:
                 return
+            name = self._tokens.name
             theme_mod.save_custom_theme(
                 {
-                    "name": self._tokens.name,
+                    "name": name,
                     "base_preset": self._tokens.base_preset,
                     "accent": self._draft_accent,
                     "background": self._draft_background,
@@ -8730,52 +9225,57 @@ def _qml_theme_authority_bridge(
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            tokens = theme_mod.select_theme(
-                self._tokens.name,
-                state_dir=self._state_dir,
-                env=self._env,
-            )
-            self._reload(tokens)
+            self._commit_theme_selection(name)
 
         @Slot(str)
         def renameCurrentCustom(self, new_name: str) -> None:
             if self._tokens.name in theme_mod.PRESET_ORDER:
                 return
             old = self._tokens.name
+            cleaned = str(new_name).strip()
+            if not cleaned:
+                return
             theme_mod.rename_custom_theme(
                 old,
-                str(new_name),
+                cleaned,
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            tokens = theme_mod.resolve_theme(
-                str(new_name).strip(),
-                state_dir=self._state_dir,
-                env=self._env,
+            rewritten = self._rewrite_theme_refs(
+                self._requested,
+                old_name=old,
+                new_name=cleaned,
             )
-            self._reload(tokens)
+            self._commit_requested(rewritten)
 
         @Slot()
         def deleteCurrentCustom(self) -> None:
             if self._tokens.name in theme_mod.PRESET_ORDER:
                 return
+            old = self._tokens.name
             theme_mod.delete_custom_theme(
-                self._tokens.name,
+                old,
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            self._reload()
+            rewritten = self._rewrite_theme_refs(
+                self._requested,
+                old_name=old,
+                new_name=None,
+            )
+            self._commit_requested(rewritten)
 
         @Slot()
         def resetCurrentCustom(self) -> None:
             if self._tokens.name in theme_mod.PRESET_ORDER:
                 return
-            tokens = theme_mod.reset_custom_theme(
-                self._tokens.name,
+            name = self._tokens.name
+            theme_mod.reset_custom_theme(
+                name,
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            self._reload(tokens)
+            self._commit_theme_selection(name)
 
     return QmlThemeAuthorityBridge()
 

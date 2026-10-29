@@ -1266,6 +1266,54 @@ def theme_tokens_to_qml_semantics(tokens: Mapping[str, Any] | ThemeTokens) -> di
     return out
 
 
+APPEARANCE_V2_QML_BRIDGE_EXIT = "APPEARANCE_V2_QML_BRIDGE_LIVE"
+
+
+def project_appearance_snapshot_for_qml(snapshot: Any) -> dict[str, Any]:
+    """Project an AppearanceResolvedSnapshot into one renderer-facing payload (#1255).
+
+    Returns a coherent dict with #785 compatibility semantics plus exact V2
+    flat token keys. Callers must swap the whole payload atomically.
+    """
+    from . import workbench_appearance as appearance_mod
+
+    if not isinstance(snapshot, appearance_mod.AppearanceResolvedSnapshot):
+        raise TypeError("snapshot must be AppearanceResolvedSnapshot")
+
+    legacy = snapshot.legacy_theme_tokens()
+    semantics = theme_tokens_to_qml_semantics(legacy)
+    # Prefer authoritative protected highlights from the V2 snapshot.
+    for key, value in snapshot.tokens.protected_highlight.items():
+        normalized = _normalize_hex(value)
+        if normalized is not None:
+            semantics[str(key)] = normalized
+
+    flat_tokens = dict(snapshot.tokens.as_flat_dict())
+    return {
+        "legacy_tokens": legacy,
+        "semantics": semantics,
+        "tokens": flat_tokens,
+        "theme_ref": snapshot.theme_ref,
+        "mode_requested": snapshot.mode_requested,
+        "resolved_scheme": snapshot.resolved_scheme,
+        "separate_light_dark": bool(snapshot.separate_light_dark),
+        "background": snapshot.background,
+        "foreground": snapshot.foreground,
+        "accent": snapshot.accent,
+        "contrast": int(snapshot.contrast),
+        "ui_font_size": int(snapshot.ui_font_size),
+        "code_font_size": int(snapshot.code_font_size),
+        "motion_mode_requested": snapshot.motion_mode_requested,
+        "motion_effective": snapshot.motion_effective,
+        "window_chrome_background": snapshot.tokens.window_chrome_background,
+        "window_chrome_foreground": snapshot.tokens.window_chrome_foreground,
+        "window_chrome_border": snapshot.tokens.window_chrome_border,
+        "typography_ui_standard_size": float(snapshot.typography.ui.standard.font_size),
+        "typography_code_size": float(snapshot.typography.code.font_size),
+        "typography": snapshot.typography,
+    }
+
+
 _APPEARANCE_V2_EXPORTS = frozenset(
     {
         "APPEARANCE_V2_EXIT",
@@ -1290,6 +1338,7 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "APPEARANCE_V2_EXIT",
     "APPEARANCE_V2_PREFERENCES_EXIT",
+    "APPEARANCE_V2_QML_BRIDGE_EXIT",
     "AppearanceProfileInput",
     "AppearanceRequestedState",
     "AppearanceResolvedSnapshot",
@@ -1314,6 +1363,7 @@ __all__ = [
     "load_appearance_preferences",
     "mix_hex",
     "presets_canon_path",
+    "project_appearance_snapshot_for_qml",
     "rename_custom_theme",
     "reset_custom_theme",
     "resolve_appearance",
