@@ -638,6 +638,28 @@ def test_create_custom_activates_resolved_light_profile_under_system(
     assert loaded.dark.theme_ref == "Blood"
 
 
+def test_unreadable_draft_preview_keeps_custom_identity(tmp_path: Path) -> None:
+    bridge = _bridge(tmp_path)
+    bridge.createCustomFromPreset("Arctic", "Desk")
+    assert bridge.isCustom is True
+    assert bridge.selectedThemeName == "Desk"
+    before_accent = bridge.actionActive.lower()
+    # Force an unreadable BG==FG draft; preview must not flip identity to Blood.
+    bridge.setBaseBackground(bridge.baseForeground)
+    assert bridge.selectedThemeName == "Desk"
+    assert bridge.isCustom is True
+    assert bridge.basePresetName == "Arctic"
+    assert bridge.actionActive.lower() == before_accent
+    # Draft remains editable / saveable after the rejected preview.
+    bridge.setBaseBackground("#050607")
+    bridge.setBaseForeground("#eceef1")
+    bridge.saveCurrentCustom()
+    resolved = theme.resolve_theme("Desk", state_dir=tmp_path)
+    assert resolved.name == "Desk"
+    assert resolved.base_preset == "Arctic"
+    assert resolved.background.lower() == "#050607"
+
+
 def test_rename_custom_rewrites_active_profile_theme_ref(tmp_path: Path) -> None:
     bridge = _bridge(tmp_path, platform_color_scheme="dark")
     bridge.setSeparateLightDark(True)

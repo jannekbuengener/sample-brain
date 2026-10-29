@@ -8690,6 +8690,10 @@ def _qml_theme_authority_bridge(
             foreground = theme_mod._normalize_hex(self._draft_foreground)
             if accent is None or background is None or foreground is None:
                 return
+            # Reject unreadable drafts instead of projecting #1253's Blood
+            # fail-closed identity over the in-progress custom theme.
+            if appearance_mod.contrast_ratio(foreground, background) < 4.5:
+                return
             preview = appearance_mod.resolve_appearance(
                 appearance_mod.AppearanceRequestedState(
                     mode=self._requested.mode,
@@ -8708,8 +8712,26 @@ def _qml_theme_authority_bridge(
                 platform_color_scheme=self._platform_color_scheme,
                 platform_reduce_motion=self._platform_reduce_motion,
             )
+            identity_name = self._tokens.name
+            identity_base = self._tokens.base_preset
+            # Keep custom identity even if resolve unexpectedly fail-closes.
+            if (
+                identity_name not in theme_mod.PRESET_ORDER
+                and preview.theme_ref != identity_name
+            ):
+                return
             # Draft preview is ephemeral: project without persistence.
             self._apply_snapshot(preview, requested=self._requested)
+            # Restore editable draft + custom identity after snapshot apply.
+            self._draft_accent = accent
+            self._draft_background = background
+            self._draft_foreground = foreground
+            self._draft_name = identity_name
+            self._tokens = replace(
+                self._tokens,
+                name=identity_name,
+                base_preset=identity_base,
+            )
 
         def _color(self, key: str) -> str:
             return str(self._semantics.get(key) or theme_mod.TEXT_ON_ACTION)
