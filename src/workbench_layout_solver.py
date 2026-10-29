@@ -49,6 +49,9 @@ class LayoutSolution:
     available_width: float
     handle_width: float
     fallback: str | None
+    # #1204: content not claimed by visible horizontal panels. Not a persisted
+    # panel — Browser collapse leaves Library bounded and parks freed width here.
+    residual_width: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -164,6 +167,7 @@ def solve_widths(
             available_width=available_width,
             handle_width=handle_width,
             fallback=None,
+            residual_width=float(available_width) if has_active_source else 0.0,
         )
     handle_budget = handle_width * max(0, len(visible) - 1)
     content = available_width - handle_budget
@@ -173,10 +177,22 @@ def solve_widths(
     mins = {panel_id: PANEL_MIN_WIDTH[panel_id] for panel_id in visible}
     min_sum = sum(mins.values())
     fallback: str | None = None
+    residual_width = 0.0
+
+    # #1204 residual workspace: when Browser is presentation-collapsed, keep
+    # visible panels at absolute stored shares of full content. Do not
+    # renormalize Library (etc.) to fill the row; leftover is residual canvas.
+    # Browser OPEN keeps existing elastic `_visible_shares` semantics.
+    use_residual_workspace = not browser_visible
     if content + 1e-9 < min_sum:
         fallback = "proportional_min_overflow"
         scale = content / min_sum
         widths = {panel_id: mins[panel_id] * scale for panel_id in visible}
+        residual_width = 0.0
+    elif use_residual_workspace:
+        widths, residual_width = _allocate_absolute_shares(
+            stored, visible, content, mins
+        )
     else:
         shares = _visible_shares(stored, visible)
         widths = {panel_id: shares[panel_id] * content for panel_id in visible}
@@ -188,6 +204,7 @@ def solve_widths(
         available_width=available_width,
         handle_width=handle_width,
         fallback=fallback,
+        residual_width=residual_width,
     )
 
 
@@ -398,6 +415,32 @@ def _visible_shares(
         equal = 1.0 / len(visible)
         return {panel_id: equal for panel_id in visible}
     return {panel_id: weights[panel_id] / total for panel_id in visible}
+
+
+def _allocate_absolute_shares(
+    stored: Mapping[str, float],
+    visible: tuple[str, ...] | list[str],
+    content: float,
+    mins: Mapping[str, float],
+) -> tuple[dict[str, float], float]:
+    """Project visible panels at stored absolute shares; leftover → residual.
+
+    Unlike `_visible_shares` + `_enforce_minima`, this path never scales visible
+    panels up to fill ``content``. Collapse therefore cannot inflate Library to
+    the full workspace width (#1204).
+    """
+    widths = {
+        panel_id: max(float(mins[panel_id]), float(stored[panel_id]) * content)
+        for panel_id in visible
+    }
+    total = sum(widths.values())
+    if total > content + 1e-9:
+        # Hard overflow against minima — scale down to fit; residual is zero.
+        scale = content / total if total > 0 else 0.0
+        widths = {panel_id: widths[panel_id] * scale for panel_id in visible}
+        return widths, 0.0
+    residual = max(0.0, content - total)
+    return widths, residual
 
 
 def _distance_weights(

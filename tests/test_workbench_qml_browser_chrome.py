@@ -574,17 +574,17 @@ def test_browser_column_resize_reuses_shared_header_row_geometry():
     assert 'index % 2 === 1 ? theme.surfacePanel' not in QML_SOURCE
 
 
-def test_browser_column_resize_does_not_collide_with_panel_collapse_845():
-    """#846 must not put SizeHorCursor / applyDrag on #845 collapse handles."""
+def test_browser_column_resize_does_not_collide_with_panel_disclosure_1204():
+    """#846 must not put SizeHorCursor / applyDrag on #1204 disclosure seams."""
     assert 'objectName: "browserCollapseHandle"' in QML_SOURCE
     assert 'objectName: "browserCollapseAffordance"' in QML_SOURCE
+    assert 'objectName: "liveKitCollapseHandle"' not in QML_SOURCE
     for handle in (
         "browserCollapseHandle",
         "harmonyCollapseHandle",
-        "liveKitCollapseHandle",
     ):
         idx = QML_SOURCE.index(f'objectName: "{handle}"')
-        window = QML_SOURCE[idx : idx + 1200]
+        window = QML_SOURCE[max(0, idx - 120) : idx + 500]
         assert "SizeHorCursor" not in window
         assert "layoutModel.applyDrag" not in window
         assert "browserPane.resizeColumn" not in window

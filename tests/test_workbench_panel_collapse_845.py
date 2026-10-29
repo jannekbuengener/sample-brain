@@ -1,10 +1,13 @@
-"""#845 Panel presentation collapse / mid-edge handles — frozen contracts.
+"""#1204 panel disclosure + collapse geometry (historical #845 functional rules).
 
-Canon: docs/WORKBENCH_ELASTIC_LAYOUT.md (Presentation collapse #845).
-Parent: #844. Boundaries: #843 (Matches embed), #846 (resize/divider styling).
+Canon: docs/WORKBENCH_ELASTIC_LAYOUT.md (Panel disclosure + collapse geometry #1204).
+Historical origin: #845 / parent #844. Boundaries: #843 (Matches embed),
+#1211/#1210 out of scope, Live Kit drawer via #1077 (not horizontal panel chrome).
 
-TEST_FREEZE: assertions below express the intended #845 behaviour. Do not weaken
-them to fit incomplete product code. Expected RED until implementation.
+TEST_FREEZE: assertions below express the intended #1204 behaviour. Do not weaken
+them to fit incomplete product code. Functional #845 rules that remain valid are
+retained; superseded chrome/geometry rules are replaced by residual-workspace and
+hairline-disclosure contracts.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from src.workbench_harmony import (
 )
 from src.workbench_layout_solver import (
     CANONICAL_DEFAULT_RATIOS,
-    HANDLE_WIDTH_PX,
+    PANEL_MIN_WIDTH,
     solve_widths,
     visible_panel_ids,
 )
@@ -35,6 +38,19 @@ from src.workbench_qml_spike import build_qml_view_model_from_fixture
 from src.workbench_visual_acceptance import build_screen1_visual_fixture_v1
 
 _WORKBENCH_QML_PY = Path(__file__).resolve().parents[1] / "src" / "workbench_qml.py"
+
+# Shared hairline disclosure objectNames (#1204). Historical #845 names retained
+# where they still identify Browser/Harmony disclosure controls.
+_BROWSER_DISCLOSURE_OPEN = "browserCollapseHandle"
+_BROWSER_DISCLOSURE_REOPEN = "browserCollapseAffordance"
+_HARMONY_DISCLOSURE_OPEN = "harmonyCollapseHandle"
+_HARMONY_DISCLOSURE_REOPEN = "harmonyCollapseAffordance"
+_PANEL_DISCLOSURE_MARKERS = (
+    _BROWSER_DISCLOSURE_OPEN,
+    _BROWSER_DISCLOSURE_REOPEN,
+    _HARMONY_DISCLOSURE_OPEN,
+    _HARMONY_DISCLOSURE_REOPEN,
+)
 
 
 # --- Pure ownership / solver contracts ---------------------------------------
@@ -91,9 +107,18 @@ def test_solver_forces_harmony_out_when_browser_not_visible():
     ) == ("library",)
 
 
-def test_solver_collapsed_browser_with_live_kit_renormalises_without_ratio_drift():
+def test_solver_collapsed_browser_keeps_library_bounded_with_residual_workspace():
+    """#1204: Browser collapse must not expand Library to the full workspace."""
     available = 1600.0
-    solution = solve_widths(
+    open_solution = solve_widths(
+        CANONICAL_DEFAULT_RATIOS,
+        available_width=available,
+        harmony_open=False,
+        has_active_source=True,
+        browser_visible=True,
+        library_visible=True,
+    )
+    collapsed = solve_widths(
         CANONICAL_DEFAULT_RATIOS,
         available_width=available,
         harmony_open=False,
@@ -102,10 +127,87 @@ def test_solver_collapsed_browser_with_live_kit_renormalises_without_ratio_drift
         live_kit_visible=True,
         library_visible=True,
     )
-    # #908: Live Kit no longer takes horizontal width.
-    assert set(solution.widths) == {"library"}
-    assert abs(solution.widths["library"] - available) < 1e-6
-    assert solution.ratios == CANONICAL_DEFAULT_RATIOS
+    assert set(collapsed.widths) == {"library"}
+    assert "harmony" not in collapsed.widths
+    assert "browser" not in collapsed.widths
+    library_width = float(collapsed.widths["library"])
+    residual = float(collapsed.residual_width)
+    assert abs(library_width + residual - available) < 1e-6
+    assert library_width < available * 0.5
+    assert library_width >= PANEL_MIN_WIDTH["library"] - 1e-6
+    # Bounded near stored absolute share, not renormalized to ~100%.
+    expected_share = CANONICAL_DEFAULT_RATIOS["library"] * available
+    assert abs(library_width - expected_share) < 1.0
+    assert residual > library_width
+    assert collapsed.ratios == CANONICAL_DEFAULT_RATIOS
+    assert collapsed.ratios == open_solution.ratios
+
+    # Harmony-open input must still force Matches out when Browser is hidden.
+    collapsed_harmony_input = solve_widths(
+        CANONICAL_DEFAULT_RATIOS,
+        available_width=available,
+        harmony_open=True,
+        has_active_source=True,
+        browser_visible=False,
+        library_visible=True,
+    )
+    assert set(collapsed_harmony_input.widths) == {"library"}
+    assert float(collapsed_harmony_input.residual_width) > 0.0
+    assert collapsed_harmony_input.ratios == CANONICAL_DEFAULT_RATIOS
+
+
+def test_solver_browser_reopen_restores_geometry_from_same_ratio_truth_without_drift():
+    available = 1600.0
+    ratios = dict(CANONICAL_DEFAULT_RATIOS)
+    open_a = solve_widths(
+        ratios,
+        available_width=available,
+        harmony_open=False,
+        has_active_source=True,
+        browser_visible=True,
+        library_visible=True,
+    )
+    for _ in range(5):
+        collapsed = solve_widths(
+            ratios,
+            available_width=available,
+            harmony_open=False,
+            has_active_source=True,
+            browser_visible=False,
+            library_visible=True,
+        )
+        assert collapsed.ratios == ratios
+        assert "browser" not in collapsed.widths
+        open_b = solve_widths(
+            collapsed.ratios,
+            available_width=available,
+            harmony_open=False,
+            has_active_source=True,
+            browser_visible=True,
+            library_visible=True,
+        )
+        assert open_b.ratios == open_a.ratios
+        assert abs(open_b.widths["library"] - open_a.widths["library"]) < 1e-6
+        assert abs(open_b.widths["browser"] - open_a.widths["browser"]) < 1e-6
+        assert open_b.residual_width == 0.0 or open_b.residual_width < 1e-6
+        ratios = dict(open_b.ratios)
+
+
+def test_solver_narrow_width_collapsed_browser_clamps_library_deterministically():
+    available = 400.0
+    collapsed = solve_widths(
+        CANONICAL_DEFAULT_RATIOS,
+        available_width=available,
+        harmony_open=False,
+        has_active_source=True,
+        browser_visible=False,
+        library_visible=True,
+    )
+    library_width = float(collapsed.widths["library"])
+    assert library_width <= available + 1e-6
+    assert library_width >= min(PANEL_MIN_WIDTH["library"], available) - 1e-6
+    assert abs(library_width + float(collapsed.residual_width) - available) < 1e-6
+    assert collapsed.ratios == CANONICAL_DEFAULT_RATIOS
 
 
 def test_solver_browser_visible_default_preserves_pre845_panel_sets():
@@ -122,26 +224,45 @@ def test_solver_browser_visible_default_preserves_pre845_panel_sets():
     ) == ("library", "browser", "harmony")
 
 
-# --- QML source contracts: handles vs resize ---------------------------------
+# --- QML source contracts: hairline disclosure vs resize ---------------------
 
 
-def test_qml_declares_distinct_collapse_handle_object_names():
-    assert 'objectName: "browserCollapseHandle"' in QML_SOURCE
-    assert 'objectName: "harmonyCollapseHandle"' in QML_SOURCE
-    assert 'objectName: "liveKitCollapseHandle"' in QML_SOURCE
-    assert 'objectName: "browserCollapseAffordance"' in QML_SOURCE
-    assert 'objectName: "harmonyCollapseAffordance"' in QML_SOURCE
-    assert 'objectName: "liveKitCollapseAffordance"' in QML_SOURCE
+def test_qml_declares_unified_panel_disclosure_object_names():
+    for name in _PANEL_DISCLOSURE_MARKERS:
+        assert f'objectName: "{name}"' in QML_SOURCE
+    # Live Kit is drawer/HUD — not part of the horizontal panel disclosure set.
+    assert 'objectName: "liveKitCollapseHandle"' not in QML_SOURCE
+    assert 'objectName: "liveKitCollapseAffordance"' not in QML_SOURCE
+    assert "toggleLiveKitDrawer" in QML_SOURCE
+    assert 'objectName: "editLiveKitRevealControl"' in QML_SOURCE
+    assert 'objectName: "liveKitDrawerHideButton"' in QML_SOURCE
+
+
+def test_qml_panel_disclosure_uses_hairline_seam_not_chunky_permanent_tab():
+    """Visible seam ~1 DIP; hit area wider; chevron only when disclosed."""
+    assert "component PanelDisclosureSeam" in QML_SOURCE
+    seam_idx = QML_SOURCE.index("component PanelDisclosureSeam")
+    seam = QML_SOURCE[seam_idx : seam_idx + 2200]
+    assert "property int hitWidth: 8" in seam
+    assert "width: 1" in seam
+    assert "disclosed" in seam
+    assert "PointingHandCursor" in seam
+    for name in _PANEL_DISCLOSURE_MARKERS:
+        idx = QML_SOURCE.index(f'objectName: "{name}"')
+        window = QML_SOURCE[max(0, idx - 220) : idx + 360]
+        assert "PanelDisclosureSeam" in window
+    # Chunky #845 permanent reopen slabs (fixed 18×72 elevated tabs) are gone.
+    reopen_idx = QML_SOURCE.index(f'objectName: "{_BROWSER_DISCLOSURE_REOPEN}"')
+    reopen_block = QML_SOURCE[reopen_idx : reopen_idx + 500]
+    assert "height: 72" not in reopen_block
+    assert "surfaceElevated" not in reopen_block
 
 
 def test_qml_collapse_handles_use_click_cursor_not_resize_cursor():
-    """Collapse = PointingHand; elastic resize strips keep SizeHorCursor."""
+    """Disclosure = PointingHand; elastic resize strips keep SizeHorCursor."""
     assert "toggleBrowserCollapsed" in QML_SOURCE
-    # #1077: Live Kit open/close uses the drawer seam (collapsed is a shim).
-    assert "toggleLiveKitDrawer" in QML_SOURCE or "toggleLiveKitCollapsed" in QML_SOURCE
-    assert "browserCollapseHandle" in QML_SOURCE
+    assert "toggleLiveKitDrawer" in QML_SOURCE
     assert "PointingHandCursor" in QML_SOURCE
-    # Existing elastic resize contract remains present and unchanged in intent.
     assert 'objectName: "elasticHandleAfterLibrary"' in QML_SOURCE
     assert 'objectName: "elasticHandleAfterBrowser"' in QML_SOURCE
     assert 'objectName: "elasticHandleAfterHarmony"' not in QML_SOURCE
@@ -151,34 +272,41 @@ def test_qml_collapse_handles_use_click_cursor_not_resize_cursor():
     assert 'layoutModel.applyDrag("harmony"' not in QML_SOURCE
 
 
-def test_qml_collapse_handles_are_keyboard_activatable():
-    """Hover may emphasize; Space/Enter activation must remain possible."""
-    for name in (
-        "browserCollapseHandle",
-        "harmonyCollapseHandle",
-        "liveKitCollapseHandle",
-        "browserCollapseAffordance",
-        "harmonyCollapseAffordance",
-        "liveKitCollapseAffordance",
-    ):
-        assert f'objectName: "{name}"' in QML_SOURCE
-    assert "Key_Return" in QML_SOURCE or "Keys.onReturnPressed" in QML_SOURCE
-    assert "Key_Space" in QML_SOURCE or "Keys.onPressed" in QML_SOURCE
-
-
-def test_qml_collapse_handles_do_not_share_apply_drag_mouse_area():
-    """Collapse click/activate must not live inside elastic drag MouseAreas."""
-    # #908: library + browser handles only.
+def test_qml_disclosure_and_resize_remain_separate_intents():
+    """Collapse must not share applyDrag; resize must not call collapse toggles."""
     assert QML_SOURCE.count("layoutModel.applyDrag(") == 2
-    for handle in (
-        "browserCollapseHandle",
-        "harmonyCollapseHandle",
-        "liveKitCollapseHandle",
-    ):
+    for handle in (_BROWSER_DISCLOSURE_OPEN, _HARMONY_DISCLOSURE_OPEN):
         idx = QML_SOURCE.index(f'objectName: "{handle}"')
-        window = QML_SOURCE[idx : idx + 1200]
+        window = QML_SOURCE[max(0, idx - 120) : idx + 500]
         assert "layoutModel.applyDrag" not in window
         assert "SizeHorCursor" not in window
+    for resize_name in ("elasticHandleAfterLibrary", "elasticHandleAfterBrowser"):
+        idx = QML_SOURCE.index(f'objectName: "{resize_name}"')
+        window = QML_SOURCE[idx : idx + 2200]
+        assert "toggleBrowserCollapsed" not in window
+        assert "activateHarmonicMatchToggle" not in window
+        assert "SizeHorCursor" in window
+        assert "layoutModel.applyDrag" in window
+
+
+def test_qml_collapse_handles_are_keyboard_activatable():
+    """Hover may emphasize; Space/Enter activation must remain possible."""
+    assert "component PanelDisclosureSeam" in QML_SOURCE
+    seam_idx = QML_SOURCE.index("component PanelDisclosureSeam")
+    seam = QML_SOURCE[seam_idx : seam_idx + 2200]
+    assert "Keys.onReturnPressed" in seam or "Key_Return" in seam
+    assert "Key_Space" in seam or "Keys.onPressed" in seam
+    assert "Accessible.role" in seam
+    assert "Accessible.name" in seam
+    for name in _PANEL_DISCLOSURE_MARKERS:
+        assert f'objectName: "{name}"' in QML_SOURCE
+
+
+def test_qml_library_reveal_uses_same_disclosure_primitive_style():
+    assert 'objectName: "libraryRevealAffordance"' in QML_SOURCE
+    idx = QML_SOURCE.index('objectName: "libraryRevealAffordance"')
+    window = QML_SOURCE[max(0, idx - 180) : idx + 500]
+    assert "PanelDisclosureSeam" in window
 
 
 # --- Adapter / presentation preservation -------------------------------------
@@ -282,6 +410,37 @@ def test_collapse_browser_forces_matches_closed_and_preserves_selection_and_resu
     assert tuple(view_model.harmony_rows) == harmony_rows_before
 
 
+def test_collapse_does_not_mutate_kit_or_audition_product_state():
+    _fixture, view_model, adapter, _composition, live_kit = _adapter_with_harmony_and_kit()
+    preview_before = bool(getattr(adapter, "preview_active", False))
+    groups_before = tuple(
+        (
+            group.name,
+            tuple(
+                (slot.name, None if slot.assignment is None else slot.assignment.path)
+                for slot in group.slots
+            ),
+        )
+        for group in live_kit.groups
+    )
+    selected = int(view_model.selected_browser_index)
+    adapter.toggle_browser_collapsed()
+    adapter.toggle_browser_collapsed()
+    assert int(view_model.selected_browser_index) == selected
+    assert bool(getattr(adapter, "preview_active", False)) == preview_before
+    groups_after = tuple(
+        (
+            group.name,
+            tuple(
+                (slot.name, None if slot.assignment is None else slot.assignment.path)
+                for slot in group.slots
+            ),
+        )
+        for group in live_kit.groups
+    )
+    assert groups_after == groups_before
+
+
 def test_transient_live_kit_drawer_toggle_preserves_materialization_and_slot_content():
     _fixture, view_model, adapter, composition, live_kit = _adapter_with_harmony_and_kit()
     assert view_model.live_kit_materialized is True
@@ -339,6 +498,38 @@ def test_interaction_bridge_projects_collapse_properties_and_slots():
 def test_elastic_bridge_accepts_browser_visible_callback():
     params = inspect.signature(create_elastic_layout_bridge).parameters
     assert "browser_visible" in params
+
+
+def test_elastic_bridge_projects_residual_width_without_ratio_mutation(tmp_path: Path):
+    import importlib.util
+
+    if importlib.util.find_spec("PySide6") is None:
+        return
+    active = {"value": True}
+    browser = {"value": True}
+    bridge = create_elastic_layout_bridge(
+        state_dir=tmp_path,
+        harmony_open=lambda: False,
+        has_active_source=lambda: active["value"],
+        browser_visible=lambda: browser["value"],
+        library_revealed=lambda: True,
+    )
+    bridge.setContentWidth(1600.0)
+    before = dict(bridge.current_ratios())
+    open_library = float(bridge.libraryWidth)
+    assert float(bridge.residualWidth) < 1e-6
+    browser["value"] = False
+    bridge.syncFromInteraction()
+    assert dict(bridge.current_ratios()) == before
+    assert float(bridge.browserWidth) == 0.0
+    assert float(bridge.libraryWidth) < open_library * 1.5
+    assert float(bridge.libraryWidth) < 800.0
+    assert float(bridge.residualWidth) > float(bridge.libraryWidth)
+    browser["value"] = True
+    bridge.syncFromInteraction()
+    assert dict(bridge.current_ratios()) == before
+    assert abs(float(bridge.libraryWidth) - open_library) < 1e-6
+    assert float(bridge.residualWidth) < 1e-6
 
 
 def test_production_layout_wiring_uses_materialized_and_not_collapsed_for_live_kit():
