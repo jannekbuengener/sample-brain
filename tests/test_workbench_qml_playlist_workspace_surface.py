@@ -80,11 +80,15 @@ def test_normal_rows_do_not_opaque_cover_playlist_workspace_surface() -> None:
     """Normal rows stay visually uniform: no opaque panel zebra over surfaceRoot."""
     delegate_idx = QML_SOURCE.index("delegate: Rectangle { id: browserRow;")
     delegate = QML_SOURCE[delegate_idx : delegate_idx + 500]
-    # selection > hover > transparent (reveals reused Clean-Start fill).
+    # selection > transparent (#1281: hover is waveform-only, not a row card).
     assert (
         'color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface '
-        ': (rowSelection.containsMouse ? theme.surfaceElevated : "transparent")'
+        ': "transparent"'
     ) in delegate
+    assert (
+        'rowSelection.containsMouse ? theme.surfaceElevated : "transparent"'
+        not in delegate
+    )
     assert 'index % 2 === 1 ? theme.surfacePanel' not in delegate
 
 
