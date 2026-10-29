@@ -508,37 +508,39 @@ sb_result_t sb_voice_set_rate(sb_engine_t engine, sb_voice_id_t id, float rate) 
 
 SAMPLEBRAIN_EXPORT sb_result_t sb_voice_set_sync_mode(sb_engine_t engine, sb_voice_id_t id, int mode) {
     if (!engine) return SB_ERR_NOT_INITIALIZED;
+    if (mode != 0 && mode != 1) return SB_ERR_INVALID_ARG;
 
-    sb_engine::Command cmd{};
-    cmd.type = sb_engine::Command::CMD_SET_SYNC_MODE;
-    cmd.set_sync_mode.id = id;
-    cmd.set_sync_mode.mode = mode;
-
-    return enqueue_command(engine, cmd);
+    // Key-Lock prepare/teardown is control-thread work (allocations + Signalsmith init).
+    std::lock_guard<std::mutex> lock(engine->voices_mutex);
+    auto it = std::find_if(engine->voices.begin(), engine->voices.end(),
+                           [id](Voice* v) { return v->id == id; });
+    if (it == engine->voices.end()) return SB_ERR_VOICE_NOT_FOUND;
+    (*it)->set_sync_mode(mode);
+    return SB_OK;
 }
 
 SAMPLEBRAIN_EXPORT sb_result_t sb_voice_set_source_bpm(sb_engine_t engine, sb_voice_id_t id, float bpm) {
     if (!engine) return SB_ERR_NOT_INITIALIZED;
-    if (bpm <= 0.0f) return SB_ERR_INVALID_ARG;
+    if (!std::isfinite(bpm) || bpm <= 0.0f) return SB_ERR_INVALID_ARG;
 
-    sb_engine::Command cmd{};
-    cmd.type = sb_engine::Command::CMD_SET_SOURCE_BPM;
-    cmd.set_source_bpm.id = id;
-    cmd.set_source_bpm.bpm = bpm;
-
-    return enqueue_command(engine, cmd);
+    std::lock_guard<std::mutex> lock(engine->voices_mutex);
+    auto it = std::find_if(engine->voices.begin(), engine->voices.end(),
+                           [id](Voice* v) { return v->id == id; });
+    if (it == engine->voices.end()) return SB_ERR_VOICE_NOT_FOUND;
+    (*it)->set_source_bpm(bpm);
+    return SB_OK;
 }
 
 SAMPLEBRAIN_EXPORT sb_result_t sb_voice_set_master_bpm(sb_engine_t engine, sb_voice_id_t id, float bpm) {
     if (!engine) return SB_ERR_NOT_INITIALIZED;
-    if (bpm <= 0.0f) return SB_ERR_INVALID_ARG;
+    if (!std::isfinite(bpm) || bpm <= 0.0f) return SB_ERR_INVALID_ARG;
 
-    sb_engine::Command cmd{};
-    cmd.type = sb_engine::Command::CMD_SET_MASTER_BPM;
-    cmd.set_master_bpm.id = id;
-    cmd.set_master_bpm.bpm = bpm;
-
-    return enqueue_command(engine, cmd);
+    std::lock_guard<std::mutex> lock(engine->voices_mutex);
+    auto it = std::find_if(engine->voices.begin(), engine->voices.end(),
+                           [id](Voice* v) { return v->id == id; });
+    if (it == engine->voices.end()) return SB_ERR_VOICE_NOT_FOUND;
+    (*it)->set_master_bpm(bpm);
+    return SB_OK;
 }
 
 sb_result_t sb_recording_start(sb_engine_t engine, sb_recording_id_t* out_id, sb_frame_t engine_frame) {
@@ -791,31 +793,12 @@ static sb_result_t process_commands(sb_engine_t engine) {
                 }
                 break;
             }
-            case sb_engine::Command::CMD_SET_SYNC_MODE: {
-                Voice* v = find_voice(engine, cmd.set_sync_mode.id);
-                if (v) {
-                    v->sync_mode = cmd.set_sync_mode.mode;
-                }
+            case sb_engine::Command::CMD_SET_SYNC_MODE:
+            case sb_engine::Command::CMD_SET_SOURCE_BPM:
+            case sb_engine::Command::CMD_SET_MASTER_BPM:
+                // Handled synchronously on the control thread so Key-Lock
+                // preparation never runs inside the audio callback.
                 break;
-            }
-            case sb_engine::Command::CMD_SET_SOURCE_BPM: {
-                Voice* v = find_voice(engine, cmd.set_source_bpm.id);
-                if (v) {
-                    v->source_bpm = cmd.set_source_bpm.bpm;
-                } else {
-                    result = SB_ERR_VOICE_NOT_FOUND;
-                }
-                break;
-            }
-            case sb_engine::Command::CMD_SET_MASTER_BPM: {
-                Voice* v = find_voice(engine, cmd.set_master_bpm.id);
-                if (v) {
-                    v->master_bpm = cmd.set_master_bpm.bpm;
-                } else {
-                    result = SB_ERR_VOICE_NOT_FOUND;
-                }
-                break;
-            }
             default:
                 result = SB_ERR_INVALID_ARG;
         }
@@ -892,9 +875,6 @@ SAMPLEBRAIN_EXPORT int sb_test_keylock_process(
     // Set PCM source (the input buffer)
     kv.set_pcm_source(input_buffer, input_frames, config->channels);
 
-    // Schedule to start immediately
-    kv.schedule_start(0);
-
     // Calculate expected output frames based on tempo ratio
     // For BPM sync: when tempo increases, output should be shorter
     float tempo_ratio = config->master_bpm / config->source_bpm;
@@ -902,13 +882,18 @@ SAMPLEBRAIN_EXPORT int sb_test_keylock_process(
     size_t frames_to_process = static_cast<size_t>(expected_output_frames);
     if (frames_to_process > output_frames) frames_to_process = output_frames;
 
-    // Process output
-    if (!kv.process(output_buffer, static_cast<size_t>(frames_to_process), static_cast<size_t>(config->channels))) {
-        // Voice not active - clear output
-        std::fill(output_buffer, output_buffer + frames_to_process * config->channels, 0.0f);
-    }
+    // Offline path: prepare scratch once on the calling (non-RT) thread.
+    const float capacity_ratio = (tempo_ratio * 2.0f > 4.0f) ? (tempo_ratio * 2.0f) : 4.0f;
+    kv.prepare_process_capacity(frames_to_process + 64, capacity_ratio);
 
-    return frames_to_process;
+    // Schedule to start immediately
+    kv.schedule_start(0);
+
+    // Process output. A false return means the voice reached IDLE (e.g. finite PCM
+    // EOF) after filling this block — do not wipe the produced frames.
+    kv.process(output_buffer, static_cast<size_t>(frames_to_process), static_cast<size_t>(config->channels));
+
+    return static_cast<int>(frames_to_process);
 }
 
 SAMPLEBRAIN_EXPORT int sb_test_keylock_get_latency(

@@ -112,6 +112,7 @@ set(SAMPLEBRAIN_AUDIO_TESTS
     engine
     voice
     pcm_voice
+    pcm_keylock
     ringbuffer
     scheduler
     metrics

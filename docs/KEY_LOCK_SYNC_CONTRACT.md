@@ -61,8 +61,11 @@ Signalsmith introduces algorithmic latency that MUST be modeled and compensated:
 int inputLatencyFrames = stretch.inputLatency();    // frames to supply input ahead
 int outputLatencyFrames = stretch.outputLatency();  // frames output lags behind
 
-// Effective grid compensation for a voice:
-effective_grid_compensation_frames = inputLatencyFrames + outputLatencyFrames
+// Effective grid compensation for a voice (output-frame units):
+// inputLatency is measured in source frames and must be converted by tempo_ratio.
+effective_grid_compensation_frames
+    = round(inputLatencyFrames / tempo_ratio) + outputLatencyFrames
+// where tempo_ratio = master_bpm / source_bpm
 ```
 
 ### Grid Compensation Rule

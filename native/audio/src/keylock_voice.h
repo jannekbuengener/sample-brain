@@ -4,7 +4,6 @@
 #pragma once
 
 #include "samplebrain_audio.h"
-#include "voice.h"
 #include <signalsmith-stretch/signalsmith-stretch.h>
 #include <vector>
 #include <memory>
@@ -29,6 +28,7 @@ struct KeyLockVoiceConfig {
     bool signalsmith_available = true; // Set to false if Signalsmith init failed
     float frequency_hz = 800.0f;      // Click frequency for synthetic source
     float amplitude = 0.8f;           // Click amplitude
+    bool load_synthetic_source = true; // Offline/synthetic path; PCM voices skip this
 };
 
 class KeyLockVoice {
@@ -89,8 +89,11 @@ public:
     // Set gain
     void set_gain(float gain) { config_.gain = gain; }
 
-    // Set PCM source buffer directly (for testing offline processing)
+    // Set PCM source buffer directly (for testing offline processing / productive PCM)
     void set_pcm_source(const float* data, size_t frames, int channels);
+
+    // Preallocate realtime process scratch (control / preparation path only).
+    void prepare_process_capacity(size_t max_output_frames, float max_tempo_ratio = 4.0f);
 
 private:
     // Configuration
@@ -122,13 +125,23 @@ private:
     double rate_playback_pos_ = 0.0;
     double rate_interval_frames_ = 0.0;
 
+    // Preallocated realtime scratch (no callback realloc)
+    std::vector<std::vector<float>> input_planar_;
+    std::vector<std::vector<float>> output_planar_;
+    std::vector<float*> input_ptrs_;
+    std::vector<float*> output_ptrs_;
+    size_t max_output_frames_ = 0;
+    size_t max_input_frames_ = 0;
+
+    // Finite-PCM tail: keep processing zero-padded input until Signalsmith latency drains.
+    bool draining_ = false;
+    size_t drain_output_frames_remaining_ = 0;
+
     // Initialize Signalsmith Stretch
     bool init_signalsmith();
 
     // Load source audio buffer (synthetic click for testing, or PCM data)
     void load_source_buffer();
-
-    // Check if PCM source is loaded (vs synthetic clicks)
 
     // Process using Rate Sync (simple rate change)
     void process_rate_sync(float* output, size_t num_frames, size_t output_channels);
