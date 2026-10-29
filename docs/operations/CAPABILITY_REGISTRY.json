@@ -1396,6 +1396,49 @@
         "skill_contract_gap_count",
         "first_pass_ready_rate"
       ]
+    },
+    {
+      "id": "sample-brain-qml-test-run",
+      "type": "skill",
+      "purpose": "Run, observe, classify, and report Sample Brain QML/component pytest execution without inventing root cause or a second harness.",
+      "problem_solved": "Agents misread QML test exits: wrong runner/env, harness noise as product, skip-as-pass, exit-code-only PASS/FAIL.",
+      "trigger": [
+        "run QML/component pytest",
+        "interpret QML test failure",
+        "PySide6/Qt Quick test diagnosis",
+        "distinguish harness vs product test failure"
+      ],
+      "inputs": [
+        "pytest target/node id",
+        "live runner docs (WINDOWS_TEST_HARNESS/AGENTS/CI)",
+        "environment probe"
+      ],
+      "outputs": [
+        "compact run report",
+        "failure_class",
+        "next_route PASS|HOLD|root-cause|component-test|qml-review"
+      ],
+      "authority": "local-repo",
+      "mutation_level": "read-only-execution",
+      "dependencies": [
+        "docs/WINDOWS_TEST_HARNESS.md",
+        "docs/skills/sample-brain-qml-test-run/scripts/qml_test_run.py"
+      ],
+      "fallback": "manual focused pytest using WINDOWS_TEST_HARNESS.md + AGENTS.md",
+      "canonical_source": "docs/skills/sample-brain-qml-test-run/SKILL.md",
+      "source_kind": "local",
+      "repo_areas": [
+        "tests",
+        "qml",
+        "screen-1",
+        "workbench"
+      ],
+      "validation": "PASS requires collected target + exercised assertions; classify harness/load/behavior/platform separately",
+      "lifecycle": "active",
+      "linked_kpis": [
+        "skill_contract_gap_count",
+        "fallback_to_generic_flow_count"
+      ]
     }
   ],
   "routing": {
@@ -1510,6 +1553,24 @@
         "capability_ids": [
           "sample-brain-qml-component-test"
         ]
+      },
+      {
+        "situation": "PR vorbereiten / öffnen",
+        "capability_ids": [
+          "jMerta/create-pr"
+        ]
+      },
+      {
+        "situation": "Qualitätsprüfung vor Merge",
+        "capability_ids": [
+          "jMerta/coding-guidelines-verify"
+        ]
+      },
+      {
+        "situation": "QML/Component-Test ausführen und Fehlerschicht klassifizieren",
+        "capability_ids": [
+          "sample-brain-qml-test-run"
+        ]
       }
     ],
     "priority_b_matrix": [
@@ -1542,6 +1603,12 @@
         "capability_ids": [
           "implementing-semgrep-for-custom-sast-rules"
         ]
+      },
+      {
+        "situation": "GitHub Actions härten",
+        "capability_ids": [
+          "securing-github-actions-workflows"
+        ]
       }
     ],
     "default_chains": [
@@ -1558,7 +1625,10 @@
       "Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first",
       "Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhÃ¤ngige lokale RÃ¼ckprÃ¼fung",
       "Screen-1 UI/QML visual change -> automated validation -> visual fixture/runtime evidence -> AGENT VISUAL ACCEPTANCE -> VISUAL_ACCEPT_PASS|FAIL",
-      "QML-Interaktions-/Lifecycle-Coverage planen -> sample-brain-qml-component-test -> optional sample-brain-test-first"
+      "QML-Interaktions-/Lifecycle-Coverage planen -> sample-brain-qml-component-test -> optional sample-brain-test-first",
+      "Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung",
+      "Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung",
+      "QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)"
     ],
     "special_routes": {
       "screen1_visual_acceptance": {

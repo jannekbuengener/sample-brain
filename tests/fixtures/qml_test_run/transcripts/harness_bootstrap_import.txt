@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+collected 0 items / 1 error
+
+==================================== ERRORS ====================================
+__________ ERROR collecting tests/test_workbench_qml_worker_lifetime.py ________
+ImportError while importing test module 'tests/test_workbench_qml_worker_lifetime.py'
+E   ImportError: DLL load failed while importing _collections_cy: blocked by policy
+ERROR: found no collectors for tests/test_workbench_qml_worker_lifetime.py::test_qml_load_failure_closes_created_waveform_worker
+=========================== short test summary info ============================
+ERROR tests/test_workbench_qml_worker_lifetime.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.40s
