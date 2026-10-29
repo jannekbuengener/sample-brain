@@ -145,3 +145,7 @@ QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensve
 - `sample-brain-qml-profiler`
 | `sample-brain-qml-profiler` | PySide6/Qt Quick/QML Runtime-Profiling: erst messen, dann Quelle mappen, dann hypothesieren |
 QML-/Qt-Quick-Performance-Slice -> sample-brain-qml-profiler -> bei HOTSPOT_PROVEN und unklarer Ursache sample-brain-root-cause -> bei durablem Schutz sample-brain-regression-gap -> sample-brain-test-first
+- `sample-brain-skill-authoring`
+- `sample-brain-skill-authoring` – Sample-Brain-spezifisches CREATE/EDIT/PACKAGE/REGISTER/VALIDATE/MAINTAIN für repository-owned Skills
+| `sample-brain-skill-authoring` | Repository-Skill erstellen, packen, registrieren, validieren oder retiren |
+Skill-Authoring-/Packaging-Slice -> sample-brain-skill-authoring -> optional sample-brain-skill-effectiveness oder manuelles RED/GREEN

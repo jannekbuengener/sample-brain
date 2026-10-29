@@ -1478,6 +1478,49 @@
         "skill_contract_gap_count",
         "fallback_to_generic_flow_count"
       ]
+    },
+    {
+      "id": "sample-brain-skill-authoring",
+      "type": "skill",
+      "purpose": "Sample Brain-specific CREATE/EDIT/PACKAGE/REGISTER/VALIDATE/MAINTAIN workflow for repository-owned skills.",
+      "problem_solved": "Agents package skills as Cursor-only mirrors, skip registry/routing, dump workflows into descriptions, or invent unsupported mirrors/predecessor chains.",
+      "trigger": [
+        "create or revise a repository-owned skill",
+        "skill packaging / registry / routing work",
+        "retire or lifecycle a Sample Brain skill"
+      ],
+      "inputs": [
+        "observed agent failure or reusable need",
+        "live docs/skills + CAPABILITY_REGISTRY",
+        "optional effectiveness evidence"
+      ],
+      "outputs": [
+        "reuse decision",
+        "canonical+mirror package or DO NOT CREATE",
+        "registry/routing/lifecycle plan",
+        "validation evidence"
+      ],
+      "authority": "local-repo",
+      "mutation_level": "write-with-explicit-GO",
+      "dependencies": [
+        "docs/skills/sample-brain-skill-authoring/scripts/check_authoring_package.py",
+        "tools/generate_capability_views.py",
+        "tools/check_capability_drift.py"
+      ],
+      "fallback": "manual packaging via docs/skills/README.md + registry schema without this skill",
+      "canonical_source": "docs/skills/sample-brain-skill-authoring/SKILL.md",
+      "source_kind": "local",
+      "repo_areas": [
+        "skills",
+        "routing",
+        "meta"
+      ],
+      "validation": "RED mirror-only baseline + GREEN DO NOT CREATE/CREATE package checks; standalone; no second registry",
+      "lifecycle": "active",
+      "linked_kpis": [
+        "skill_contract_gap_count",
+        "fallback_to_generic_flow_count"
+      ]
     }
   ],
   "routing": {
@@ -1616,6 +1659,12 @@
         "capability_ids": [
           "sample-brain-qml-profiler"
         ]
+      },
+      {
+        "situation": "Repository-Skill erstellen/packen/registrieren/validieren/retiren",
+        "capability_ids": [
+          "sample-brain-skill-authoring"
+        ]
       }
     ],
     "priority_b_matrix": [
@@ -1674,7 +1723,8 @@
       "Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung",
       "Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung",
       "QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)",
-      "QML-/Qt-Quick-Performance-Slice -> sample-brain-qml-profiler -> bei HOTSPOT_PROVEN und unklarer Ursache sample-brain-root-cause -> bei durablem Schutz sample-brain-regression-gap -> sample-brain-test-first"
+      "QML-/Qt-Quick-Performance-Slice -> sample-brain-qml-profiler -> bei HOTSPOT_PROVEN und unklarer Ursache sample-brain-root-cause -> bei durablem Schutz sample-brain-regression-gap -> sample-brain-test-first",
+      "Skill-Authoring-/Packaging-Slice -> sample-brain-skill-authoring -> optional sample-brain-skill-effectiveness oder manuelles RED/GREEN"
     ],
     "special_routes": {
       "screen1_visual_acceptance": {
