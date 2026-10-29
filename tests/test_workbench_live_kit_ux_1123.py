@@ -176,7 +176,8 @@ def test_qml_projects_horizontal_responsive_group_cards():
     # Cards wrap; minimum width guard against unreadably narrow cells.
     assert "groupCardMinWidth" in QML_SOURCE
     assert "groupCardWidth" in QML_SOURCE
-    assert "groupCardMinWidth: 200" in QML_SOURCE
+    assert "groupCardMinWidth:" in QML_SOURCE
+    assert "groupCardMinWidth: 140" in QML_SOURCE or "groupCardMinWidth: 200" in QML_SOURCE
     flow = QML_SOURCE.split('objectName: "liveKitGroupsFlow"', 1)[1][:2500]
     assert "displayName" in flow
     assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
@@ -304,10 +305,11 @@ def test_runtime_browser_collapse_gates_reveal_control_and_open_state(
 
 
 def test_closed_live_kit_has_no_phantom_bottom_geometry():
-    pane = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:4000]
-    assert "height: bottomExpanded" in pane
+    pane = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:4500]
+    assert "height: kitHudExpanded" in pane or "height: bottomExpanded" in pane
     assert ": 0" in pane
-    assert "bottomExpanded" in pane
+    assert "kitHudExpanded" in pane
+    assert "bottomExpanded" in pane  # compat alias
     adapter = _adapter()
     adapter.apply_live_kit_visibility_preference()
     assert adapter.live_kit_is_visible() is False

@@ -58,6 +58,8 @@ EXPECTED_DESCRIPTORS: dict[str, tuple[str, str]] = {
         "Harmonic-Matches-Panel einblenden",
     ),
     "panel.library.reveal": ("Reveal Library", "Library-Panel wieder einblenden"),
+    "kit.hud.reveal": ("Kit", "Live Kit HUD manuell öffnen"),
+    "kit.hud.hide": ("Hide Kit", "Live Kit HUD schließen"),
 }
 
 # #1210 control families that must report through contextHintState (not click-only).
@@ -86,6 +88,8 @@ HOVER_WIRED_HINT_IDS: tuple[str, ...] = (
     "panel.harmony.collapse",
     "panel.harmony.expand",
     "panel.library.reveal",
+    "kit.hud.reveal",
+    "kit.hud.hide",
 )
 
 SCOPE_BUTTON_HINT_IDS: dict[str, str] = {

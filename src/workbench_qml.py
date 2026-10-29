@@ -41,6 +41,10 @@ from .workbench_live_kit import (
     live_kit_slot_display_name,
 )
 from .workbench_live_kit_edit import (
+    LIVE_KIT_HUD_MODE_HIDDEN,
+    LIVE_KIT_HUD_MODE_MANUAL,
+    LIVE_KIT_HUD_MODE_TRANSIENT,
+    LIVE_KIT_HUD_TRANSIENT_MS,
     edit_docking_materialization_for_live_kit,
     try_save_live_kit_visibility_preference,
     visible_live_kit_slot_keys,
@@ -908,15 +912,24 @@ class Screen1QmlInteractionAdapter:
         self.harmonic_match_open = view_model.panel_count == 4
         # #845 session-transient presentation only — not domain / disclosure state.
         self.browser_collapsed = False
-        # #1077 / #954: Live Kit Edit overlay. Default hidden; production wiring
-        # may apply a persisted visibility preference after construction.
-        # Musical assignments never force a drawer open on their own.
+        # #1077 / #954 / #1207: Live Kit HUD overlay. Default hidden; production
+        # wiring may apply a persisted *manual* visibility preference after
+        # construction. Musical assignments never force a HUD open on their own.
         self._live_kit_drawer_open = False
         self._live_kit_auto_disclosure_consumed = False
+        # #1207 presentation ownership: hidden | transient | manual.
+        self._live_kit_hud_mode = LIVE_KIT_HUD_MODE_HIDDEN
+        self._live_kit_hud_generation = 0
+        self._live_kit_last_feedback_sample = ""
+        self._live_kit_last_feedback_group = ""
+        self._live_kit_last_feedback_slot = ""
+        self._live_kit_last_feedback_mutation = ""
         # Session UI height authority: 0 = auto (row-derived); otherwise clamped px.
         self._live_kit_user_height_px = 0
-        # Session desired visibility (None until first load/toggle). Persistence
-        # is best-effort; restore must not reopen against an in-session close.
+        # Session desired visibility (None until first *manual* open/close).
+        # Transient Add feedback must not claim restart reopen authority (#1207).
+        # Persistence is best-effort; restore must not reopen against an
+        # in-session close.
         self._live_kit_visibility_desired: bool | None = None
         # Compatibility projection for older bridge consumers.  It mirrors the
         # overlay state and must not become a second presentation authority.
@@ -1269,6 +1282,21 @@ class Screen1QmlInteractionAdapter:
             # while the preview owner may still be playing the previous sample.
             if self._auditioning_live_kit_slot == (str(group), str(slot)):
                 self._clear_live_kit_audition_projection()
+            assigned = self._live_kit.state.assignment_for(str(group), str(slot))
+            sample_name = (
+                assigned.display_name if assigned is not None else descriptor.relative_path
+            )
+            mutation = "replace" if result.mutation == "replace" else "add"
+            if result.mutation == "clear":
+                mutation = "remove"
+            self._record_live_kit_feedback(
+                sample_name=str(sample_name or ""),
+                group=str(group),
+                slot=str(slot),
+                mutation=mutation,
+            )
+            if mutation != "remove":
+                self._present_live_kit_after_mutation()
         return self._project_internal_sample_drop_result(result)
 
     @staticmethod
@@ -1688,7 +1716,8 @@ class Screen1QmlInteractionAdapter:
         """Assign the pending (or selected) row through the existing seam.
 
         Add and Replace both resolve to :meth:`LiveKitState.assign`, which
-        overwrites exactly the explicit target slot.
+        overwrites exactly the explicit target slot. Successful mutation opens
+        transient Kit HUD feedback (#1207) unless the HUD is already manual.
         """
         if self._live_kit is None:
             return False
@@ -1702,6 +1731,7 @@ class Screen1QmlInteractionAdapter:
                 return False
             row = self.view_model.browser_rows[self.selected_browser_index].source_row
         try:
+            occupied = self._live_kit.state.assignment_for(group, slot) is not None
             self._live_kit.assign(group, slot, row)
         except ValueError:
             return False
@@ -1709,17 +1739,14 @@ class Screen1QmlInteractionAdapter:
         self._sync_live_kit_projection()
         if self._auditioning_live_kit_slot == (group, slot):
             self._clear_live_kit_audition_projection()
-        if not self._live_kit_auto_disclosure_consumed:
-            # Only a successful domain assignment gets the one-time disclosure.
-            # The non-destructive close path preserves existing match rows and
-            # their anchor, so reopening Harmony reuses the same controller.
-            self._live_kit_auto_disclosure_consumed = True
-            self._live_kit_drawer_open = True
-            self.live_kit_collapsed = False
-            self._live_kit_visibility_desired = True
-            try_save_live_kit_visibility_preference(True)
-            self._reveal_live_kit_pane()
-            self._close_harmonic_match_presentation()
+        self._record_live_kit_feedback(
+            sample_name=row.display_name,
+            group=group,
+            slot=slot,
+            mutation="replace" if occupied else "add",
+        )
+        self._present_live_kit_after_mutation()
+        self._close_harmonic_match_presentation()
         return True
 
     def cancel_live_kit_add(self) -> bool:
@@ -2023,16 +2050,75 @@ class Screen1QmlInteractionAdapter:
 
     @property
     def live_kit_drawer_open(self) -> bool:
-        """Whether the transient #954 Browser overlay is visibly open."""
+        """Whether the #1207 Kit HUD overlay is visibly open."""
         return self._live_kit_drawer_open
 
     @property
     def live_kit_auto_disclosure_consumed(self) -> bool:
-        """Whether this session has consumed its one automatic reveal."""
+        """Whether this session has consumed automatic Add feedback at least once."""
         return self._live_kit_auto_disclosure_consumed
 
-    def toggle_live_kit_drawer(self) -> bool:
-        """Toggle the drawer without changing musical assignments or Harmony."""
+    @property
+    def live_kit_hud_mode(self) -> str:
+        """Presentation ownership: hidden | transient | manual (#1207)."""
+        return self._live_kit_hud_mode
+
+    @property
+    def live_kit_hud_generation(self) -> int:
+        """Monotonic token so stale transient timers cannot close a newer HUD."""
+        return int(self._live_kit_hud_generation)
+
+    @property
+    def live_kit_transient_ms(self) -> int:
+        return int(LIVE_KIT_HUD_TRANSIENT_MS)
+
+    @property
+    def live_kit_last_feedback_sample(self) -> str:
+        return self._live_kit_last_feedback_sample
+
+    @property
+    def live_kit_last_feedback_group(self) -> str:
+        return self._live_kit_last_feedback_group
+
+    @property
+    def live_kit_last_feedback_slot(self) -> str:
+        return self._live_kit_last_feedback_slot
+
+    @property
+    def live_kit_last_feedback_mutation(self) -> str:
+        return self._live_kit_last_feedback_mutation
+
+    def _record_live_kit_feedback(
+        self,
+        *,
+        sample_name: str,
+        group: str,
+        slot: str,
+        mutation: str,
+    ) -> None:
+        """Store authoritative mutation context for HUD projection only."""
+        self._live_kit_last_feedback_sample = str(sample_name or "")
+        self._live_kit_last_feedback_group = str(group or "")
+        self._live_kit_last_feedback_slot = str(slot or "")
+        self._live_kit_last_feedback_mutation = str(mutation or "")
+
+    def _present_live_kit_after_mutation(self) -> None:
+        """Open or refresh Kit HUD after a successful canonical mutation.
+
+        Manual ownership stays manual (no auto-dismiss). Otherwise open/refresh
+        transient feedback without claiming restart reopen preference (#1207).
+        """
+        self._reveal_live_kit_pane()
+        self._live_kit_auto_disclosure_consumed = True
+        self._live_kit_drawer_open = True
+        self.live_kit_collapsed = False
+        if self._live_kit_hud_mode == LIVE_KIT_HUD_MODE_MANUAL:
+            return
+        self._live_kit_hud_mode = LIVE_KIT_HUD_MODE_TRANSIENT
+        self._live_kit_hud_generation += 1
+
+    def open_live_kit_manual(self) -> bool:
+        """Deliberate user open — persistent until explicit close (#1207)."""
         has_assignments = self._live_kit is not None and any(
             self._live_kit.state.assignment_for(group, slot) is not None
             for group in self._live_kit.state.groups()
@@ -2040,15 +2126,64 @@ class Screen1QmlInteractionAdapter:
         )
         if not bool(self.view_model.live_kit_materialized) and not has_assignments:
             return False
-        self._live_kit_drawer_open = not self._live_kit_drawer_open
-        self.live_kit_collapsed = not self._live_kit_drawer_open
-        if self._live_kit_drawer_open:
-            # Opening after scope loss must rematerialize via the reveal seam.
-            self._reveal_live_kit_pane()
-        self._live_kit_visibility_desired = bool(self._live_kit_drawer_open)
-        # Best-effort UI persistence — must not abort drawer/bridge refresh.
-        try_save_live_kit_visibility_preference(self._live_kit_drawer_open)
-        return self._live_kit_drawer_open
+        self._live_kit_hud_mode = LIVE_KIT_HUD_MODE_MANUAL
+        self._live_kit_drawer_open = True
+        self.live_kit_collapsed = False
+        self._live_kit_hud_generation += 1
+        self._reveal_live_kit_pane()
+        self._live_kit_visibility_desired = True
+        try_save_live_kit_visibility_preference(True)
+        return True
+
+    def close_live_kit_presentation(self) -> bool:
+        """Hide Kit HUD without mutating musical kit state (#1207)."""
+        was_open = bool(self._live_kit_drawer_open) or (
+            self._live_kit_hud_mode != LIVE_KIT_HUD_MODE_HIDDEN
+        )
+        self._pending_live_kit_row = None
+        self._live_kit_hud_mode = LIVE_KIT_HUD_MODE_HIDDEN
+        self._live_kit_drawer_open = False
+        self.live_kit_collapsed = True
+        self._live_kit_hud_generation += 1
+        self._live_kit_visibility_desired = False
+        try_save_live_kit_visibility_preference(False)
+        return was_open
+
+    def dismiss_live_kit_transient(self, generation: int) -> bool:
+        """Timer-owned close: only while still transient with matching generation."""
+        try:
+            gen = int(generation)
+        except (TypeError, ValueError):
+            return False
+        if self._live_kit_hud_mode != LIVE_KIT_HUD_MODE_TRANSIENT:
+            return False
+        if gen != self._live_kit_hud_generation:
+            return False
+        self._live_kit_hud_mode = LIVE_KIT_HUD_MODE_HIDDEN
+        self._live_kit_drawer_open = False
+        self.live_kit_collapsed = True
+        # Transient dismiss must not rewrite manual reopen preference.
+        return True
+
+    def escape_live_kit_context(self) -> bool:
+        """Deterministic Esc: cancel pending Add, else close HUD presentation.
+
+        Never clears musical kit assignments.
+        """
+        if self._pending_live_kit_row is not None:
+            self.cancel_live_kit_add()
+            return True
+        if self._live_kit_drawer_open or self._live_kit_hud_mode != LIVE_KIT_HUD_MODE_HIDDEN:
+            self.close_live_kit_presentation()
+            return True
+        return False
+
+    def toggle_live_kit_drawer(self) -> bool:
+        """Toggle the HUD without changing musical assignments or Harmony."""
+        if self._live_kit_drawer_open or self._live_kit_hud_mode != LIVE_KIT_HUD_MODE_HIDDEN:
+            self.close_live_kit_presentation()
+            return False
+        return self.open_live_kit_manual()
 
     def toggle_live_kit_collapsed(self) -> bool:
         """Compatibility shim for the retired permanent bottom-band control."""
@@ -2057,10 +2192,12 @@ class Screen1QmlInteractionAdapter:
     def apply_live_kit_visibility_preference(self) -> bool:
         """Cold start always closes Live Kit (#1123); ignore disk open preference.
 
-        Session toggle / Add-to-Kit disclosure still persist preference writes
-        and drive in-session restore via ``_live_kit_visibility_desired``.
+        Manual session toggle still persists preference writes and drives
+        in-session restore via ``_live_kit_visibility_desired``. Transient Add
+        feedback never claims that reopen authority (#1207).
         """
         self._live_kit_visibility_desired = False
+        self._live_kit_hud_mode = LIVE_KIT_HUD_MODE_HIDDEN
         self._live_kit_drawer_open = False
         self.live_kit_collapsed = True
         return False
@@ -2068,23 +2205,27 @@ class Screen1QmlInteractionAdapter:
     def restore_live_kit_after_active_source(self) -> bool:
         """Rematerialize Live Kit after a valid active Source is restored.
 
-        Uses the in-session desired visibility when known so a fail-soft
-        preference write cannot reopen against an explicit session close.
-        Disk ``live_kit_visible=true`` alone is not restart reopen authority
-        (#1123).
+        Uses the in-session *manual* desired visibility when known so a
+        fail-soft preference write cannot reopen against an explicit session
+        close. Disk ``live_kit_visible=true`` alone is not restart reopen
+        authority (#1123). Transient Add feedback is not restored.
         """
         desired = self._live_kit_visibility_desired
         if desired is None:
             desired = False
             self._live_kit_visibility_desired = False
         if desired:
+            self._live_kit_hud_mode = LIVE_KIT_HUD_MODE_MANUAL
             self._live_kit_drawer_open = True
             self.live_kit_collapsed = False
             self._reveal_live_kit_pane()
             return self.live_kit_is_visible()
-        if self._live_kit_drawer_open:
+        if self._live_kit_drawer_open and self._live_kit_hud_mode == LIVE_KIT_HUD_MODE_MANUAL:
             self._reveal_live_kit_pane()
             return self.live_kit_is_visible()
+        self._live_kit_hud_mode = LIVE_KIT_HUD_MODE_HIDDEN
+        self._live_kit_drawer_open = False
+        self.live_kit_collapsed = True
         return False
 
     def suspend_live_kit_for_analysis(self) -> None:
@@ -2092,6 +2233,7 @@ class Screen1QmlInteractionAdapter:
         composition = self._runtime_composition
         if composition is not None:
             composition.clear_live_kit_disclosure()
+        self._live_kit_hud_mode = LIVE_KIT_HUD_MODE_HIDDEN
         self._live_kit_drawer_open = False
         self.live_kit_collapsed = True
         self.view_model.set_workspace_materialization(
@@ -2186,7 +2328,9 @@ class Screen1QmlInteractionAdapter:
         """Remove one assignment through clear_slot; no second mutation truth."""
         if self._live_kit is None:
             return False
+        prior = None
         try:
+            prior = self._live_kit.state.assignment_for(group, slot)
             cleared = self._live_kit.clear_slot(group, slot)
         except ValueError:
             return False
@@ -2195,6 +2339,20 @@ class Screen1QmlInteractionAdapter:
         self._sync_live_kit_projection()
         if self._auditioning_live_kit_slot == (group, slot):
             self._clear_live_kit_audition_projection()
+        sample_name = prior.display_name if prior is not None else ""
+        self._record_live_kit_feedback(
+            sample_name=sample_name,
+            group=group,
+            slot=slot,
+            mutation="remove",
+        )
+        # Remove updates an already-open HUD live; it does not auto-open.
+        if self._live_kit_hud_mode in (
+            LIVE_KIT_HUD_MODE_MANUAL,
+            LIVE_KIT_HUD_MODE_TRANSIENT,
+        ):
+            self._live_kit_drawer_open = True
+            self.live_kit_collapsed = False
         return True
 
     def open_harmonic_matches_for_row(self, row: WorkbenchRow) -> bool:
@@ -2546,7 +2704,9 @@ ApplicationWindow {
             "panel.browser.expand": { "label": "Expand Browser", "help": "Browser-Panel wieder einblenden" },
             "panel.harmony.collapse": { "label": "Collapse Harmonic Matches", "help": "Harmonic-Matches-Panel einklappen" },
             "panel.harmony.expand": { "label": "Expand Harmonic Matches", "help": "Harmonic-Matches-Panel einblenden" },
-            "panel.library.reveal": { "label": "Reveal Library", "help": "Library-Panel wieder einblenden" }
+            "panel.library.reveal": { "label": "Reveal Library", "help": "Library-Panel wieder einblenden" },
+            "kit.hud.reveal": { "label": "Kit", "help": "Live Kit HUD manuell öffnen" },
+            "kit.hud.hide": { "label": "Hide Kit", "help": "Live Kit HUD schließen" }
         })
         property string hoveredId: ""
         property string focusedId: ""
@@ -4776,7 +4936,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         color: theme.surfaceRoot
-                        ListView { id: browser; objectName: "browserList"; anchors.fill: parent; bottomMargin: liveKitOverlayDrawer.visible ? liveKitOverlayDrawer.height : 0; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
+                        ListView { id: browser; objectName: "browserList"; anchors.fill: parent; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
                         function requestVisibleWaveforms() {
                             if (rowHeight <= 0 || height <= 0)
                                 return
@@ -5258,25 +5418,31 @@ ApplicationWindow {
             Rectangle {
                 id: bottomRackPane
                 // Compat objectName: historical harnesses (#845/#908/#954).
-                // #1077: this pane is classic Live Kit tool only — no Rack/step co-host.
+                // #1077: classic Live Kit tool only — no Rack/step co-host.
+                // #1207: upper-right Kit HUD overlay; height 0 / invisible when closed
+                // (zero permanent layout footprint; does not resize Browser).
                 objectName: "bottomRackPane"
+                readonly property int kitHudMargin: 10
+                readonly property int kitHudMaxWidth: 360
                 x: upperWorkspaceRow.x + browserPane.x
-                y: parent.height - height
+                   + Math.max(0, browserPane.width - width) - kitHudMargin
+                y: kitHudMargin
                 z: 20
-                width: browserPane.width
+                width: Math.min(kitHudMaxWidth, Math.max(240, browserPane.width - kitHudMargin * 2))
                 property bool liveKitDrawerOpen: window.interaction.liveKitDrawerOpen
-                readonly property bool bottomExpanded: liveKitDrawerOpen
+                readonly property bool kitHudExpanded: liveKitDrawerOpen
                         || window.interaction.liveKitPendingAdd !== ""
+                // Compat alias — historical tests assert bottomExpanded.
+                readonly property bool bottomExpanded: kitHudExpanded
                 // #1123: horizontal group cards may wrap; height ≈ wrap rows + expanded slots.
                 // Keep cards wide enough that assigned slot name + file stay readable.
-                // At ~480px Browser width, min 200 forces wrap to two-up cards (~220px).
-                readonly property int groupCardMinWidth: 200
+                readonly property int groupCardMinWidth: 140
                 readonly property int groupCardSpacing: 8
                 readonly property int groupCardWidth: {
                     var avail = Math.max(0, width - 28)
                     var gaps = groupCardSpacing * 3
                     var ideal = (avail - gaps) / 4
-                    return Math.max(groupCardMinWidth, Math.min(220, ideal))
+                    return Math.max(groupCardMinWidth, Math.min(160, ideal))
                 }
                 readonly property int groupFlowRows: {
                     var groups = window.screenData.liveKitGroups
@@ -5297,22 +5463,54 @@ ApplicationWindow {
                     return expandedSlots
                 }
                 readonly property int requestedHeight: 72 + groupFlowRows * 44 + expandedSlotCount * 26
-                readonly property int maximumHeight: Math.round(parent.height * 0.40)
+                readonly property int maximumHeight: Math.round(parent.height * 0.45)
                 readonly property int autoHeight: Math.min(requestedHeight, maximumHeight)
                 readonly property int userHeightPx: window.interaction.liveKitUserHeightPx
-                height: bottomExpanded
+                height: kitHudExpanded
                         ? (userHeightPx > 0
                            ? Math.min(Math.max(120, userHeightPx), maximumHeight)
                            : autoHeight)
                         : 0
+                radius: 6
                 color: theme.surfacePanel
                 border.color: theme.borderSubtle
+                border.width: kitHudExpanded ? 1 : 0
                 // Require materialization so drawer flags alone cannot desync QML
                 // from #1070/#1072 after analysis disclosure clears.
                 visible: window.activeScreen === "screen1"
                          && window.interaction.hasActiveSource
                          && window.interaction.liveKitRevealed
-                         && bottomExpanded
+                         && kitHudExpanded
+                // #1207: generation-token transient dismiss — never closes manual mode.
+                Timer {
+                    id: liveKitTransientTimer
+                    objectName: "liveKitTransientTimer"
+                    interval: window.interaction.liveKitTransientMs
+                    repeat: false
+                    running: false
+                    property int armedGeneration: -1
+                    function armForGeneration(gen) {
+                        armedGeneration = gen
+                        restart()
+                    }
+                    onTriggered: {
+                        window.interaction.dismissLiveKitTransient(armedGeneration)
+                    }
+                }
+                property int hudGenerationMirror: window.interaction.liveKitHudGeneration
+                property string hudModeMirror: window.interaction.liveKitHudMode
+                onHudGenerationMirrorChanged: {
+                    if (hudModeMirror === "transient")
+                        liveKitTransientTimer.armForGeneration(hudGenerationMirror)
+                    else
+                        liveKitTransientTimer.stop()
+                }
+                onHudModeMirrorChanged: {
+                    if (hudModeMirror === "transient")
+                        liveKitTransientTimer.armForGeneration(hudGenerationMirror)
+                    else
+                        liveKitTransientTimer.stop()
+                }
                 // Compat objectName: historical Live Kit findChild probes (#845/#895 harnesses).
                 // Content lives under liveKitPane so findChild tree walks still resolve slots/headers.
                 Item {
@@ -5325,7 +5523,7 @@ ApplicationWindow {
                     objectName: "liveKitPane"
                     anchors.fill: parent
                     visible: parent.visible
-                // #1077 top-edge resize — separate from collapse / docking / sample drag.
+                // #1077 optional resize — separate from collapse / docking / sample drag.
                 MouseArea {
                     id: liveKitResizeHandle
                     objectName: "liveKitResizeHandle"
@@ -5333,8 +5531,9 @@ ApplicationWindow {
                     height: 6
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.top: parent.top
-                    visible: bottomRackPane.bottomExpanded
+                    anchors.bottom: parent.bottom
+                    visible: bottomRackPane.kitHudExpanded
+                             && window.interaction.liveKitHudMode === "manual"
                     cursorShape: Qt.SizeVerCursor
                     preventStealing: true
                     property real dragStartY: 0
@@ -5348,7 +5547,7 @@ ApplicationWindow {
                         if (!pressed)
                             return
                         var globalY = mapToItem(null, 0, mouse.y).y
-                        var delta = dragStartY - globalY
+                        var delta = globalY - dragStartY
                         window.interaction.setLiveKitUserHeightPx(
                             dragStartHeight + delta,
                             bottomRackPane.maximumHeight
@@ -5373,7 +5572,7 @@ ApplicationWindow {
                     width: Math.max(0, parent.width - 28)
                     spacing: 8
                     RowLayout {
-                        visible: bottomRackPane.bottomExpanded
+                        visible: bottomRackPane.kitHudExpanded
                         Layout.fillWidth: true
                         Label { text: "LIVE KIT"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                         Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: theme.textSecondary; font.pixelSize: 11 }
@@ -5387,6 +5586,13 @@ ApplicationWindow {
                             leftPadding: 10
                             rightPadding: 10
                             Accessible.name: "Hide Live Kit"
+                            hoverEnabled: true
+                            onHoveredChanged: liveKitDrawerHideButton.hovered
+                                ? contextHintState.reportHover("kit.hud.hide")
+                                : contextHintState.clearHover("kit.hud.hide")
+                            onActiveFocusChanged: activeFocus
+                                ? contextHintState.reportFocus("kit.hud.hide")
+                                : contextHintState.clearFocus("kit.hud.hide")
                             contentItem: Text {
                                 text: liveKitDrawerHideButton.text
                                 color: liveKitDrawerHideButton.pressed ? theme.textPrimary
@@ -5444,7 +5650,7 @@ ApplicationWindow {
                     Label {
                         id: liveKitExportStatus
                         objectName: "liveKitExportStatus"
-                        visible: bottomRackPane.bottomExpanded
+                        visible: bottomRackPane.kitHudExpanded
                                  && window.interaction.liveKitExportStatus.length > 0
                         Layout.fillWidth: true
                         text: window.interaction.liveKitExportStatus
@@ -5452,10 +5658,30 @@ ApplicationWindow {
                         font.pixelSize: 11
                         wrapMode: Text.Wrap
                     }
+                    Label {
+                        id: liveKitHudFeedback
+                        objectName: "liveKitHudFeedback"
+                        visible: bottomRackPane.kitHudExpanded
+                                 && window.interaction.liveKitLastFeedbackSample.length > 0
+                                 && window.interaction.liveKitPendingAdd === ""
+                        Layout.fillWidth: true
+                        text: {
+                            var mut = window.interaction.liveKitLastFeedbackMutation
+                            var sample = window.interaction.liveKitLastFeedbackSample
+                            var group = window.interaction.liveKitLastFeedbackGroup
+                            var slot = window.interaction.liveKitLastFeedbackSlot
+                            var verb = mut === "replace" ? "Replaced" : (mut === "remove" ? "Removed" : "Added")
+                            var target = (group.length > 0 && slot.length > 0) ? (group + " · " + slot) : ""
+                            return target.length > 0 ? (verb + " " + sample + " → " + target) : (verb + " " + sample)
+                        }
+                        color: theme.textSecondary
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                    }
                     Rectangle {
                         id: liveKitPendingBanner
                         objectName: "liveKitPendingBanner"
-                        visible: bottomRackPane.bottomExpanded
+                        visible: bottomRackPane.kitHudExpanded
                                  && window.interaction.liveKitPendingAdd !== ""
                         Layout.fillWidth: true
                         Layout.preferredHeight: 30
@@ -5896,32 +6122,34 @@ ApplicationWindow {
         activateAction: function() { window.activateHarmonicMatchToggle() }
     }
 
-    // #1077: workspace-scoped Live Kit reveal — kit tool, not upper mode nav.
+    // #1077/#1207: workspace-scoped Kit HUD reopen — kit tool, not upper mode nav.
         ToolButton {
             id: editLiveKitRevealControl
             objectName: "editLiveKitRevealControl"
             z: 22
-            text: "Live Kit"
+            text: "Kit " + window.screenData.liveKitAssignedCount + "/" + window.screenData.liveKitTotalSlotCount
             Accessible.name: "Reveal Live Kit tool"
             flat: true
             font.pixelSize: 11
             padding: 6
             leftPadding: 10
             rightPadding: 10
-            // Summon only on Screen-1 while the tool is currently hidden and
-            // may be shown via the #1077 visibility owner (not first materialization).
+            // Summon only on Screen-1 while the HUD is currently hidden and
+            // may be shown via the presentation owner (not first materialization).
         readonly property bool canReveal: window.interaction.liveKitRevealed
                 || window.screenData.liveKitAssignedCount > 0
         visible: window.activeScreen === "screen1"
                  && window.interaction.hasActiveSource
+                 && window.interaction.browserMaterialized
                  && canReveal
                  && !window.interaction.browserCollapsed
                  && !window.interaction.liveKitDrawerOpen
                  && window.interaction.liveKitPendingAdd === ""
         enabled: visible
-        anchors.horizontalCenter: workspaceRow.horizontalCenter
-        anchors.bottom: workspaceRow.bottom
-        anchors.bottomMargin: 10
+        anchors.right: workspaceRow.right
+        anchors.top: workspaceRow.top
+        anchors.rightMargin: 12
+        anchors.topMargin: 10
         implicitHeight: 28
         background: Rectangle {
             implicitHeight: 28
@@ -5940,6 +6168,12 @@ ApplicationWindow {
             opacity: 0.9
         }
         hoverEnabled: true
+        onHoveredChanged: editLiveKitRevealControl.hovered
+            ? contextHintState.reportHover("kit.hud.reveal")
+            : contextHintState.clearHover("kit.hud.reveal")
+        onActiveFocusChanged: activeFocus
+            ? contextHintState.reportFocus("kit.hud.reveal")
+            : contextHintState.clearFocus("kit.hud.reveal")
         onClicked: window.interaction.toggleLiveKitDrawer()
     }
 
@@ -6647,6 +6881,41 @@ def _qml_interaction_bridge(
         def liveKitDrawerOpen(self) -> bool:
             return adapter.live_kit_drawer_open
 
+        @Property(str, notify=state_changed)
+        def liveKitHudMode(self) -> str:
+            return adapter.live_kit_hud_mode
+
+        @Property(int, notify=state_changed)
+        def liveKitHudGeneration(self) -> int:
+            return int(adapter.live_kit_hud_generation)
+
+        @Property(int, notify=state_changed)
+        def liveKitTransientMs(self) -> int:
+            return int(adapter.live_kit_transient_ms)
+
+        @Property(str, notify=state_changed)
+        def liveKitLastFeedbackSample(self) -> str:
+            return adapter.live_kit_last_feedback_sample
+
+        @Property(str, notify=state_changed)
+        def liveKitLastFeedbackGroup(self) -> str:
+            return adapter.live_kit_last_feedback_group
+
+        @Property(str, notify=state_changed)
+        def liveKitLastFeedbackSlot(self) -> str:
+            return adapter.live_kit_last_feedback_slot
+
+        @Property(str, notify=state_changed)
+        def liveKitLastFeedbackMutation(self) -> str:
+            return adapter.live_kit_last_feedback_mutation
+
+        @Slot(int, result=bool)
+        def dismissLiveKitTransient(self, generation: int) -> bool:
+            closed = adapter.dismiss_live_kit_transient(int(generation))
+            if closed:
+                self._refresh()
+            return bool(closed)
+
         @Property(int, notify=state_changed)
         def liveKitUserHeightPx(self) -> int:
             return int(adapter.live_kit_user_height_px)
@@ -6921,15 +7190,14 @@ def _qml_interaction_bridge(
 
         @Slot()
         def escapeLiveKitContext(self) -> None:
-            """Coherent single-Escape for the pending-add banner.
+            """Coherent Esc for pending-add banner or open Kit HUD (#1207).
 
             Playback must never keep running because the focused banner
-            consumed the event: this routes through the same authoritative
-            stop contract first, then applies the established pending-add
-            cancel.  Both operations are idempotent and safe when idle.
+            consumed the event: stop preview first, then cancel pending Add
+            or close HUD presentation only. Never clears musical kit state.
             """
             adapter.stop_preview()
-            adapter.cancel_live_kit_add()
+            adapter.escape_live_kit_context()
             self._refresh()
 
         @Slot(int)
