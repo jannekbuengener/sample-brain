@@ -638,6 +638,22 @@ def test_create_custom_activates_resolved_light_profile_under_system(
     assert loaded.dark.theme_ref == "Blood"
 
 
+def test_unreadable_committed_profile_is_rejected(tmp_path: Path) -> None:
+    bridge = _bridge(tmp_path)
+    bridge.setPreset("Arctic")
+    before = _capture(bridge)
+    # Committed BG==FG must not persist or project Blood fail-closed.
+    bridge.setBackground(bridge.baseForeground)
+    after = _capture(bridge)
+    assert after["theme_ref"] == before["theme_ref"]
+    assert after["tokens"] == before["tokens"]
+    assert after["action_active"] == before["action_active"]
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.shared is not None
+    assert loaded.shared.theme_ref == "Arctic"
+    assert loaded.shared.background in {None, before["window_chrome_background"]}
+
+
 def test_unreadable_draft_preview_keeps_custom_identity(tmp_path: Path) -> None:
     bridge = _bridge(tmp_path)
     bridge.createCustomFromPreset("Arctic", "Desk")

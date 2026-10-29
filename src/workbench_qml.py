@@ -8537,9 +8537,56 @@ def _qml_theme_authority_bridge(
             snapshot = self._resolve(requested)
             self._apply_snapshot(snapshot, requested=requested)
 
+        def _intended_primary_pair(
+            self, requested: appearance_mod.AppearanceRequestedState
+        ) -> tuple[str, str] | None:
+            """Return intended (foreground, background) for the active profile."""
+            profile = self._active_profile(requested)
+            scheme = self._active_scheme(requested)
+            theme_ref = (
+                profile.theme_ref
+                if profile is not None and isinstance(profile.theme_ref, str) and profile.theme_ref.strip()
+                else theme_mod.DEFAULT_PRESET_NAME
+            )
+            cleaned = theme_ref.strip()
+            base_name = (
+                cleaned if cleaned in theme_mod.PRESET_ORDER else theme_mod.DEFAULT_PRESET_NAME
+            )
+            if scheme == appearance_mod.MODE_LIGHT:
+                background = appearance_mod.LIGHT_FALLBACK_BACKGROUND
+                foreground = appearance_mod.LIGHT_FALLBACK_FOREGROUND
+            else:
+                base_tokens = theme_mod.resolve_theme(
+                    base_name, state_dir=self._state_dir, env=self._env
+                )
+                background = base_tokens.background
+                foreground = base_tokens.foreground
+            if profile is not None:
+                if profile.background is not None:
+                    background = profile.background
+                if profile.foreground is not None:
+                    foreground = profile.foreground
+            bg = theme_mod._normalize_hex(background)
+            fg = theme_mod._normalize_hex(foreground)
+            if bg is None or fg is None:
+                return None
+            return fg, bg
+
+        def _profile_primary_unreadable(
+            self, requested: appearance_mod.AppearanceRequestedState
+        ) -> bool:
+            pair = self._intended_primary_pair(requested)
+            if pair is None:
+                return False
+            foreground, background = pair
+            return appearance_mod.contrast_ratio(foreground, background) < 4.5
+
         def _commit_requested(
             self, requested: appearance_mod.AppearanceRequestedState
         ) -> bool:
+            # Contract: reject unreadable profiles on commit; keep last valid state.
+            if self._profile_primary_unreadable(requested):
+                return False
             path = theme_mod.save_appearance_preferences(
                 requested,
                 state_dir=self._state_dir,
