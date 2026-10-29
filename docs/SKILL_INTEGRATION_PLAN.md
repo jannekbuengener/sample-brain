@@ -34,6 +34,7 @@ Skill-Quellen:
 - `sample-brain-regression-gap` – lokaler fehlender Schutz fuer einen bekannten Defekt
 - `sample-brain-test-first` – lokaler Repo-Vertrag fuer wesentliche Produktivcode-Implementierung
 - `sample-brain-jules-dispatch` – expliziter Opt-in-Weg, ein klar abgegrenztes Issue sicher an Jules zu delegieren (Rückprüfung bleibt lokal bei Sample Brain)
+- `sample-brain-skill-effectiveness` – Verhaltens-Evaluator (Baseline ohne Skill → Skill-Run → EFFECTIVE|INEFFECTIVE|UNNECESSARY); ersetzt keine Produkt-/Registry-Tests
 - `jMerta` – täglicher Agenten-Workflow (Priorität A)
 - `Anthropic-Cybersecurity-Skills` – Security-Hardening (Priorität B)
 
@@ -57,6 +58,7 @@ Routing-Details (generated view): [.cursor/rules/skill-routing.mdc](../.cursor/r
 | `sample-brain-root-cause` | Unklare Fehlerursache erst mit Evidenz isolieren |
 | `sample-brain-regression-gap` | Für bekannten Defekt den kleinsten fehlenden Schutz bestimmen |
 | `sample-brain-test-first` | Vor jeder wesentlichen Produktivcode-Implementierung anwenden |
+| `sample-brain-skill-effectiveness` | Skill-Effektivität per Baseline-vs-Skill Verhaltensvergleich prüfen |
 | `jMerta/coding-guidelines-verify` | Qualitätsprüfung vor Merge (scoped AGENTS) |
 
 **Default:** Bei unklarem Task zuerst Priorität A prüfen.
