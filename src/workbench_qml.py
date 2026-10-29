@@ -5434,7 +5434,13 @@ ApplicationWindow {
                    + Math.max(0, browserPane.width - width) - kitHudMargin
                 y: kitHudMargin
                 z: 20
-                width: Math.min(kitHudMaxWidth, Math.max(240, browserPane.width - kitHudMargin * 2))
+                // Collapse Browser → zero host width; never keep a 240px orphan HUD.
+                width: (!window.interaction.browserCollapsed && browserPane.width > 0)
+                       ? Math.min(
+                             kitHudMaxWidth,
+                             Math.max(240, browserPane.width - kitHudMargin * 2)
+                         )
+                       : 0
                 property bool liveKitDrawerOpen: window.interaction.liveKitDrawerOpen
                 readonly property bool kitHudExpanded: liveKitDrawerOpen
                         || window.interaction.liveKitPendingAdd !== ""
@@ -5486,6 +5492,7 @@ ApplicationWindow {
                 visible: window.activeScreen === "screen1"
                          && window.interaction.hasActiveSource
                          && window.interaction.liveKitRevealed
+                         && !window.interaction.browserCollapsed
                          && kitHudExpanded
                 // #1207: generation-token transient dismiss — never closes manual mode.
                 Timer {

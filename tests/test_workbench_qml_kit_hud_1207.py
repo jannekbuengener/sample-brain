@@ -96,6 +96,8 @@ def test_qml_has_no_permanent_kit_pane_height_when_closed():
     assert ": 0" in pane
     # Overlay must not reserve Browser bottom margin permanently.
     assert "bottomMargin: liveKitOverlayDrawer.visible ? liveKitOverlayDrawer.height : 0" not in QML_SOURCE
+    # Collapsed Browser host must hide HUD (match live_kit_is_visible).
+    assert "!window.interaction.browserCollapsed" in pane
 
 
 def test_qml_kit_hud_is_overlay_not_1204_panel():
