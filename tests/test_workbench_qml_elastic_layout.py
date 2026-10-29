@@ -256,3 +256,40 @@ def test_qml_runtime_elastic_handles_and_esc_search_intact():
 
 def test_canonical_defaults_exported_for_qml_bridge():
     assert abs(sum(CANONICAL_DEFAULT_RATIOS.values()) - 1.0) < 1e-12
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_elastic_bridge_browser_collapse_leaves_residual_without_ratio_drift(tmp_path: Path):
+    """#1204 residual workspace: Library stays bounded; ratios unchanged."""
+    browser = {"value": True}
+    bridge = create_elastic_layout_bridge(
+        state_dir=tmp_path,
+        harmony_open=lambda: False,
+        has_active_source=lambda: True,
+        library_revealed=lambda: True,
+        browser_visible=lambda: browser["value"],
+    )
+    available = 1600.0
+    bridge.setContentWidth(available)
+    before = dict(bridge.current_ratios())
+    open_library = float(bridge.libraryWidth)
+    open_browser = float(bridge.browserWidth)
+    assert float(getattr(bridge, "residualWidth")) < 1.0
+
+    browser["value"] = False
+    bridge.syncFromInteraction()
+    assert dict(bridge.current_ratios()) == before
+    assert float(bridge.browserWidth) == 0.0
+    assert float(bridge.libraryWidth) < available * 0.5
+    assert float(bridge.libraryWidth) < open_library + 1.0
+    assert float(bridge.residualWidth) > float(bridge.libraryWidth)
+    assert abs(
+        float(bridge.libraryWidth) + float(bridge.residualWidth) - available
+    ) < 1.0
+
+    browser["value"] = True
+    bridge.syncFromInteraction()
+    assert dict(bridge.current_ratios()) == before
+    assert abs(float(bridge.libraryWidth) - open_library) < 1e-6
+    assert abs(float(bridge.browserWidth) - open_browser) < 1e-6
+    assert float(bridge.residualWidth) < 1.0

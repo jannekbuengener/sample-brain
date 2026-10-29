@@ -4,7 +4,8 @@ Parent: [#691](https://github.com/jannekbuengener/sample-brain/issues/691).
 Depends on: [#692](https://github.com/jannekbuengener/sample-brain/issues/692) density / minimum geometry (DONE).
 Shared states: [#700](https://github.com/jannekbuengener/sample-brain/issues/700) / [`WORKBENCH_VISUAL_ACCEPTANCE.md`](WORKBENCH_VISUAL_ACCEPTANCE.md).
 Clean Start visibility: [#693](https://github.com/jannekbuengener/sample-brain/issues/693) / [`WORKBENCH_CLEAN_START.md`](WORKBENCH_CLEAN_START.md).
-Presentation collapse / mid-edge handles: [#845](https://github.com/jannekbuengener/sample-brain/issues/845) (parent [#844](https://github.com/jannekbuengener/sample-brain/issues/844)).
+Panel disclosure / collapse geometry: [#1204](https://github.com/jannekbuengener/sample-brain/issues/1204)
+(historical origin [#845](https://github.com/jannekbuengener/sample-brain/issues/845), parent [#844](https://github.com/jannekbuengener/sample-brain/issues/844)).
 
 ## Authority
 
@@ -12,14 +13,18 @@ On Startup / Density / Panel geometry / Persistence conflicts:
 
 `scoped #691 child (#694) > #691 > #700 > historical #503/#564 fixed-width geometry`
 
-On Active-Source **presentation collapse** / mid-edge reopen handles:
+On Active-Source **panel disclosure** / collapse geometry / residual workspace:
 
-`scoped #845 > this elastic layout visibility contract > #694 drag geometry`
+`scoped #1204 > this elastic layout visibility contract > #694 drag geometry`
 
 #564 remains authoritative for Harmonic Match toggle / anchor / focus / finder.
 #694 supersedes #564 **only** for fixed pixel restore-width geometry.
-#845 owns OPEN/COLLAPSED presentation for Browser, Harmonic Matches, and Live Kit
-pane visibility; it does **not** redesign elastic drag or column resize.
+#1204 owns the unified hairline disclosure primitive and collapse projection for
+true horizontal Edit/Screen-1 panels (Library / Browser / Harmonic Matches).
+Live Kit is **not** a horizontal collapsible panel peer; drawer/HUD authority
+(`toggleLiveKitDrawer`, #1077/#1207) owns its open/close presentation.
+Historical #845 remains origin/evidence for presentation flags and
+Matches ⊂ Browser rules; it is not current chrome/geometry authority.
 
 ## Product goal
 
@@ -37,16 +42,18 @@ Panels with stable IDs (fixed order — no reordering in this slice):
 | `library` | Source navigation |
 | `browser` | Sample Browser (highest crush protection) |
 | `harmony` | Harmonic Match (optional / toggle) |
-| `livekit` | Live Kit geometry only (no redesign) |
+
+Live Kit is vertical drawer/HUD geometry (#908/#1077), not a horizontal elastic
+panel. Legacy `livekit` ratio keys migrate away on load.
 
 Elastic coupled drag applies when the **active workspace** is materialised
 (`has_active_source`):
 
-- 3-panel: `library | browser | livekit`
-- 4-panel: `library | browser | harmony | livekit`
+- 2-panel: `library | browser` (+ residual when Browser collapsed — #1204)
+- 3-panel: `library | browser | harmony`
 
 Clean Start / No-Source presentation does **not** run coupled elastic drag.
-Calm Canvas is not a weighted panel in the solver.
+Calm Canvas / residual workspace is not a weighted persisted panel.
 
 No-Source presentation (#693 / #725):
 
@@ -156,11 +163,14 @@ territory ([`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md
 - QML must not become a second layout authority.
 - No domain / audio work on the drag path.
 
-## Presentation collapse (#845)
+## Panel disclosure + collapse geometry (#1204)
 
 Active-Source pane collapse is **presentation state only**. It feeds the same
 solver visibility inputs as other disclosure flags; it does not reset domain
 data and does not add a second layout authority.
+
+Historical #845 established presentation flags and Matches ⊂ Browser validity.
+#1204 is the current owner for disclosure chrome and collapse **projection**.
 
 ### Ownership
 
@@ -168,25 +178,49 @@ data and does not add a second layout authority.
 |------|-----------|--------------------|
 | Browser | Main Active-Source surface | OPEN / COLLAPSED |
 | Harmonic Matches | Extension of the Browser area (`Matches ⊂ Browser`) | OPEN / COLLAPSED |
-| Live Kit | Independent right pane | OPEN / COLLAPSED once materialized |
+| Library | Source navigation; Clean Start reveal `#725` | reveal / hide (same hairline disclosure style) |
+| Live Kit | Drawer / HUD (#1077); **not** a horizontal panel peer | drawer open/close via `toggleLiveKitDrawer` |
 
-Library / Clean Start reveal (`#725`) remains a separate No-Source contract.
+### Residual workspace (Browser COLLAPSED)
+
+When Browser is collapsed:
+
+- Browser width = 0 and Harmony is closed / not visible
+- Library keeps a **bounded** width from stored absolute panel ratios
+- Freed space becomes **residual workspace** (canvas remainder) — not a new
+  persisted panel and not a fourth layout authority
+- Stored `panel_ratios` are **not** rewritten by collapse or reopen
+- Reopen restores Browser from the same stored ratio truth (no drift)
+
+Collapse must not renormalize Library to ~100% of available width merely
+because Browser is hidden.
+
+### Unified hairline disclosure
+
+True horizontal collapsible panels share one quiet disclosure primitive:
+
+- visible seam ≈ 1 DIP (`theme.dividerDefault`)
+- pointer hit area ≈ 6–10 DIP
+- chevron / indication only on hover, focus, or active state
+- `PointingHandCursor`; keyboard Enter/Space + Accessible name/role
+- no permanent chunky reopen tab
+- no stacked/double/triple borders from pane border + handle + separator
 
 ### Presentation flags (session-transient)
 
 - `browser_collapsed` — Browser presentation; does not clear selection / rows
 - `harmonic_match_open` — existing Matches open flag (OPEN when true)
-- `live_kit_collapsed` — Live Kit presentation **after** materialization
+- `live_kit_drawer_open` / drawer shims — Live Kit drawer presentation
 - `live_kit_materialized` — progressive disclosure (#742); **must not** flip
-  false solely because the pane was collapsed
+  false solely because the drawer was closed
 
 Solver visibility (Active Source):
 
 - `browser_visible = not browser_collapsed`
 - `harmony_open` only when Matches are OPEN **and** Browser is OPEN
-- `live_kit_visible = live_kit_materialized and not live_kit_collapsed`
+- Live Kit does **not** allocate horizontal elastic width (#908)
 
-Collapse is never persisted by #845. Existing ratio persistence stays ratios-only.
+Collapse is never persisted by #1204. Existing ratio persistence stays ratios-only.
 Display-preference `panel_visibility` (#696) is an adjacent seam and is **not**
 extended by this slice.
 
@@ -198,58 +232,56 @@ extended by this slice.
 | Harmonic Matches | Reference + results preserved; no rematch solely due to collapse |
 | Live Kit | Slots / content preserved; materialization flag unchanged |
 
+Disclosure activation must not mutate sample selection, audition, favorite,
+kit slot, or harmony product state.
+
 ### Fachlich gültige Kombinationen
 
 Not every boolean tuple is valid. Ownership forbids Matches OPEN while Browser
 is COLLAPSED.
 
-| Browser | Matches | Live Kit (materialized) | Valid? |
-|---------|---------|-------------------------|--------|
-| OPEN | OPEN | OPEN | yes |
-| OPEN | COLLAPSED | OPEN | yes |
-| OPEN | OPEN | COLLAPSED | yes |
-| OPEN | COLLAPSED | COLLAPSED | yes |
-| COLLAPSED | COLLAPSED | OPEN | yes |
-| COLLAPSED | COLLAPSED | COLLAPSED | yes |
-| COLLAPSED | OPEN | * | **invalid** — force Matches COLLAPSED |
+| Browser | Matches | Valid? |
+|---------|---------|--------|
+| OPEN | OPEN | yes |
+| OPEN | COLLAPSED | yes |
+| COLLAPSED | COLLAPSED | yes |
+| COLLAPSED | OPEN | **invalid** — force Matches COLLAPSED |
 
 Rules:
 
 - Collapsing Browser **must** force Matches presentation COLLAPSED.
 - Reopening Browser does **not** auto-reopen Matches; Matches reopen only via
-  their own handle / existing toggle.
-- Live Kit may OPEN/COLLAPSE independently of Browser once materialized.
-- Unmaterialized Live Kit has no collapse UX (no pane → no residual handle).
-- Every valid COLLAPSED pane keeps a reachable reopen path (visible residual
-  mid-edge handle + keyboard focus/activation). Hover may emphasize the handle
+  their own disclosure / existing toggle.
+- Live Kit drawer open/close is independent of horizontal panel disclosure.
+- Every valid COLLAPSED horizontal panel keeps a reachable reopen path
+  (quiet edge disclosure + keyboard). Hover may emphasize the affordance
   but must not be the only operable path.
 
-### Mid-edge handles vs resize intents
+### Disclosure vs resize intents
 
-Collapse handles are **click/activate** controls centered on the relevant pane
-edge (`PointingHandCursor`). Elastic panel dividers (`elasticHandleAfter*`) and
-Browser column resize (#780) remain **drag** controls (`SizeHorCursor`).
+Disclosure seams are **click/activate** controls (`PointingHandCursor`).
+Elastic panel dividers (`elasticHandleAfter*`) and Browser column resize (#780)
+remain **drag** controls (`SizeHorCursor` / `layoutModel.applyDrag`).
 
 - Distinct `objectName`s and hit areas; no shared MouseArea that both drags and
   collapses.
-- #845 does not redesign divider/column-resize chrome.
+- No modifier-key as a hidden intent split.
+- #1204 does not redesign divider/column-resize chrome (#1211 is separate).
 - [#846](https://github.com/jannekbuengener/sample-brain/issues/846) owns calming
   permanent column dividers / ephemeral resize styling afterward.
 - [#843](https://github.com/jannekbuengener/sample-brain/issues/843) uses the
-  **existing** Harmonic Matches pane as a Browser extension
-  (Browser → Matches → Live Kit). It owns context-menu **open/retarget** of that
-  pane and removes the header `harmonicMatchButton` producer entry. It does
-  **not** add a second Matches surface, docking model, or close/X/ON/OFF chrome.
-  Close/reopen presentation remains sole #845 handle ownership; collapsing
-  Matches must preserve the current harmony anchor/results for later reopen.
+  **existing** Harmonic Matches pane as a Browser extension.
+  Close/reopen presentation for Matches uses the #1204 disclosure primitive;
+  collapsing Matches must preserve the current harmony anchor/results.
 
-### Non-goals (#845)
+### Non-goals (#1204)
 
 - New docking / reordering / free-canvas architecture
 - New persistence architecture for collapse flags
+- #1211 Browser column geometry / #1210 hover-hint sweep
+- #1207 Live Kit HUD product redesign (beyond removing false panel chrome)
 - Matching algorithm / Browser column data projection changes
 - Audio, BPM/Key, Step Sequencer, Arrangement
-- Implementing #846 or #843 in the same slice
 
 ## Non-scope
 
@@ -266,9 +298,9 @@ Browser column resize (#780) remain **drag** controls (`SizeHorCursor`).
 ## Validation contracts (minimum)
 
 1. Ratios finite, positive, normalisable
-2. Sum(visible widths) + handles = available content width
+2. Sum(visible panel widths) + handles + residual workspace = available content width
 3. Direct neighbour reacts stronger than farther same-side panel
-4. Min saturation redistributes residual delta
+4. Min saturation redistributes residual delta among **open elastic** panels
 5. ≥1000 deterministic drag steps: no relevant ratio drift
 6. Window resize preserves ratios
 7. 3↔4 panel toggle stable
@@ -276,13 +308,16 @@ Browser column resize (#780) remain **drag** controls (`SizeHorCursor`).
 9. Drag-end persist + restart restore (ratios only)
 10. Corrupt / NaN / Inf / unknown IDs fail closed
 11. Browser keyboard / Search focus / Esc remain intact
-12. #845: valid OPEN/COLLAPSED combinations only; Browser COLLAPSED ⇒ Matches COLLAPSED
-13. #845: collapse preserves Browser selection, Matches reference/results, Live Kit content
-14. #845: `live_kit_materialized` unchanged by Live Kit collapse/reopen
-15. #845: mid-edge collapse handles keyboard-activatable; residual reopen reachable
-16. #845: collapse hit-areas do not share drag intent with elastic/column resize
+12. #1204 / #845: valid OPEN/COLLAPSED combinations only; Browser COLLAPSED ⇒ Matches COLLAPSED
+13. Collapse preserves Browser selection, Matches reference/results, Live Kit content
+14. Live Kit materialization unchanged by drawer open/close
+15. Disclosure keyboard-activatable; quiet reopen affordance reachable
+16. Disclosure hit-areas do not share drag intent with elastic/column resize
+17. #1204: Browser collapse keeps Library bounded; residual workspace absorbs freed width
+18. #1204: collapse/reopen does not mutate stored panel ratios; reopen is drift-free
+19. #1204: no generic Live Kit horizontal panel-disclosure chrome
 
 Runtime acceptance sizes: 1600×900, 1280×720, 1120×640; Harmony open/closed;
-panel collapse combinations from the #845 table; 100% / 125% / 150% DPI.
+Browser collapse/reopen; 100% / 125% / 150% DPI.
 Agent visual/runtime acceptance required before merge
 (see `WORKBENCH_VISUAL_ACCEPTANCE.md` operative rule).

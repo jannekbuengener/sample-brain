@@ -42,6 +42,7 @@ def create_elastic_layout_bridge(
         "harmony": 0.0,
         "livekit": 0.0,
     }
+    residual_width = 0.0
     persistable = bool(loaded.persistable)
     layout_revision = 0
     # Default True preserves legacy active-workspace callers; production passes
@@ -70,7 +71,7 @@ def create_elastic_layout_bridge(
                 on_changed()
 
         def _recompute(self) -> None:
-            nonlocal widths
+            nonlocal widths, residual_width
             if not bool(has_active_source()):
                 # #725 No-Source presentation only — never touches stored ratios.
                 library_w = (
@@ -82,6 +83,7 @@ def create_elastic_layout_bridge(
                     "harmony": 0.0,
                     "livekit": 0.0,
                 }
+                residual_width = 0.0
                 return
             solution = solve_widths(
                 ratios,
@@ -98,6 +100,7 @@ def create_elastic_layout_bridge(
                 "harmony": float(solution.widths.get("harmony", 0.0)),
                 "livekit": 0.0,
             }
+            residual_width = float(solution.residual_width)
 
         @Property(int, notify=changed)
         def layoutRevision(self) -> int:
@@ -123,6 +126,11 @@ def create_elastic_layout_bridge(
         def liveKitWidth(self) -> float:
             # #908: Live Kit is no longer a horizontal elastic panel.
             return 0.0
+
+        @Property(float, notify=changed)
+        def residualWidth(self) -> float:
+            # #1204: freed canvas when Browser is collapsed; not a persisted panel.
+            return float(residual_width)
 
         @Slot(float)
         def setContentWidth(self, width: float) -> None:
