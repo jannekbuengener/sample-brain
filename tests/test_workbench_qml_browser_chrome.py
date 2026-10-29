@@ -114,9 +114,11 @@ def test_browser_column_spec_is_shared_between_header_and_rows():
 
     for role in (
         "effectiveBrowserWaveformWidth",
-        "effectiveBrowserMetaColumnWidth",
+        "effectiveBrowserBpmColumnWidth",
         "effectiveBrowserFavoriteColumnWidth",
+        "effectiveBrowserKeyColumnWidth",
         "effectiveBrowserLengthColumnWidth",
+        "effectiveBrowserTypeColumnWidth",
     ):
         assert QML_SOURCE.count(f"browserPane.{role}") >= 2, (
             f"Responsive Column-Spec {role} wird nicht von Header UND Delegate geteilt"
@@ -286,9 +288,11 @@ def test_browser_sample_name_is_flexible_and_meta_columns_align():
     assert "text: modelData.name; color: theme.textPrimary" in delegate
     assert "Layout.fillWidth: true" in delegate
     for role in (
-        "effectiveBrowserMetaColumnWidth",
+        "effectiveBrowserBpmColumnWidth",
         "effectiveBrowserFavoriteColumnWidth",
+        "effectiveBrowserKeyColumnWidth",
         "effectiveBrowserLengthColumnWidth",
+        "effectiveBrowserTypeColumnWidth",
     ):
         assert f"Layout.preferredWidth: browserPane.{role}" in header
         assert f"Layout.preferredWidth: browserPane.{role}" in delegate
@@ -322,9 +326,11 @@ def test_browser_add_to_kit_is_context_menu_only_without_row_column():
     # Remaining shared columns stay header/delegate aligned.
     for role in (
         "effectiveBrowserWaveformWidth",
-        "effectiveBrowserMetaColumnWidth",
+        "effectiveBrowserBpmColumnWidth",
         "effectiveBrowserFavoriteColumnWidth",
+        "effectiveBrowserKeyColumnWidth",
         "effectiveBrowserLengthColumnWidth",
+        "effectiveBrowserTypeColumnWidth",
     ):
         assert f"browserPane.{role}" in header
         assert f"browserPane.{role}" in delegate
@@ -341,14 +347,25 @@ def test_browser_density_tokens_unchanged_by_767():
 
 
 # ---------------------------------------------------------------------------
-# #846 — header-owned ephemeral column resize (supersedes #780 presentation)
+# #1211 — independent column resize (supersedes coupled #780/#846 meta table)
+# Presentation rules from #846 remain: header-owned ephemeral overlays.
 # ---------------------------------------------------------------------------
 
 _HEADER_RESIZE_OBJECTNAMES = (
     'objectName: "browserColumnResize_waveform"',
-    'objectName: "browserColumnResize_meta"',
+    'objectName: "browserColumnResize_bpm"',
     'objectName: "browserColumnResize_favorite"',
+    'objectName: "browserColumnResize_key"',
     'objectName: "browserColumnResize_length"',
+    'objectName: "browserColumnResize_type"',
+)
+_HEADER_RESIZE_ROLES = (
+    "browserColumnResize_waveform",
+    "browserColumnResize_bpm",
+    "browserColumnResize_favorite",
+    "browserColumnResize_key",
+    "browserColumnResize_length",
+    "browserColumnResize_type",
 )
 _LEGACY_ROW_COLUMN_DIVIDER_OBJECTNAMES = (
     'objectName: "browserColumnDivider_waveform"',
@@ -357,8 +374,31 @@ _LEGACY_ROW_COLUMN_DIVIDER_OBJECTNAMES = (
     'objectName: "browserColumnDivider_key"',
     'objectName: "browserColumnDivider_length"',
 )
-_INTERACTIVE_HEADER_RESIZE_COUNT = 4
-_META_RESIZE_CALL = 'browserPane.resizeColumn("meta"'
+_INTERACTIVE_HEADER_RESIZE_COUNT = 6
+_USER_WIDTH_PROPS = (
+    "waveformUserWidth",
+    "bpmUserWidth",
+    "favoriteUserWidth",
+    "keyUserWidth",
+    "lengthUserWidth",
+    "typeUserWidth",
+)
+_EFFECTIVE_WIDTH_PROPS = (
+    "effectiveBrowserWaveformWidth",
+    "effectiveBrowserBpmColumnWidth",
+    "effectiveBrowserFavoriteColumnWidth",
+    "effectiveBrowserKeyColumnWidth",
+    "effectiveBrowserLengthColumnWidth",
+    "effectiveBrowserTypeColumnWidth",
+)
+_RESIZE_ROLE_CALLS = (
+    'browserPane.resizeColumn("waveform"',
+    'browserPane.resizeColumn("bpm"',
+    'browserPane.resizeColumn("favorite"',
+    'browserPane.resizeColumn("key"',
+    'browserPane.resizeColumn("length"',
+    'browserPane.resizeColumn("type"',
+)
 
 
 def _browser_delegate_full(source: str) -> str:
@@ -391,7 +431,7 @@ def _header_resize_window(source: str, object_name: str, span: int = 900) -> str
 
 
 def test_browser_rows_have_no_permanent_vertical_column_dividers():
-    """#846: row delegates must not paint permanent vertical column dividers."""
+    """#846/#1211: row delegates must not paint permanent vertical column dividers."""
     delegate = _browser_delegate_full(QML_SOURCE)
     for name in _LEGACY_ROW_COLUMN_DIVIDER_OBJECTNAMES:
         assert name not in delegate, f"legacy vertical column divider still present: {name}"
@@ -401,7 +441,7 @@ def test_browser_rows_have_no_permanent_vertical_column_dividers():
 
 
 def test_browser_rows_have_no_column_resize_mouse_areas():
-    """#846: column resize MouseAreas leave the virtualized row delegate."""
+    """#846/#1211: column resize MouseAreas leave the virtualized row delegate."""
     delegate = _browser_delegate_full(QML_SOURCE)
     assert "cursorShape: Qt.SizeHorCursor" not in delegate
     assert "browserPane.resizeColumn(" not in delegate
@@ -412,19 +452,14 @@ def test_browser_rows_have_no_column_resize_mouse_areas():
 
 
 def test_browser_column_resize_lives_in_header_overlays():
-    """#846: exactly four header-owned resize overlays; not RowLayout width consumers."""
+    """#1211: six header-owned resize overlays; not RowLayout width consumers."""
     header = _browser_header_block(QML_SOURCE)
     for name in _HEADER_RESIZE_OBJECTNAMES:
         assert name in header, f"missing header resize surface {name}"
         assert QML_SOURCE.count(name) == 1
     # Overlay geometry: anchored to the right cell edge; must not declare
     # Layout.preferredWidth/minimumWidth on the resize Item itself.
-    for object_name in (
-        "browserColumnResize_waveform",
-        "browserColumnResize_meta",
-        "browserColumnResize_favorite",
-        "browserColumnResize_length",
-    ):
+    for object_name in _HEADER_RESIZE_ROLES:
         window = _header_resize_window(QML_SOURCE, object_name)
         assert "anchors.right" in window
         assert "Layout.preferredWidth" not in window
@@ -432,16 +467,12 @@ def test_browser_column_resize_lives_in_header_overlays():
         assert "cursorShape: Qt.SizeHorCursor" in window
         assert "preventStealing: true" in window
         assert "browserPane.resizeColumn(" in window
+        assert "mapToItem(null," in window
 
 
 def test_browser_column_resize_ephemeral_hover_focus_drag_states():
-    """#846: handle visible on hover / focus-visible / drag; quiet otherwise."""
-    for object_name in (
-        "browserColumnResize_waveform",
-        "browserColumnResize_meta",
-        "browserColumnResize_favorite",
-        "browserColumnResize_length",
-    ):
+    """#846/#1211: handle visible on hover / focus-visible / drag; quiet otherwise."""
+    for object_name in _HEADER_RESIZE_ROLES:
         window = _header_resize_window(QML_SOURCE, object_name, span=1200)
         assert "hovered" in window or "containsMouse" in window
         assert "activeFocus" in window
@@ -465,48 +496,62 @@ def test_browser_column_resize_ephemeral_hover_focus_drag_states():
 
 
 def test_browser_column_width_state_has_exactly_one_owner():
-    """#780/#846: browserPane remains the only writer of column width truth."""
+    """#1211: browserPane remains the only writer; independent user widths."""
     assert QML_SOURCE.count("function resizeColumn(") == 1
-    for prop in (
-        "waveformUserWidth",
-        "metaUserWidth",
-        "favoriteUserWidth",
-        "lengthUserWidth",
-    ):
+    for prop in _USER_WIDTH_PROPS:
         assert QML_SOURCE.count(f"property int {prop}:") == 1
-    # Header surfaces are the only resizeColumn call sites (four interactive roles).
+    # Retired coupled meta authority must not remain.
+    assert "metaUserWidth" not in QML_SOURCE
+    assert "effectiveBrowserMetaColumnWidth" not in QML_SOURCE
+    assert 'objectName: "browserColumnResize_meta"' not in QML_SOURCE
+    assert 'browserPane.resizeColumn("meta"' not in QML_SOURCE
+    # Header surfaces are the only resizeColumn call sites.
     assert (
         QML_SOURCE.count("browserPane.resizeColumn(") == _INTERACTIVE_HEADER_RESIZE_COUNT
     )
-    assert QML_SOURCE.count(_META_RESIZE_CALL) == 1
-    meta_window = _header_resize_window(QML_SOURCE, "browserColumnResize_meta")
-    assert _META_RESIZE_CALL in meta_window
-    # Key / Type / Add never gain resize writers.
-    assert 'objectName: "browserColumnResize_key"' not in QML_SOURCE
-    assert 'objectName: "browserColumnResize_type"' not in QML_SOURCE
-    assert 'resizeColumn("type"' not in QML_SOURCE
+    for call in _RESIZE_ROLE_CALLS:
+        assert QML_SOURCE.count(call) == 1, call
+    # Independence: each role branch writes only its own override.
+    resize_fn = QML_SOURCE[
+        QML_SOURCE.index("function resizeColumn(") : QML_SOURCE.index(
+            "property int effectiveBrowserWaveformWidth:"
+        )
+    ]
+    assert 'role === "bpm"' in resize_fn
+    assert "bpmUserWidth =" in resize_fn
+    assert "keyUserWidth =" in resize_fn
+    assert "typeUserWidth =" in resize_fn
+    # A bpm write must not assign key/type/fav/length in the same branch body.
+    bpm_branch = resize_fn.split('role === "bpm"')[1].split("else if")[0]
+    assert "keyUserWidth" not in bpm_branch
+    assert "typeUserWidth" not in bpm_branch
+    assert "favoriteUserWidth" not in bpm_branch
+    assert "lengthUserWidth" not in bpm_branch
+    key_branch = resize_fn.split('role === "key"')[1].split("else if")[0]
+    assert "bpmUserWidth" not in key_branch
+    assert "typeUserWidth" not in key_branch
+    type_branch = resize_fn.split('role === "type"')[1]
+    assert "bpmUserWidth" not in type_branch
+    assert "keyUserWidth" not in type_branch
+    assert "favoriteUserWidth" not in type_branch
+    assert "lengthUserWidth" not in type_branch
     delegate = _browser_delegate_full(QML_SOURCE)
     assert "property int effectiveBrowser" not in delegate
     assert "layoutModel.applyDrag" not in delegate
 
 
 def test_browser_column_resize_hit_target_wider_than_visible_handle():
-    """#846: hit-area padding stays larger than the quiet visible handle."""
+    """#846/#1211: hit-area padding stays larger than the quiet visible handle."""
     padding = _int_property(QML_SOURCE, "browserColumnHandlePadding")
     assert padding >= 4
-    for object_name in (
-        "browserColumnResize_waveform",
-        "browserColumnResize_meta",
-        "browserColumnResize_favorite",
-        "browserColumnResize_length",
-    ):
+    for object_name in _HEADER_RESIZE_ROLES:
         window = _header_resize_window(QML_SOURCE, object_name)
         assert "browserColumnHandlePadding" in window or "leftMargin" in window
         assert "anchors.leftMargin" in window or "width:" in window
 
 
 def test_browser_column_resize_ignores_user_overrides_when_narrow():
-    """#780/#692: narrow mode keeps responsive defaults over runtime overrides."""
+    """#780/#692/#1211: narrow mode keeps responsive defaults over runtime overrides."""
     assert "function _resolveColumn(" in QML_SOURCE
     # Narrow must short-circuit user overrides (browserNarrowColumns || user < 0).
     assert (
@@ -519,26 +564,37 @@ def test_browser_column_resize_ignores_user_overrides_when_narrow():
         in QML_SOURCE
     )
     assert (
-        "browserNarrowColumns ? browserMetaColumnMin : window.browserMetaColumnWidth"
+        "browserNarrowColumns ? browserBpmColumnMin : window.browserMetaColumnWidth"
+        in QML_SOURCE
+    )
+    assert (
+        "browserNarrowColumns ? browserKeyColumnMin : window.browserMetaColumnWidth"
         in QML_SOURCE
     )
     assert (
         "browserNarrowColumns ? browserLengthColumnMin : window.browserLengthColumnWidth"
         in QML_SOURCE
     )
+    assert (
+        "browserNarrowColumns ? browserTypeColumnMin : window.browserTypeColumnWidth"
+        in QML_SOURCE
+    )
 
 
 def test_browser_column_resize_minimums_are_deterministic():
-    """#780: usable, deterministic min/max per resizable column."""
+    """#1211: usable, deterministic min/max per resizable column."""
     waveform_min = _int_property(QML_SOURCE, "browserWaveformMin")
     waveform_max = _int_property(QML_SOURCE, "browserWaveformMax")
     assert waveform_min >= 140
     assert waveform_max > waveform_min
-    meta_min = _int_property(QML_SOURCE, "browserMetaColumnMin")
-    meta_max = _int_property(QML_SOURCE, "browserMetaColumnMax")
-    # Contract mins equal narrow-mode fallbacks (#692 / #780 table).
-    assert meta_min == 40
-    assert meta_max == 96
+    bpm_min = _int_property(QML_SOURCE, "browserBpmColumnMin")
+    bpm_max = _int_property(QML_SOURCE, "browserBpmColumnMax")
+    assert bpm_min == 40
+    assert bpm_max == 96
+    key_min = _int_property(QML_SOURCE, "browserKeyColumnMin")
+    key_max = _int_property(QML_SOURCE, "browserKeyColumnMax")
+    assert key_min == 40
+    assert key_max == 96
     fav_min = _int_property(QML_SOURCE, "browserFavoriteColumnMin")
     fav_max = _int_property(QML_SOURCE, "browserFavoriteColumnMax")
     assert fav_min == 24
@@ -547,16 +603,15 @@ def test_browser_column_resize_minimums_are_deterministic():
     length_max = _int_property(QML_SOURCE, "browserLengthColumnMax")
     assert length_min == 52
     assert length_max == 120
+    type_min = _int_property(QML_SOURCE, "browserTypeColumnMin")
+    type_max = _int_property(QML_SOURCE, "browserTypeColumnMax")
+    assert type_min == 48
+    assert type_max == 88
 
 
 def test_browser_column_resize_reuses_shared_header_row_geometry():
-    """#780/#846: header + delegate keep reading one shared effective geometry."""
-    for role in (
-        "effectiveBrowserWaveformWidth",
-        "effectiveBrowserMetaColumnWidth",
-        "effectiveBrowserFavoriteColumnWidth",
-        "effectiveBrowserLengthColumnWidth",
-    ):
+    """#1211: header + delegate keep reading one shared effective geometry."""
+    for role in _EFFECTIVE_WIDTH_PROPS:
         assert QML_SOURCE.count(f"property int {role}:") == 1
         assert QML_SOURCE.count(f"browserPane.{role}") >= 2
     # Virtualization and existing row intents remain intact alongside resize.
@@ -575,7 +630,7 @@ def test_browser_column_resize_reuses_shared_header_row_geometry():
 
 
 def test_browser_column_resize_does_not_collide_with_panel_disclosure_1204():
-    """#846 must not put SizeHorCursor / applyDrag on #1204 disclosure seams."""
+    """#1211 must not put SizeHorCursor / applyDrag on #1204 disclosure seams."""
     assert 'objectName: "browserCollapseHandle"' in QML_SOURCE
     assert 'objectName: "browserCollapseAffordance"' in QML_SOURCE
     assert 'objectName: "liveKitCollapseHandle"' not in QML_SOURCE

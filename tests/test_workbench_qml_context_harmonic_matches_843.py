@@ -549,6 +549,6 @@ def test_browser_keyboard_preview_favorite_845_846_markers_untouched():
     assert "browserCollapsed" in text
     assert "liveKitCollapsed" in text
     assert 'objectName: "browserColumnResize_waveform"' in QML_SOURCE
-    assert 'objectName: "browserColumnResize_meta"' in QML_SOURCE
+    assert 'objectName: "browserColumnResize_bpm"' in QML_SOURCE
     assert "contextAddToKit" in QML_SOURCE
     assert "request_context_add_to_kit" in text

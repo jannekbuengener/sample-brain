@@ -144,7 +144,7 @@ def test_owner_visual_repair_preserves_required_browser_columns_at_narrow_width(
         in QML_SOURCE
     )
     assert (
-        "browserNarrowColumns ? browserMetaColumnMin : window.browserMetaColumnWidth"
+        "browserNarrowColumns ? browserBpmColumnMin : window.browserMetaColumnWidth"
         in QML_SOURCE
     )
     assert (
@@ -155,7 +155,8 @@ def test_owner_visual_repair_preserves_required_browser_columns_at_narrow_width(
     assert "browserAddColumnWidth" not in QML_SOURCE
     assert "effectiveBrowserAddColumnWidth" not in QML_SOURCE
     assert _int_property(QML_SOURCE, "browserWaveformMin") == 140
-    assert _int_property(QML_SOURCE, "browserMetaColumnMin") == 40
+    assert _int_property(QML_SOURCE, "browserBpmColumnMin") == 40
+    assert _int_property(QML_SOURCE, "browserKeyColumnMin") == 40
     assert _int_property(QML_SOURCE, "browserLengthColumnMin") == 52
 
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
@@ -163,7 +164,8 @@ def test_owner_visual_repair_preserves_required_browser_columns_at_narrow_width(
     assert "Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120" in delegate
     assert 'text: browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"' not in delegate
     assert "window.interaction.addToKit(index)" not in delegate
-    assert "browserPane.effectiveBrowserMetaColumnWidth" in delegate
+    assert "browserPane.effectiveBrowserBpmColumnWidth" in delegate
+    assert "browserPane.effectiveBrowserKeyColumnWidth" in delegate
     assert "browserPane.effectiveBrowserLengthColumnWidth" in delegate
     assert "browserPane.effectiveBrowserAddColumnWidth" not in delegate
 

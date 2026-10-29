@@ -193,7 +193,10 @@ def test_column_resize_contract_survives_theme_wiring() -> None:
     assert "function resizeColumn(" in QML_SOURCE
     # #846 header-owned ephemeral surfaces (not permanent row dividers).
     assert 'objectName: "browserColumnResize_waveform"' in QML_SOURCE
-    assert 'objectName: "browserColumnResize_meta"' in QML_SOURCE
+    assert 'objectName: "browserColumnResize_bpm"' in QML_SOURCE
+    assert 'objectName: "browserColumnResize_key"' in QML_SOURCE
+    assert 'objectName: "browserColumnResize_type"' in QML_SOURCE
+    assert 'objectName: "browserColumnResize_meta"' not in QML_SOURCE
     # Focus / hover chrome must use existing theme semantics — no HEX palette.
     assert "theme.focusRing" in QML_SOURCE or "theme.selectionBorder" in QML_SOURCE
     resize_idx = QML_SOURCE.index('objectName: "browserColumnResize_waveform"')

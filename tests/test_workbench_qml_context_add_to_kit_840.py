@@ -251,7 +251,7 @@ def test_845_collapse_and_846_resize_markers_untouched():
     assert "browserCollapsed" in text
     assert "liveKitCollapsed" in text
     assert 'objectName: "browserColumnResize_waveform"' in QML_SOURCE
-    assert 'objectName: "browserColumnResize_meta"' in QML_SOURCE
+    assert 'objectName: "browserColumnResize_bpm"' in QML_SOURCE
     assert 'objectName: "browserColumnResize_favorite"' in QML_SOURCE
     assert 'objectName: "browserColumnResize_length"' in QML_SOURCE
 
