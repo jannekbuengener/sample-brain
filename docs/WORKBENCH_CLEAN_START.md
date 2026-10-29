@@ -32,6 +32,18 @@ Library / Source Navigation, Sample Browser, Harmonic Match, and Live Kit are
 **not** materialised as panels. A small left-edge chevron/handle reveals the
 Library manually without selecting a Source.
 
+Internal Program Chrome visibility (#1213) follows Browser readiness only:
+
+```text
+No usable Library          → top Program Chrome + Footer absent (zero footprint)
+Preparing / Wave-1 scan    → same reduced chrome (progress stays on onboarding)
+Wave-1 Browser usable      → workspace + chrome visible (Wave-2 must not gate)
+Returning valid Library    → normal workspace chrome immediately
+```
+
+Native OS title-bar chrome stays visible. QML projects
+`browser_materialized`; it does not invent a second readiness authority.
+
 Registered Sources and library data remain on disk. Nothing is deleted by Clean
 Start.
 

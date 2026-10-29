@@ -264,7 +264,10 @@ def test_qml_footer_chrome_uses_surface_header_fill() -> None:
     footer = QML_SOURCE.split('objectName: "programFooterBand"', 1)[1][:1200]
     assert "theme.surfaceHeader" in footer
     # Geometry / context contracts stay outside this polish.
-    assert "height: 22" in QML_SOURCE.split('objectName: "programFooterBand"', 1)[0][-80:] + footer
+    # #1213 gates ready height behind programChromeVisible (still 22 when ready).
+    footer_geom = QML_SOURCE.split('objectName: "programFooterBand"', 1)[0][-80:] + footer
+    assert "22" in footer_geom
+    assert "programChromeVisible" in footer_geom or "height: 22" in footer_geom
 
 
 def test_qml_calm_canvas_paints_workspace_surface_root() -> None:

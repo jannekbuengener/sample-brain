@@ -2461,6 +2461,13 @@ ApplicationWindow {
     property var sessionPersistence: sessionPersistenceModel
     property var arrangement: arrangementModel
     readonly property string activeScreen: channelRack.activeScreen
+    // #1213: project Python Browser readiness → internal chrome visibility.
+    // Authority remains browser_materialized (Wave-1 usable Library); Wave-2
+    // enrichment must not gate reveal. Animation is presentation only.
+    readonly property bool programChromeVisible: window.interaction.browserMaterialized
+    readonly property bool programChromeMotionEnabled:
+        !window.screenData.brandReducedMotion
+        && window.screenData.brandMotionMode !== "off"
     // Screen-1 Theme Authority (#785): Theme Core owns colors; QML binds semantics.
     // No competing HEX palette here — see docs/assets/themes/ and workbench_theme.py.
     QtObject {
@@ -2699,12 +2706,21 @@ ApplicationWindow {
     // #831 program footer band — context center / status right (#830 / #770).
     // Footer-context centering: true center layer on full footer width (not RowLayout leftover).
     // #880: slim status-bar footer (chosen ~22; not screenshot-pixel truth).
-    // Global program chrome: keep the footer present on Screen 1 and Screen 2.
+    // Global program chrome: keep the footer present on Screen 1 and Screen 2
+    // once #1213 workspace readiness is reached (zero footprint before that).
     // Dark surface hierarchy: footer paints chrome (surfaceHeader), not workspace root.
     footer: Item {
         id: programFooterBand
         objectName: "programFooterBand"
-        height: 22
+        height: window.programChromeVisible ? 22 : 0
+        implicitHeight: height
+        visible: height > 0
+        clip: true
+        // Animate enter only; cancel/fail must snap closed (no half chrome).
+        Behavior on height {
+            enabled: window.programChromeMotionEnabled && window.programChromeVisible
+            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+        }
         Rectangle {
             anchors.fill: parent
             color: theme.surfaceHeader
@@ -2781,11 +2797,21 @@ ApplicationWindow {
     }
     // #831 program chrome — identity left / navigation center / tempo zone right (#830).
     // #880: slim/premium header geometry (chosen ~30; not screenshot-pixel truth).
+    // #1213: collapse to zero layout footprint until Browser-ready; restrained
+    // height reveal (enter from top) when motion is enabled.
     header: Rectangle {
         id: screen1Header
         objectName: "screen1Header"
-        height: 30
+        height: window.programChromeVisible ? 30 : 0
+        implicitHeight: height
+        visible: height > 0
+        clip: true
         color: theme.surfaceHeader
+        // Animate enter only; cancel/fail must snap closed (no half chrome).
+        Behavior on height {
+            enabled: window.programChromeMotionEnabled && window.programChromeVisible
+            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+        }
         Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
@@ -6637,6 +6663,11 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def hasActiveSource(self) -> bool:
             return adapter.view_model.has_active_source
+
+        @Property(bool, notify=state_changed)
+        def browserMaterialized(self) -> bool:
+            """#1213 readiness projection: Wave-1 Browser usable → workspace chrome."""
+            return bool(adapter.view_model.browser_materialized)
 
         @Property(bool, notify=state_changed)
         def liveKitRevealed(self) -> bool:
