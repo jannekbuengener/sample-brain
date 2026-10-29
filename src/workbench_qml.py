@@ -2368,6 +2368,8 @@ ApplicationWindow {
         property string chevronText: "‹"
         property bool seamActive: true
         property var activateAction: function() {}
+        // #1210: optional stable hint id; geometry/toggle authority stays with the seam.
+        property string hintId: ""
         property int hitWidth: 8
         property bool hovered: false
         readonly property bool disclosed: hovered || activeFocus
@@ -2418,6 +2420,34 @@ ApplicationWindow {
             if (event.key === Qt.Key_Space) {
                 disclosureRoot.activateAction()
                 event.accepted = true
+            }
+        }
+        // #1210 hint routing after keyboard activation so frozen #845 windows keep Keys.*
+        onHoveredChanged: {
+            if (hintId.length === 0)
+                return
+            if (hovered)
+                contextHintState.reportHover(hintId)
+            else
+                contextHintState.clearHover(hintId)
+        }
+        onActiveFocusChanged: {
+            if (hintId.length === 0)
+                return
+            if (activeFocus && visible)
+                contextHintState.reportFocus(hintId)
+            else
+                contextHintState.clearFocus(hintId)
+        }
+        // Collapse/reveal can hide this seam while it still holds keyboard focus.
+        onVisibleChanged: {
+            if (hintId.length === 0)
+                return
+            if (!visible) {
+                contextHintState.clearHover(hintId)
+                contextHintState.clearFocus(hintId)
+            } else if (activeFocus) {
+                contextHintState.reportFocus(hintId)
             }
         }
     }
@@ -2488,14 +2518,33 @@ ApplicationWindow {
             "library.scope.collections": { "label": "Collections", "help": "gespeicherte Sample-Sammlungen" },
             "library.scope.favorites": { "label": "Favorites", "help": "markierte Samples" },
             "library.scope.recordings": { "label": "Records", "help": "lokale Aufnahmen" },
-            "library.add_source": { "label": "Add Source", "help": "lokalen Sample-Ordner hinzufügen" }
+            "library.add_source": { "label": "Add Source", "help": "lokalen Sample-Ordner hinzufügen" },
+            "library.source": { "label": "Source", "help": "Sample-Quelle auswählen" },
+            "library.source_actions": { "label": "Source actions", "help": "Quelle verwalten oder entfernen" },
+            "browser.search": { "label": "Search", "help": "Samples im Browser filtern" },
+            "browser.sample_row": { "label": "Sample", "help": "Sample auswählen oder Kontextmenü öffnen" },
+            "browser.audition": { "label": "Audition", "help": "Sample-Vorschau abspielen" },
+            "browser.favorite": { "label": "Favorite", "help": "Sample als Favorit markieren" },
+            "browser.resize.waveform": { "label": "Resize waveform", "help": "Waveform-Spalte in der Breite anpassen" },
+            "browser.resize.bpm": { "label": "Resize BPM", "help": "BPM-Spalte in der Breite anpassen" },
+            "browser.resize.favorite": { "label": "Resize favorite", "help": "Favoriten-Spalte in der Breite anpassen" },
+            "browser.resize.key": { "label": "Resize Key", "help": "Key-Spalte in der Breite anpassen" },
+            "browser.resize.length": { "label": "Resize length", "help": "Length-Spalte in der Breite anpassen" },
+            "browser.resize.type": { "label": "Resize Type", "help": "Type-Spalte in der Breite anpassen" },
+            "browser.context.add_to_kit": { "label": "Add to Kit", "help": "ausgewähltes Sample zum Live Kit hinzufügen" },
+            "browser.context.harmonic_matches": { "label": "Harmonic Matches", "help": "harmonische Treffer für das Sample öffnen" },
+            "panel.browser.collapse": { "label": "Collapse Browser", "help": "Browser-Panel einklappen" },
+            "panel.browser.expand": { "label": "Expand Browser", "help": "Browser-Panel wieder einblenden" },
+            "panel.harmony.collapse": { "label": "Collapse Harmonic Matches", "help": "Harmonic-Matches-Panel einklappen" },
+            "panel.harmony.expand": { "label": "Expand Harmonic Matches", "help": "Harmonic-Matches-Panel einblenden" },
+            "panel.library.reveal": { "label": "Reveal Library", "help": "Library-Panel wieder einblenden" }
         })
         property string hoveredId: ""
         property string focusedId: ""
         property string activeId: ""
         property string activeLabel: ""
         property string activeHelp: ""
-        // Hover/focus control descriptors win; else existing browser selection hint.
+        // Hover > Focus > existing browser selection hint (#1210).
         readonly property string displayText: activeId.length > 0
             ? (activeLabel + " — " + activeHelp)
             : (window.screenData.selectedSampleContextHint || "")
@@ -3738,7 +3787,15 @@ ApplicationWindow {
                             implicitHeight: libraryMetrics.sourceRowHeight
                             implicitWidth: libraryTree.width
                             property bool dropHover: false
-                            HoverHandler { id: sourceRowHover }
+                            HoverHandler {
+                                id: sourceRowHover
+                                onHoveredChanged: {
+                                    if (hovered)
+                                        contextHintState.reportHover("library.source")
+                                    else
+                                        contextHintState.clearHover("library.source")
+                                }
+                            }
                             TapHandler {
                                 id: sourceRowTap
                                 // The action button owns intentional clicks in
@@ -3825,7 +3882,7 @@ ApplicationWindow {
                                     color: theme.textSecondary
                                     font.pixelSize: 11
                                 }
-                                ToolButton {
+                                    ToolButton {
                                     id: sourceActionsButton
                                     objectName: "librarySourceActionsButton"
                                     visible: model.kind === "registered_root"
@@ -3841,6 +3898,21 @@ ApplicationWindow {
                                     Accessible.name: "Source actions"
                                     ToolTip.visible: hovered
                                     ToolTip.text: "Source actions"
+                                    onHoveredChanged: {
+                                        if (hovered)
+                                            contextHintState.reportHover("library.source_actions")
+                                        else {
+                                            contextHintState.clearHover("library.source_actions")
+                                            if (sourceRowHover.hovered)
+                                                contextHintState.reportHover("library.source")
+                                        }
+                                    }
+                                    onActiveFocusChanged: {
+                                        if (activeFocus)
+                                            contextHintState.reportFocus("library.source_actions")
+                                        else
+                                            contextHintState.clearFocus("library.source_actions")
+                                    }
                                     onClicked: {
                                         if (libraryInteraction.prepareRemoveSourceForNode(model.nodeId))
                                             librarySourceContextMenu.open()
@@ -4292,8 +4364,30 @@ ApplicationWindow {
                         border.width: 1
                         radius: 6
                     }
+                    function contextActionHintId(actionIndex) {
+                        return actionIndex === 0
+                            ? "browser.context.add_to_kit"
+                            : "browser.context.harmonic_matches"
+                    }
+                    function syncContextActionFocusHint() {
+                        if (!visible) {
+                            contextHintState.clearFocus("browser.context.add_to_kit")
+                            contextHintState.clearFocus("browser.context.harmonic_matches")
+                            return
+                        }
+                        var active = contextActionHintId(focusedAction)
+                        var other = contextActionHintId(focusedAction === 0 ? 1 : 0)
+                        contextHintState.clearFocus(other)
+                        contextHintState.reportFocus(active)
+                    }
+                    onOpened: syncContextActionFocusHint()
+                    onFocusedActionChanged: syncContextActionFocusHint()
                     onClosed: {
                         window.interaction.closeSampleContext()
+                        contextHintState.clearHover("browser.context.add_to_kit")
+                        contextHintState.clearHover("browser.context.harmonic_matches")
+                        contextHintState.clearFocus("browser.context.add_to_kit")
+                        contextHintState.clearFocus("browser.context.harmonic_matches")
                         browser.forceActiveFocus()
                     }
                     Connections {
@@ -4346,7 +4440,11 @@ ApplicationWindow {
                                     sampleContextMenu.focusedAction = 0
                                     sampleContextMenu.activateFocused()
                                 }
-                                onEntered: sampleContextMenu.focusedAction = 0
+                                onEntered: {
+                                    sampleContextMenu.focusedAction = 0
+                                    contextHintState.reportHover("browser.context.add_to_kit")
+                                }
+                                onExited: contextHintState.clearHover("browser.context.add_to_kit")
                             }
                         }
                         Rectangle {
@@ -4390,7 +4488,11 @@ ApplicationWindow {
                                     sampleContextMenu.focusedAction = 1
                                     sampleContextMenu.activateFocused()
                                 }
-                                onEntered: sampleContextMenu.focusedAction = 1
+                                onEntered: {
+                                    sampleContextMenu.focusedAction = 1
+                                    contextHintState.reportHover("browser.context.harmonic_matches")
+                                }
+                                onExited: contextHintState.clearHover("browser.context.harmonic_matches")
                             }
                         }
                     }
@@ -4420,6 +4522,7 @@ ApplicationWindow {
                     anchors.bottom: parent.bottom
                     seamActive: browserPane.visible
                     accessibleLabel: "Collapse Browser"
+                    hintId: "panel.browser.collapse"
                     chevronText: "‹"
                     activateAction: function() { window.interaction.toggleBrowserCollapsed() }
                 }
@@ -4505,6 +4608,19 @@ ApplicationWindow {
                                 color: parent.activeFocus ? theme.hoverSurface : (parent.hovered ? theme.hoverSurface : "transparent")
                             }
                             onTextChanged: window.interaction.setBrowserSearch(text)
+                            // #1210: hover/focus are presentation-only; text mutation stays on onTextChanged.
+                            onHoveredChanged: {
+                                if (hovered)
+                                    contextHintState.reportHover("browser.search")
+                                else
+                                    contextHintState.clearHover("browser.search")
+                            }
+                            onActiveFocusChanged: {
+                                if (activeFocus)
+                                    contextHintState.reportFocus("browser.search")
+                                else
+                                    contextHintState.clearFocus("browser.search")
+                            }
                         }
                     }
                     RowLayout {
@@ -4562,7 +4678,7 @@ ApplicationWindow {
                                 Layout.fillHeight: true
                                 // #846 ephemeral overlay: MouseArea root keeps resizeColumn +
                                 // theme tokens inside frozen assertion windows.
-                                MouseArea { id: browserColumnResizeWaveform; objectName: "browserColumnResize_waveform"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize waveform"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("waveform", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                                MouseArea { id: browserColumnResizeWaveform; objectName: "browserColumnResize_waveform"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize waveform"; onEntered: contextHintState.reportHover("browser.resize.waveform"); onExited: contextHintState.clearHover("browser.resize.waveform"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.waveform") : contextHintState.clearFocus("browser.resize.waveform"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("waveform", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                             Label { text: "SAMPLE NAME"; color: theme.textSecondary; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true }
                             Label {
@@ -4574,7 +4690,7 @@ ApplicationWindow {
                                 horizontalAlignment: Text.AlignRight
                                 font.pixelSize: window.textCaption
                                 font.bold: true
-                                MouseArea { id: browserColumnResizeBpm; objectName: "browserColumnResize_bpm"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize BPM"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("bpm", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                                MouseArea { id: browserColumnResizeBpm; objectName: "browserColumnResize_bpm"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize BPM"; onEntered: contextHintState.reportHover("browser.resize.bpm"); onExited: contextHintState.clearHover("browser.resize.bpm"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.bpm") : contextHintState.clearFocus("browser.resize.bpm"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("bpm", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                             Label {
                                 id: browserHeaderFavorite
@@ -4584,7 +4700,7 @@ ApplicationWindow {
                                 horizontalAlignment: Text.AlignHCenter
                                 font.pixelSize: window.textCaption
                                 font.bold: true
-                                MouseArea { id: browserColumnResizeFavorite; objectName: "browserColumnResize_favorite"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize favorite"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("favorite", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                                MouseArea { id: browserColumnResizeFavorite; objectName: "browserColumnResize_favorite"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize favorite"; onEntered: contextHintState.reportHover("browser.resize.favorite"); onExited: contextHintState.clearHover("browser.resize.favorite"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.favorite") : contextHintState.clearFocus("browser.resize.favorite"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("favorite", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                             Label {
                                 id: browserHeaderKey
@@ -4595,7 +4711,7 @@ ApplicationWindow {
                                 horizontalAlignment: Text.AlignRight
                                 font.pixelSize: window.textCaption
                                 font.bold: true
-                                MouseArea { id: browserColumnResizeKey; objectName: "browserColumnResize_key"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize key"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("key", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                                MouseArea { id: browserColumnResizeKey; objectName: "browserColumnResize_key"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize key"; onEntered: contextHintState.reportHover("browser.resize.key"); onExited: contextHintState.clearHover("browser.resize.key"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.key") : contextHintState.clearFocus("browser.resize.key"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("key", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                             Label {
                                 id: browserHeaderLength
@@ -4606,7 +4722,7 @@ ApplicationWindow {
                                 horizontalAlignment: Text.AlignRight
                                 font.pixelSize: window.textCaption
                                 font.bold: true
-                                MouseArea { id: browserColumnResizeLength; objectName: "browserColumnResize_length"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize length"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("length", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                                MouseArea { id: browserColumnResizeLength; objectName: "browserColumnResize_length"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize length"; onEntered: contextHintState.reportHover("browser.resize.length"); onExited: contextHintState.clearHover("browser.resize.length"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.length") : contextHintState.clearFocus("browser.resize.length"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("length", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                             // Issue 850: Type header shares visibility + width with the Type value cell so
                             // Length never visually hosts Type labels under a shifted trailing geometry.
@@ -4620,7 +4736,7 @@ ApplicationWindow {
                                 horizontalAlignment: Text.AlignLeft
                                 font.pixelSize: window.textCaption
                                 font.bold: true
-                                MouseArea { id: browserColumnResizeType; objectName: "browserColumnResize_type"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize type"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("type", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                                MouseArea { id: browserColumnResizeType; objectName: "browserColumnResize_type"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize type"; onEntered: contextHintState.reportHover("browser.resize.type"); onExited: contextHintState.clearHover("browser.resize.type"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.type") : contextHintState.clearFocus("browser.resize.type"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("type", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                         }
                     }
@@ -4735,6 +4851,18 @@ ApplicationWindow {
                                     browser.forceActiveFocus()
                                     window.interaction.selectRow(index)
                                 }
+                                // #1210: stable row-family hint (no row identity); leave restores selection context.
+                                onEntered: contextHintState.reportHover("browser.sample_row")
+                                onExited: contextHintState.clearHover("browser.sample_row")
+                            }
+                            ListView.onPooled: {
+                                // Virtualized reuse must not keep a stale hover owner.
+                                if (rowSelection.containsMouse)
+                                    contextHintState.clearHover("browser.sample_row")
+                                if (waveformHover.containsMouse)
+                                    contextHintState.clearHover("browser.audition")
+                                if (favoriteMouseArea.containsMouse)
+                                    contextHintState.clearHover("browser.favorite")
                             }
                             RowLayout { id: rowBody; anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
                                 Item { id: waveformSurface; objectName: "browserWaveformSurface"; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
@@ -4782,7 +4910,21 @@ ApplicationWindow {
                                             return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
                                         }
                                     }
-                                    MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
+                                    MouseArea {
+                                        id: waveformHover
+                                        anchors.fill: parent
+                                        z: 2
+                                        hoverEnabled: true
+                                        onEntered: {
+                                            contextHintState.reportHover("browser.audition")
+                                        }
+                                        onExited: {
+                                            contextHintState.clearHover("browser.audition")
+                                            if (rowSelection.containsMouse)
+                                                contextHintState.reportHover("browser.sample_row")
+                                        }
+                                        onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) }
+                                    }
                                 }
                                 Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
                                 Label { id: bpmCell; text: modelData.bpm; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserBpmColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
@@ -4806,6 +4948,13 @@ ApplicationWindow {
                                     MouseArea {
                                         id: favoriteMouseArea
                                         anchors.fill: parent
+                                        hoverEnabled: true
+                                        onEntered: contextHintState.reportHover("browser.favorite")
+                                        onExited: {
+                                            contextHintState.clearHover("browser.favorite")
+                                            if (rowSelection.containsMouse)
+                                                contextHintState.reportHover("browser.sample_row")
+                                        }
                                         onClicked: {
                                             browser.forceActiveFocus()
                                             window.interaction.toggleFavorite(index)
@@ -4883,6 +5032,7 @@ ApplicationWindow {
                     anchors.bottom: parent.bottom
                     seamActive: window.interaction.harmonicMatchOpen && !window.interaction.browserCollapsed
                     accessibleLabel: "Collapse Harmonic Matches"
+                    hintId: "panel.harmony.collapse"
                     chevronText: "›"
                     activateAction: function() { window.activateHarmonicMatchToggle() }
                 }
@@ -5674,6 +5824,7 @@ ApplicationWindow {
         anchors.bottom: workspaceRow.bottom
         seamActive: window.activeScreen === "screen1" && !window.interaction.libraryRevealed
         accessibleLabel: "Reveal Library"
+        hintId: "panel.library.reveal"
         chevronText: "›"
         activateAction: function() { window.interaction.revealLibrary() }
     }
@@ -5690,6 +5841,7 @@ ApplicationWindow {
                     && window.interaction.hasActiveSource
                     && window.interaction.browserCollapsed
         accessibleLabel: "Expand Browser"
+        hintId: "panel.browser.expand"
         chevronText: "›"
         activateAction: function() { window.interaction.toggleBrowserCollapsed() }
     }
@@ -5711,6 +5863,7 @@ ApplicationWindow {
                     && !window.interaction.browserCollapsed
                     && !window.interaction.harmonicMatchOpen
         accessibleLabel: "Expand Harmonic Matches"
+        hintId: "panel.harmony.expand"
         chevronText: "›"
         activateAction: function() { window.activateHarmonicMatchToggle() }
     }

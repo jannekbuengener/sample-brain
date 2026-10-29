@@ -293,7 +293,7 @@ def test_qml_collapse_handles_are_keyboard_activatable():
     """Hover may emphasize; Space/Enter activation must remain possible."""
     assert "component PanelDisclosureSeam" in QML_SOURCE
     seam_idx = QML_SOURCE.index("component PanelDisclosureSeam")
-    seam = QML_SOURCE[seam_idx : seam_idx + 2200]
+    seam = QML_SOURCE[seam_idx : seam_idx + 3200]
     assert "Keys.onReturnPressed" in seam or "Key_Return" in seam
     assert "Key_Space" in seam or "Keys.onPressed" in seam
     assert "Accessible.role" in seam

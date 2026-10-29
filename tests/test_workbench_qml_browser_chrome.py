@@ -424,7 +424,9 @@ def _browser_header_block(source: str) -> str:
     return source[row_start:end]
 
 
-def _header_resize_window(source: str, object_name: str, span: int = 900) -> str:
+def _header_resize_window(source: str, object_name: str, span: int = 1400) -> str:
+    # #1210 attaches hover/focus hint handlers before onPressed; keep the
+    # resizeColumn call site inside the frozen assertion window.
     token = f'objectName: "{object_name}"'
     idx = source.index(token)
     return source[idx : idx + span]
