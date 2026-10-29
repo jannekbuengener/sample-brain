@@ -21,7 +21,7 @@ External skills remain routing references; their bodies are not copied here.
 
 ## Skill Relationships
 
-All listed repository-owned skills are **standalone** — each runs independently
+All listed repository-owned skills are **standalone** â€” each runs independently
 with complete inputs. Other skill outputs are optional context enhancements,
 not mandatory predecessors.
 
