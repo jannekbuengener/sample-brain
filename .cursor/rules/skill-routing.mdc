@@ -50,6 +50,7 @@ The routing matrix below is generated. Do not hand-edit inside the markers; run:
 | Qualitätsprüfung vor Merge | `jMerta/coding-guidelines-verify` |
 | QML/Component-Test ausführen und Fehlerschicht klassifizieren | `sample-brain-qml-test-run` |
 | PySide6/Qt Quick/QML Runtime-Profiling (Hotspots, Bridge, Delegates) | `sample-brain-qml-profiler` |
+| Repository-Skill erstellen/packen/registrieren/validieren/retiren | `sample-brain-skill-authoring` |
 
 ## Security-Workflow-Audit (Priorität B, nur gezielt)
 
@@ -93,6 +94,7 @@ Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/doc
 Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung
 QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)
 QML-/Qt-Quick-Performance-Slice -> sample-brain-qml-profiler -> bei HOTSPOT_PROVEN und unklarer Ursache sample-brain-root-cause -> bei durablem Schutz sample-brain-regression-gap -> sample-brain-test-first
+Skill-Authoring-/Packaging-Slice -> sample-brain-skill-authoring -> optional sample-brain-skill-effectiveness oder manuelles RED/GREEN
 ```
 
 ## Screen-1 Visual Acceptance
