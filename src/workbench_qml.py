@@ -8482,6 +8482,23 @@ def _qml_theme_authority_bridge(
                 platform_reduce_motion=self._platform_reduce_motion,
             )
 
+        def _legacy_with_persisted_base_preset(
+            self, legacy: theme_mod.ThemeTokens
+        ) -> theme_mod.ThemeTokens:
+            """Keep custom-theme base_preset metadata from #785 store (#1255)."""
+            if legacy.name in theme_mod.PRESET_ORDER:
+                return legacy
+            meta = theme_mod.resolve_theme(
+                legacy.name,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            if meta.name != legacy.name:
+                return legacy
+            if meta.base_preset == legacy.base_preset:
+                return legacy
+            return replace(legacy, base_preset=meta.base_preset)
+
         def _apply_snapshot(
             self,
             snapshot: appearance_mod.AppearanceResolvedSnapshot,
@@ -8490,12 +8507,16 @@ def _qml_theme_authority_bridge(
             emit: bool = True,
         ) -> None:
             projection = theme_mod.project_appearance_snapshot_for_qml(snapshot)
+            legacy = self._legacy_with_persisted_base_preset(
+                projection["legacy_tokens"]  # type: ignore[arg-type]
+            )
+            projection["legacy_tokens"] = legacy
             # Atomic local swap: readers always see one coherent generation.
             self._snapshot = snapshot
             if requested is not None:
                 self._requested = requested
             self._projection = projection
-            self._tokens = projection["legacy_tokens"]  # type: ignore[assignment]
+            self._tokens = legacy
             self._semantics = dict(projection["semantics"])  # type: ignore[arg-type]
             self._v2_tokens = dict(projection["tokens"])  # type: ignore[arg-type]
             self._draft_accent = str(projection["accent"])
@@ -8585,6 +8606,55 @@ def _qml_theme_authority_bridge(
                 accent=base.accent if accent is None else accent,
                 contrast=base.contrast if contrast is None else contrast,
             )
+
+        def _selection_profile_for(
+            self,
+            selected: str,
+            *,
+            previous: appearance_mod.AppearanceProfileInput | None,
+        ) -> appearance_mod.AppearanceProfileInput:
+            """Point the active profile at ``selected`` with #785 selection semantics."""
+            contrast = (
+                previous.contrast
+                if previous is not None and previous.contrast is not None
+                else appearance_mod.DEFAULT_CONTRAST
+            )
+            if selected in theme_mod.PRESET_ORDER:
+                return appearance_mod.AppearanceProfileInput(
+                    theme_ref=selected,
+                    contrast=contrast,
+                )
+            meta = theme_mod.resolve_theme(
+                selected,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            if meta.name != selected:
+                return appearance_mod.AppearanceProfileInput(
+                    theme_ref=theme_mod.DEFAULT_PRESET_NAME,
+                    contrast=contrast,
+                )
+            return appearance_mod.AppearanceProfileInput(
+                theme_ref=selected,
+                background=meta.background,
+                foreground=meta.foreground,
+                accent=meta.accent,
+                contrast=contrast,
+            )
+
+        def _commit_theme_selection(self, name: str) -> bool:
+            cleaned = str(name).strip()
+            if not cleaned:
+                return False
+            available = set(self._available_names())
+            if cleaned not in available:
+                cleaned = theme_mod.DEFAULT_PRESET_NAME
+            requested = self._requested
+            profile = self._selection_profile_for(
+                cleaned,
+                previous=self._active_profile(requested),
+            )
+            return self._commit_requested(self._put_active_profile(requested, profile))
 
         def _preview_from_draft(self) -> None:
             accent = theme_mod._normalize_hex(self._draft_accent)
@@ -8860,24 +8930,12 @@ def _qml_theme_authority_bridge(
 
         @Slot(str)
         def selectTheme(self, name: str) -> None:
-            theme_mod.select_theme(
-                str(name),
-                state_dir=self._state_dir,
-                env=self._env,
-            )
-            self._reload()
+            # Platform-aware active profile (not #785 system→dark sync heuristic).
+            self._commit_theme_selection(name)
 
         @Slot(str)
         def setPreset(self, name: str) -> None:
-            cleaned = str(name).strip()
-            if not cleaned:
-                return
-            requested = self._requested
-            profile = self._profile_with(
-                self._active_profile(requested),
-                theme_ref=cleaned,
-            )
-            self._commit_requested(self._put_active_profile(requested, profile))
+            self._commit_theme_selection(name)
 
         @Slot(str)
         def setMode(self, mode: str) -> None:

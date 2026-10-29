@@ -578,3 +578,43 @@ def test_bridge_does_not_persist_derived_token_snapshot(tmp_path: Path) -> None:
         "motion.effective",
     ):
         assert key not in blob
+
+
+def test_custom_theme_preserves_persisted_base_preset(tmp_path: Path) -> None:
+    bridge = _bridge(tmp_path)
+    arctic = theme.resolve_theme("Arctic")
+    bridge.createCustomFromPreset("Arctic", "My Arctic")
+    bridge.selectTheme("My Arctic")
+    assert bridge.basePresetName == "Arctic"
+    bridge.setBaseAccent("#112233")
+    bridge.saveCurrentCustom()
+    stored = theme.resolve_theme("My Arctic", state_dir=tmp_path)
+    assert stored.base_preset == "Arctic"
+    assert stored.accent.lower() == "#112233"
+    bridge.resetCurrentCustom()
+    restored = theme.resolve_theme("My Arctic", state_dir=tmp_path)
+    assert restored.base_preset == "Arctic"
+    assert restored.accent.lower() == arctic.accent.lower()
+
+
+def test_select_theme_updates_resolved_active_profile_under_system_light(
+    tmp_path: Path,
+) -> None:
+    bridge = _bridge(tmp_path, platform_color_scheme="dark")
+    bridge.setSeparateLightDark(True)
+    bridge.setMode("system")
+    bridge.selectTheme("Blood")
+    assert bridge.resolvedScheme == "dark"
+    bridge.setPlatformColorScheme("light")
+    assert bridge.resolvedScheme == "light"
+    bridge.selectTheme("Forest")
+    assert bridge.selectedThemeName == "Forest"
+    assert bridge.themeRef == "Forest"
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.light is not None
+    assert loaded.light.theme_ref == "Forest"
+    assert loaded.dark is not None
+    assert loaded.dark.theme_ref == "Blood"
+    bridge.setPlatformColorScheme("dark")
+    assert bridge.resolvedScheme == "dark"
+    assert bridge.themeRef == "Blood"
