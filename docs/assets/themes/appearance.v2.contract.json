@@ -7,6 +7,16 @@
   "parent_issue": 1251,
   "runtime_implementation_owner_issue": 1253,
   "persistence_owner_issue": 1254,
+  "persistence_runtime": {
+    "module": "src/workbench_theme.py",
+    "file": "screen1_theme_preferences.json",
+    "schema": "sample_brain.theme_preferences",
+    "schema_version": 2,
+    "exit_marker": "APPEARANCE_V2_PREFERENCES_MIGRATED",
+    "persists_user_intent_only": true,
+    "migrates_from_schema_version": 1,
+    "unsupported_future_schema_policy": "fail_closed_leave_source_untouched"
+  },
   "qml_bridge_owner_issue": 1255,
   "settings_ui_owner_issue": 1256,
   "screen1_adoption_owner_issue": 1257,

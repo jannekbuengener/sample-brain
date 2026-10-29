@@ -1,4 +1,4 @@
-"""Screen-1 Theme Core (#785) + Appearance V2 seam (#1253).
+"""Screen-1 Theme Core (#785) + Appearance V2 seam (#1253/#1254).
 
 Preset-based dark appearance tokens with local custom-theme persistence.
 Derived tokens are computed from base accent/background/foreground only.
@@ -6,22 +6,34 @@ QML consumes mapped semantic colors through the Theme Authority bridge in
 ``workbench_qml`` — this module remains the #785 derivation/persistence owner.
 
 Appearance V2 state resolution and full semantic token derivation live in
-``workbench_appearance`` (#1253). Persistence schema migration remains #1254;
-QML projection remains #1255. Do not persist derived V2 tokens here.
+``workbench_appearance`` (#1253). This module owns versioned preference
+persistence + v1→v2 migration (#1254). QML projection remains #1255.
+Do not persist derived V2 tokens here.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
 from .workbench_controller import workbench_state_dir
 
 THEME_PREFERENCES_SCHEMA = "sample_brain.theme_preferences"
-THEME_PREFERENCES_SCHEMA_VERSION = 1
+THEME_PREFERENCES_SCHEMA_VERSION = 2
+THEME_PREFERENCES_SCHEMA_VERSION_V1 = 1
+APPEARANCE_V2_PREFERENCES_EXIT = "APPEARANCE_V2_PREFERENCES_MIGRATED"
 _THEME_PREFERENCES_FILENAME = "screen1_theme_preferences.json"
+
+# Internal load statuses — never persisted.
+_STATUS_MISSING = "missing"
+_STATUS_V1 = "v1"
+_STATUS_V2 = "v2"
+_STATUS_CORRUPT = "corrupt"
+_STATUS_UNSUPPORTED = "unsupported_future"
 
 PRESET_ORDER = ("Blood", "Carbon", "Arctic", "Rose", "Forest")
 DEFAULT_PRESET_NAME = "Blood"
@@ -327,6 +339,9 @@ def _empty_store() -> dict[str, Any]:
         "schema_version": THEME_PREFERENCES_SCHEMA_VERSION,
         "selected": DEFAULT_PRESET_NAME,
         "custom_themes": {},
+        "appearance": _default_appearance_payload(selected=DEFAULT_PRESET_NAME),
+        "_status": _STATUS_MISSING,
+        "_writable": True,
     }
 
 
@@ -366,6 +381,276 @@ def _sanitize_custom_entry(payload: Mapping[str, Any]) -> dict[str, str] | None:
     }
 
 
+def _sanitize_customs(raw: Any) -> dict[str, dict[str, str]]:
+    customs: dict[str, dict[str, str]] = {}
+    if not isinstance(raw, Mapping):
+        return customs
+    for key, entry in raw.items():
+        if not isinstance(key, str) or not isinstance(entry, Mapping):
+            continue
+        sanitized = _sanitize_custom_entry({**dict(entry), "name": entry.get("name", key)})
+        if sanitized is None:
+            continue
+        for forbidden in _FORBIDDEN_PERSIST_KEYS:
+            sanitized.pop(forbidden, None)
+        customs[sanitized["name"]] = sanitized
+    return customs
+
+
+def _normalize_selected(selected: Any, customs: Mapping[str, Any]) -> str:
+    if not isinstance(selected, str) or not selected.strip():
+        return DEFAULT_PRESET_NAME
+    cleaned = selected.strip()
+    if cleaned in PRESET_ORDER or cleaned in customs:
+        return cleaned
+    return DEFAULT_PRESET_NAME
+
+
+def _default_appearance_payload(*, selected: str) -> dict[str, Any]:
+    return {
+        "mode": "dark",
+        "separateLightDark": False,
+        "selectedTheme": selected,
+        "uiFontSize": 14,
+        "codeFontSize": 12,
+        "motionMode": "on",
+        "profiles": {
+            "shared": {
+                "themeRef": selected,
+                "contrast": 50,
+            }
+        },
+    }
+
+
+def _profile_to_payload(profile: Any) -> dict[str, Any] | None:
+    from .workbench_appearance import AppearanceProfileInput
+
+    if not isinstance(profile, AppearanceProfileInput):
+        return None
+    out: dict[str, Any] = {}
+    if isinstance(profile.theme_ref, str) and profile.theme_ref.strip():
+        out["themeRef"] = profile.theme_ref.strip()
+    for key, attr in (
+        ("background", profile.background),
+        ("foreground", profile.foreground),
+        ("accent", profile.accent),
+    ):
+        normalized = _normalize_hex(attr) if isinstance(attr, str) else None
+        if normalized is not None:
+            out[key] = normalized
+    if type(profile.contrast) is int:
+        out["contrast"] = profile.contrast
+    return out or None
+
+
+def _appearance_payload_from_requested(
+    requested: Any,
+    *,
+    selected: str,
+) -> dict[str, Any]:
+    from .workbench_appearance import AppearanceRequestedState
+
+    if not isinstance(requested, AppearanceRequestedState):
+        return _default_appearance_payload(selected=selected)
+
+    profiles: dict[str, Any] = {}
+    for name, profile in (
+        ("shared", requested.shared),
+        ("dark", requested.dark),
+        ("light", requested.light),
+    ):
+        payload = _profile_to_payload(profile)
+        if payload is not None:
+            profiles[name] = payload
+    if not profiles:
+        profiles["shared"] = {"themeRef": selected, "contrast": 50}
+
+    selected_theme = selected
+    if requested.separate_light_dark:
+        for candidate in (requested.dark, requested.light, requested.shared):
+            if (
+                candidate is not None
+                and isinstance(candidate.theme_ref, str)
+                and candidate.theme_ref.strip()
+            ):
+                selected_theme = candidate.theme_ref.strip()
+                break
+    elif requested.shared is not None and isinstance(requested.shared.theme_ref, str):
+        cleaned = requested.shared.theme_ref.strip()
+        if cleaned:
+            selected_theme = cleaned
+
+    return {
+        "mode": requested.mode,
+        "separateLightDark": bool(requested.separate_light_dark),
+        "selectedTheme": selected_theme,
+        "uiFontSize": requested.ui_font_size,
+        "codeFontSize": requested.code_font_size,
+        "motionMode": requested.motion_mode,
+        "profiles": profiles,
+    }
+
+
+def _appearance_mapping_from_store_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Flatten persisted appearance section into appearance_requested_from_mapping shape."""
+    profiles = payload.get("profiles")
+    shared = payload.get("shared")
+    dark = payload.get("dark")
+    light = payload.get("light")
+    if isinstance(profiles, Mapping):
+        shared = profiles.get("shared", shared)
+        dark = profiles.get("dark", dark)
+        light = profiles.get("light", light)
+    return {
+        "mode": payload.get("mode"),
+        "separateLightDark": payload.get("separateLightDark", False),
+        "uiFontSize": payload.get("uiFontSize"),
+        "codeFontSize": payload.get("codeFontSize"),
+        "motionMode": payload.get("motionMode"),
+        "shared": shared,
+        "dark": dark,
+        "light": light,
+    }
+
+
+def _seed_motion_from_display(
+    *,
+    state_dir: Path | None,
+    env: Mapping[str, str] | None,
+) -> str:
+    try:
+        from .workbench_display_preferences import load_display_preferences
+
+        prefs = load_display_preferences(state_dir=state_dir, env=env)
+        mode = str(getattr(prefs, "motion_mode", "on") or "on").strip().lower()
+        if mode in {"on", "reduced", "off"}:
+            return mode
+    except Exception:
+        pass
+    return "on"
+
+
+def _sync_motion_to_display(
+    motion_mode: str,
+    *,
+    state_dir: Path | None,
+    env: Mapping[str, str] | None,
+) -> None:
+    """Keep #696 display prefs aligned for concrete motion values (not system)."""
+    token = str(motion_mode or "").strip().lower()
+    if token not in {"on", "reduced", "off"}:
+        return
+    try:
+        from .workbench_display_preferences import (
+            load_display_preferences,
+            save_display_preferences,
+        )
+
+        current = load_display_preferences(state_dir=state_dir, env=env)
+        save_display_preferences(
+            {
+                "density_mode": current.density_mode,
+                "motion_mode": token,
+            },
+            state_dir=state_dir,
+            env=env,
+        )
+    except Exception:
+        # Cosmetic sync must never block Appearance persistence.
+        return
+
+
+def _migrate_v1_to_v2(
+    raw: Mapping[str, Any],
+    *,
+    state_dir: Path | None,
+    env: Mapping[str, str] | None,
+) -> dict[str, Any]:
+    customs = _sanitize_customs(raw.get("custom_themes"))
+    selected = _normalize_selected(raw.get("selected"), customs)
+    shared: dict[str, Any] = {"themeRef": selected, "contrast": 50}
+    if selected in customs:
+        entry = customs[selected]
+        shared = {
+            "themeRef": selected,
+            "accent": entry["accent"],
+            "background": entry["background"],
+            "foreground": entry["foreground"],
+            "contrast": 50,
+        }
+    appearance_payload = {
+        "mode": "dark",
+        "separateLightDark": False,
+        "selectedTheme": selected,
+        "uiFontSize": 14,
+        "codeFontSize": 12,
+        "motionMode": _seed_motion_from_display(state_dir=state_dir, env=env),
+        "profiles": {"shared": shared},
+    }
+    return {
+        "schema": THEME_PREFERENCES_SCHEMA,
+        "schema_version": THEME_PREFERENCES_SCHEMA_VERSION,
+        "selected": selected,
+        "custom_themes": customs,
+        "appearance": appearance_payload,
+        "_status": _STATUS_V1,
+        "_writable": True,
+    }
+
+
+def _parse_v2_store(
+    raw: Mapping[str, Any],
+    *,
+    state_dir: Path | None,
+    env: Mapping[str, str] | None,
+) -> dict[str, Any]:
+    customs = _sanitize_customs(raw.get("custom_themes"))
+    appearance_raw = raw.get("appearance")
+    if not isinstance(appearance_raw, Mapping):
+        appearance_raw = {}
+    selected_theme = appearance_raw.get("selectedTheme", raw.get("selected", DEFAULT_PRESET_NAME))
+    selected = _normalize_selected(selected_theme, customs)
+    if "selected" in raw:
+        selected = _normalize_selected(raw.get("selected"), customs)
+
+    mapping = _appearance_mapping_from_store_payload(appearance_raw)
+    if mapping.get("motionMode") is None:
+        mapping["motionMode"] = _seed_motion_from_display(state_dir=state_dir, env=env)
+
+    # Ensure themeRef mirrors selected when profiles omit it.
+    profiles = appearance_raw.get("profiles")
+    if not isinstance(profiles, Mapping) or not profiles:
+        shared = mapping.get("shared")
+        if not isinstance(shared, Mapping) or not shared.get("themeRef"):
+            mapping["shared"] = {
+                "themeRef": selected,
+                "contrast": 50,
+                **(dict(shared) if isinstance(shared, Mapping) else {}),
+            }
+
+    from .workbench_appearance import appearance_requested_from_mapping
+
+    requested = appearance_requested_from_mapping(mapping)
+    appearance_payload = _appearance_payload_from_requested(requested, selected=selected)
+    # Preserve selectedTheme from disk when valid.
+    if isinstance(selected_theme, str) and selected_theme.strip():
+        cleaned = selected_theme.strip()
+        if cleaned in PRESET_ORDER or cleaned in customs:
+            appearance_payload["selectedTheme"] = cleaned
+            selected = cleaned
+
+    return {
+        "schema": THEME_PREFERENCES_SCHEMA,
+        "schema_version": THEME_PREFERENCES_SCHEMA_VERSION,
+        "selected": selected,
+        "custom_themes": customs,
+        "appearance": appearance_payload,
+        "_status": _STATUS_V2,
+        "_writable": True,
+    }
+
+
 def _read_store(*, state_dir: Path | None, env: Mapping[str, str] | None) -> dict[str, Any]:
     path = theme_preferences_path(state_dir=state_dir, env=env)
     if not path.is_file():
@@ -373,42 +658,98 @@ def _read_store(*, state_dir: Path | None, env: Mapping[str, str] | None) -> dic
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
-        return _empty_store()
+        store = _empty_store()
+        store["_status"] = _STATUS_CORRUPT
+        # Explicit saves may replace corrupt JSON; load must not auto-rewrite.
+        store["_writable"] = True
+        store["_preserve_on_load"] = True
+        return store
     if not isinstance(raw, dict):
-        return _empty_store()
+        store = _empty_store()
+        store["_status"] = _STATUS_CORRUPT
+        store["_writable"] = True
+        store["_preserve_on_load"] = True
+        return store
+
     version = raw.get("schema_version")
-    if type(version) is not int or version != THEME_PREFERENCES_SCHEMA_VERSION:
-        # Unknown/legacy schema → fail closed, but still attempt salvage of customs
-        # only when version matches; otherwise empty.
-        if type(version) is not int:
-            return _empty_store()
-        return _empty_store()
+    if type(version) is not int:
+        store = _empty_store()
+        store["_status"] = _STATUS_CORRUPT
+        store["_writable"] = True
+        store["_preserve_on_load"] = True
+        return store
+    if version > THEME_PREFERENCES_SCHEMA_VERSION:
+        store = _empty_store()
+        store["_status"] = _STATUS_UNSUPPORTED
+        store["_writable"] = False
+        return store
+    if version == THEME_PREFERENCES_SCHEMA_VERSION_V1:
+        migrated = _migrate_v1_to_v2(raw, state_dir=state_dir, env=env)
+        # Persist migrated V2 when source is writable (deterministic upgrade).
+        _write_store(migrated, state_dir=state_dir, env=env)
+        return migrated
+    if version != THEME_PREFERENCES_SCHEMA_VERSION:
+        # Older/unknown below current that is not v1 → fail closed.
+        store = _empty_store()
+        store["_status"] = _STATUS_CORRUPT
+        store["_writable"] = True
+        store["_preserve_on_load"] = True
+        return store
+    return _parse_v2_store(raw, state_dir=state_dir, env=env)
 
-    customs_raw = raw.get("custom_themes")
-    customs: dict[str, dict[str, str]] = {}
-    if isinstance(customs_raw, Mapping):
-        for key, entry in customs_raw.items():
-            if not isinstance(key, str) or not isinstance(entry, Mapping):
-                continue
-            sanitized = _sanitize_custom_entry({**dict(entry), "name": entry.get("name", key)})
-            if sanitized is None:
-                continue
-            customs[sanitized["name"]] = sanitized
 
-    selected = raw.get("selected", DEFAULT_PRESET_NAME)
-    if not isinstance(selected, str) or not selected.strip():
-        selected = DEFAULT_PRESET_NAME
+def _atomic_write_json(path: Path, body: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(body, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _sync_appearance_selection(store: dict[str, Any], selected: str) -> None:
+    """Keep Appearance intent aligned with #785 selected/custom theme changes."""
+    appearance = store.get("appearance")
+    if not isinstance(appearance, Mapping):
+        appearance = _default_appearance_payload(selected=selected)
     else:
-        selected = selected.strip()
-        if selected not in PRESET_ORDER and selected not in customs:
-            selected = DEFAULT_PRESET_NAME
-
-    return {
-        "schema": THEME_PREFERENCES_SCHEMA,
-        "schema_version": THEME_PREFERENCES_SCHEMA_VERSION,
-        "selected": selected,
-        "custom_themes": customs,
-    }
+        appearance = dict(appearance)
+    appearance["selectedTheme"] = selected
+    profiles = appearance.get("profiles")
+    if not isinstance(profiles, Mapping):
+        profiles = {}
+    else:
+        profiles = dict(profiles)
+    shared = dict(profiles.get("shared") or {})
+    shared["themeRef"] = selected
+    customs = store.get("custom_themes") or {}
+    if isinstance(customs, Mapping) and selected in customs:
+        entry = customs[selected]
+        if isinstance(entry, Mapping):
+            for key in ("accent", "background", "foreground"):
+                value = _normalize_hex(entry.get(key))
+                if value is not None:
+                    shared[key] = value
+    else:
+        for key in ("accent", "background", "foreground"):
+            shared.pop(key, None)
+    shared.setdefault("contrast", 50)
+    profiles["shared"] = shared
+    appearance["profiles"] = profiles
+    store["appearance"] = appearance
 
 
 def _write_store(
@@ -416,28 +757,151 @@ def _write_store(
     *,
     state_dir: Path | None,
     env: Mapping[str, str] | None,
-) -> Path:
+) -> Path | None:
+    if store.get("_writable") is False:
+        return None
     path = theme_preferences_path(state_dir=state_dir, env=env)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # Re-check live disk for unsupported future schema before overwrite.
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            existing = None
+        if isinstance(existing, dict):
+            version = existing.get("schema_version")
+            if type(version) is int and version > THEME_PREFERENCES_SCHEMA_VERSION:
+                return None
+
+    selected = _normalize_selected(store.get("selected"), store.get("custom_themes") or {})
+    cleaned_customs = _sanitize_customs(store.get("custom_themes"))
+    appearance = store.get("appearance")
+    if not isinstance(appearance, Mapping):
+        appearance = _default_appearance_payload(selected=selected)
+    else:
+        appearance = dict(appearance)
+        appearance["selectedTheme"] = appearance.get("selectedTheme") or selected
+        # Drop any derived-token leakage from appearance payloads.
+        for forbidden in _FORBIDDEN_PERSIST_KEYS:
+            appearance.pop(forbidden, None)
+        profiles = appearance.get("profiles")
+        if isinstance(profiles, Mapping):
+            cleaned_profiles: dict[str, Any] = {}
+            for name, entry in profiles.items():
+                if not isinstance(entry, Mapping):
+                    continue
+                cleaned_entry = {
+                    key: value
+                    for key, value in dict(entry).items()
+                    if key in {"themeRef", "background", "foreground", "accent", "contrast"}
+                }
+                if "background" in cleaned_entry:
+                    cleaned_entry["background"] = _normalize_hex(cleaned_entry["background"])
+                if "foreground" in cleaned_entry:
+                    cleaned_entry["foreground"] = _normalize_hex(cleaned_entry["foreground"])
+                if "accent" in cleaned_entry:
+                    cleaned_entry["accent"] = _normalize_hex(cleaned_entry["accent"])
+                for color_key in ("background", "foreground", "accent"):
+                    if cleaned_entry.get(color_key) is None:
+                        cleaned_entry.pop(color_key, None)
+                cleaned_profiles[str(name)] = cleaned_entry
+            appearance["profiles"] = cleaned_profiles
+
     body = {
         "schema": THEME_PREFERENCES_SCHEMA,
         "schema_version": THEME_PREFERENCES_SCHEMA_VERSION,
-        "selected": store.get("selected", DEFAULT_PRESET_NAME),
-        "custom_themes": store.get("custom_themes", {}),
+        "selected": selected,
+        "custom_themes": cleaned_customs,
+        "appearance": appearance,
     }
-    # Strip any forbidden keys that may have leaked into customs.
-    cleaned_customs: dict[str, dict[str, str]] = {}
-    for name, entry in dict(body["custom_themes"]).items():
-        if not isinstance(entry, Mapping):
-            continue
-        sanitized = _sanitize_custom_entry(entry)
-        if sanitized is None:
-            continue
-        for forbidden in _FORBIDDEN_PERSIST_KEYS:
-            sanitized.pop(forbidden, None)
-        cleaned_customs[sanitized["name"]] = sanitized
-    body["custom_themes"] = cleaned_customs
-    path.write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        _atomic_write_json(path, body)
+    except OSError:
+        return None
+    return path
+
+
+def _require_write(
+    store: Mapping[str, Any],
+    *,
+    state_dir: Path | None,
+    env: Mapping[str, str] | None,
+) -> Path:
+    path = _write_store(store, state_dir=state_dir, env=env)
+    if path is None:
+        raise OSError("theme preferences write refused or failed")
+    return path
+
+
+def load_appearance_preferences(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Any:
+    """Load versioned Appearance user intent (#1254). Never raises for cosmetic faults."""
+    from .workbench_appearance import (
+        AppearanceRequestedState,
+        appearance_requested_from_mapping,
+    )
+
+    store = _read_store(state_dir=state_dir, env=env)
+    status = store.get("_status")
+    if status in {_STATUS_MISSING, _STATUS_CORRUPT, _STATUS_UNSUPPORTED}:
+        return AppearanceRequestedState()
+    appearance_payload = store.get("appearance")
+    if not isinstance(appearance_payload, Mapping):
+        return AppearanceRequestedState()
+    return appearance_requested_from_mapping(
+        _appearance_mapping_from_store_payload(appearance_payload)
+    )
+
+
+def save_appearance_preferences(
+    requested: Any,
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path | None:
+    """Persist Appearance user intent only. Returns None when the write is refused."""
+    from .workbench_appearance import AppearanceRequestedState, appearance_requested_from_mapping
+
+    if not isinstance(requested, AppearanceRequestedState):
+        requested = AppearanceRequestedState()
+    # Canonical normalize through the same #1253 adapter used on load.
+    requested = appearance_requested_from_mapping(
+        {
+            "mode": requested.mode,
+            "separateLightDark": requested.separate_light_dark,
+            "uiFontSize": requested.ui_font_size,
+            "codeFontSize": requested.code_font_size,
+            "motionMode": requested.motion_mode,
+            "shared": _profile_to_payload(requested.shared),
+            "dark": _profile_to_payload(requested.dark),
+            "light": _profile_to_payload(requested.light),
+        }
+    )
+
+    store = _read_store(state_dir=state_dir, env=env)
+    if store.get("_writable") is False:
+        return None
+
+    selected = DEFAULT_PRESET_NAME
+    if requested.separate_light_dark:
+        for candidate in (requested.dark, requested.light, requested.shared):
+            if candidate is not None and isinstance(candidate.theme_ref, str) and candidate.theme_ref.strip():
+                selected = candidate.theme_ref.strip()
+                break
+    elif requested.shared is not None and isinstance(requested.shared.theme_ref, str):
+        cleaned = requested.shared.theme_ref.strip()
+        if cleaned:
+            selected = cleaned
+    customs = dict(store.get("custom_themes") or {})
+    selected = _normalize_selected(selected, customs)
+    store["selected"] = selected
+    store["custom_themes"] = customs
+    store["appearance"] = _appearance_payload_from_requested(requested, selected=selected)
+    path = _write_store(store, state_dir=state_dir, env=env)
+    if path is not None:
+        _sync_motion_to_display(requested.motion_mode, state_dir=state_dir, env=env)
     return path
 
 
@@ -546,7 +1010,9 @@ def create_custom_theme(
         "foreground": resolved_foreground,
     }
     store["custom_themes"] = customs
-    _write_store(store, state_dir=state_dir, env=env)
+    if store.get("selected") == cleaned_name:
+        _sync_appearance_selection(store, cleaned_name)
+    _require_write(store, state_dir=state_dir, env=env)
     return resolve_theme(cleaned_name, state_dir=state_dir, env=env)
 
 
@@ -566,7 +1032,9 @@ def save_custom_theme(
     # Drop forbidden / derived keys by reconstruction only.
     customs[sanitized["name"]] = sanitized
     store["custom_themes"] = customs
-    return _write_store(store, state_dir=state_dir, env=env)
+    if store.get("selected") == sanitized["name"]:
+        _sync_appearance_selection(store, sanitized["name"])
+    return _require_write(store, state_dir=state_dir, env=env)
 
 
 def rename_custom_theme(
@@ -592,8 +1060,9 @@ def rename_custom_theme(
     customs[cleaned_new] = entry
     if store.get("selected") == old_name:
         store["selected"] = cleaned_new
+        _sync_appearance_selection(store, cleaned_new)
     store["custom_themes"] = customs
-    _write_store(store, state_dir=state_dir, env=env)
+    _require_write(store, state_dir=state_dir, env=env)
 
 
 def select_theme(
@@ -607,10 +1076,12 @@ def select_theme(
     if name not in PRESET_ORDER and not (isinstance(customs, Mapping) and name in customs):
         # Fail closed: keep Blood selected.
         store["selected"] = DEFAULT_PRESET_NAME
-        _write_store(store, state_dir=state_dir, env=env)
+        _sync_appearance_selection(store, DEFAULT_PRESET_NAME)
+        _require_write(store, state_dir=state_dir, env=env)
         return resolve_theme(DEFAULT_PRESET_NAME, state_dir=state_dir, env=env)
     store["selected"] = name
-    _write_store(store, state_dir=state_dir, env=env)
+    _sync_appearance_selection(store, name)
+    _require_write(store, state_dir=state_dir, env=env)
     return resolve_theme(name, state_dir=state_dir, env=env)
 
 
@@ -627,8 +1098,9 @@ def delete_custom_theme(
     customs.pop(name, None)
     if store.get("selected") == name:
         store["selected"] = DEFAULT_PRESET_NAME
+        _sync_appearance_selection(store, DEFAULT_PRESET_NAME)
     store["custom_themes"] = customs
-    _write_store(store, state_dir=state_dir, env=env)
+    _require_write(store, state_dir=state_dir, env=env)
 
 
 def reset_custom_theme(
@@ -652,7 +1124,9 @@ def reset_custom_theme(
         "foreground": preset_base.foreground,
     }
     store["custom_themes"] = customs
-    _write_store(store, state_dir=state_dir, env=env)
+    if store.get("selected") == name:
+        _sync_appearance_selection(store, name)
+    _require_write(store, state_dir=state_dir, env=env)
     return resolve_theme(name, state_dir=state_dir, env=env)
 
 
@@ -716,6 +1190,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "APPEARANCE_V2_EXIT",
+    "APPEARANCE_V2_PREFERENCES_EXIT",
     "AppearanceProfileInput",
     "AppearanceRequestedState",
     "AppearanceResolvedSnapshot",
@@ -726,6 +1201,7 @@ __all__ = [
     "TEXT_ON_ACTION",
     "THEME_PREFERENCES_SCHEMA",
     "THEME_PREFERENCES_SCHEMA_VERSION",
+    "THEME_PREFERENCES_SCHEMA_VERSION_V1",
     "ThemeBase",
     "ThemeTokens",
     "blood_variants",
@@ -736,12 +1212,14 @@ __all__ = [
     "derive_tokens",
     "list_custom_themes",
     "list_presets",
+    "load_appearance_preferences",
     "mix_hex",
     "presets_canon_path",
     "rename_custom_theme",
     "reset_custom_theme",
     "resolve_appearance",
     "resolve_theme",
+    "save_appearance_preferences",
     "save_custom_theme",
     "select_theme",
     "theme_preferences_path",
