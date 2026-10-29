@@ -8656,6 +8656,34 @@ def _qml_theme_authority_bridge(
             )
             return self._commit_requested(self._put_active_profile(requested, profile))
 
+        def _rewrite_theme_refs(
+            self,
+            requested: appearance_mod.AppearanceRequestedState,
+            *,
+            old_name: str,
+            new_name: str | None,
+        ) -> appearance_mod.AppearanceRequestedState:
+            """Rewrite profile themeRef values after custom rename/delete."""
+
+            def _one(
+                profile: appearance_mod.AppearanceProfileInput | None,
+            ) -> appearance_mod.AppearanceProfileInput | None:
+                if profile is None or profile.theme_ref != old_name:
+                    return profile
+                if new_name is None:
+                    return appearance_mod.AppearanceProfileInput(
+                        theme_ref=theme_mod.DEFAULT_PRESET_NAME,
+                        contrast=profile.contrast,
+                    )
+                return replace(profile, theme_ref=new_name)
+
+            return replace(
+                requested,
+                shared=_one(requested.shared),
+                dark=_one(requested.dark),
+                light=_one(requested.light),
+            )
+
         def _preview_from_draft(self) -> None:
             accent = theme_mod._normalize_hex(self._draft_accent)
             background = theme_mod._normalize_hex(self._draft_background)
@@ -9076,12 +9104,7 @@ def _qml_theme_authority_bridge(
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            theme_mod.select_theme(
-                name,
-                state_dir=self._state_dir,
-                env=self._env,
-            )
-            self._reload()
+            self._commit_theme_selection(name)
 
         @Slot(str, str)
         def createCustomFromPreset(self, base_preset: str, name: str) -> None:
@@ -9091,12 +9114,7 @@ def _qml_theme_authority_bridge(
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            theme_mod.select_theme(
-                str(name),
-                state_dir=self._state_dir,
-                env=self._env,
-            )
-            self._reload()
+            self._commit_theme_selection(str(name))
 
         @Slot(str)
         def setBaseAccent(self, value: str) -> None:
@@ -9126,9 +9144,10 @@ def _qml_theme_authority_bridge(
         def saveCurrentCustom(self) -> None:
             if self._tokens.name in theme_mod.PRESET_ORDER:
                 return
+            name = self._tokens.name
             theme_mod.save_custom_theme(
                 {
-                    "name": self._tokens.name,
+                    "name": name,
                     "base_preset": self._tokens.base_preset,
                     "accent": self._draft_accent,
                     "background": self._draft_background,
@@ -9137,47 +9156,57 @@ def _qml_theme_authority_bridge(
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            theme_mod.select_theme(
-                self._tokens.name,
-                state_dir=self._state_dir,
-                env=self._env,
-            )
-            self._reload()
+            self._commit_theme_selection(name)
 
         @Slot(str)
         def renameCurrentCustom(self, new_name: str) -> None:
             if self._tokens.name in theme_mod.PRESET_ORDER:
                 return
             old = self._tokens.name
+            cleaned = str(new_name).strip()
+            if not cleaned:
+                return
             theme_mod.rename_custom_theme(
                 old,
-                str(new_name),
+                cleaned,
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            self._reload()
+            rewritten = self._rewrite_theme_refs(
+                self._requested,
+                old_name=old,
+                new_name=cleaned,
+            )
+            self._commit_requested(rewritten)
 
         @Slot()
         def deleteCurrentCustom(self) -> None:
             if self._tokens.name in theme_mod.PRESET_ORDER:
                 return
+            old = self._tokens.name
             theme_mod.delete_custom_theme(
-                self._tokens.name,
+                old,
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            self._reload()
+            rewritten = self._rewrite_theme_refs(
+                self._requested,
+                old_name=old,
+                new_name=None,
+            )
+            self._commit_requested(rewritten)
 
         @Slot()
         def resetCurrentCustom(self) -> None:
             if self._tokens.name in theme_mod.PRESET_ORDER:
                 return
+            name = self._tokens.name
             theme_mod.reset_custom_theme(
-                self._tokens.name,
+                name,
                 state_dir=self._state_dir,
                 env=self._env,
             )
-            self._reload()
+            self._commit_theme_selection(name)
 
     return QmlThemeAuthorityBridge()
 

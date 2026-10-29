@@ -618,3 +618,41 @@ def test_select_theme_updates_resolved_active_profile_under_system_light(
     bridge.setPlatformColorScheme("dark")
     assert bridge.resolvedScheme == "dark"
     assert bridge.themeRef == "Blood"
+
+
+def test_create_custom_activates_resolved_light_profile_under_system(
+    tmp_path: Path,
+) -> None:
+    bridge = _bridge(tmp_path, platform_color_scheme="dark")
+    bridge.setSeparateLightDark(True)
+    bridge.setMode("system")
+    bridge.selectTheme("Blood")
+    bridge.setPlatformColorScheme("light")
+    bridge.createCustomFromPreset("Arctic", "Test")
+    assert bridge.selectedThemeName == "Test"
+    assert bridge.themeRef == "Test"
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.light is not None
+    assert loaded.light.theme_ref == "Test"
+    assert loaded.dark is not None
+    assert loaded.dark.theme_ref == "Blood"
+
+
+def test_rename_custom_rewrites_active_profile_theme_ref(tmp_path: Path) -> None:
+    bridge = _bridge(tmp_path, platform_color_scheme="dark")
+    bridge.setSeparateLightDark(True)
+    bridge.setMode("system")
+    bridge.selectTheme("Blood")
+    bridge.setPlatformColorScheme("light")
+    bridge.createCustomFromPreset("Arctic", "Test")
+    bridge.renameCurrentCustom("Renamed")
+    assert bridge.selectedThemeName == "Renamed"
+    assert bridge.themeRef == "Renamed"
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.light is not None
+    assert loaded.light.theme_ref == "Renamed"
+    assert loaded.dark is not None
+    assert loaded.dark.theme_ref == "Blood"
+    bridge.resetCurrentCustom()
+    arctic = theme.resolve_theme("Arctic")
+    assert bridge.actionActive.lower() == arctic.accent.lower()
