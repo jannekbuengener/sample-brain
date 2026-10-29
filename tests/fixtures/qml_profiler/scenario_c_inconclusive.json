@@ -1,0 +1,41 @@
+{
+  "schema": "sample_brain_qml_profile_v1",
+  "reproduction": {
+    "build_sha": "c5c5877eb899303fde0bbed84f2502fbf81d094d",
+    "surface": "screen1.browserList",
+    "precondition": "Library revealed; synthetic 50 rows",
+    "dataset_scale": "synthetic_50_rows",
+    "user_action": "single short scroll",
+    "capture_window": "unbounded_mixed_ui_session",
+    "observed_symptom": "occasional hitch (not reliably reproduced)"
+  },
+  "tool": {
+    "name": "repo_instrumentation",
+    "version": "PySide6-6.11.2-pattern",
+    "discovery_notes": "capture mixed with unrelated UI; overhead not separated"
+  },
+  "events": [
+    {
+      "category": "other",
+      "component": "unknown",
+      "source": "qrc:/qt-project.org/imports/QtQuick/Controls/Button.qml",
+      "line": 12,
+      "count": 5,
+      "duration_ms": 2.0,
+      "details": "qt internal noise"
+    },
+    {
+      "category": "binding",
+      "component": "unresolvedBinding",
+      "source": "MissingSurface.qml",
+      "line": 1,
+      "count": 8,
+      "duration_ms": 9.0,
+      "details": "dominant candidate but source unresolved"
+    }
+  ],
+  "confounders": [
+    "instrumentation_overhead_unseparated",
+    "unstable_capture"
+  ]
+}

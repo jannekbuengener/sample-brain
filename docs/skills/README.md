@@ -20,6 +20,7 @@ External skills remain routing references; their bodies are not copied here.
 - `sample-brain-skill-effectiveness`
 - `sample-brain-qml-component-test`
 - `sample-brain-qml-test-run`
+- `sample-brain-qml-profiler`
 
 ## Skill Relationships
 

@@ -1,0 +1,47 @@
+{
+  "schema": "sample_brain_qml_profile_v1",
+  "reproduction": {
+    "build_sha": "c5c5877eb899303fde0bbed84f2502fbf81d094d",
+    "surface": "screen1.browserList.hover",
+    "precondition": "Library revealed; synthetic 200 rows; hover enabled",
+    "dataset_scale": "synthetic_200_rows",
+    "user_action": "move pointer across 40 successive browser rows",
+    "capture_window": "warmup_100ms + hover_pass + cooldown_100ms",
+    "observed_symptom": "hover hitch / delayed row highlight"
+  },
+  "tool": {
+    "name": "repo_instrumentation",
+    "version": "PySide6-6.11.2-pattern",
+    "discovery_notes": "bridge call counters on hover path; qmlprofiler CLI absent"
+  },
+  "events": [
+    {
+      "category": "python_bridge",
+      "component": "interaction.onBrowserRowHovered",
+      "source": "src/workbench_qml.py",
+      "line": null,
+      "count": 120,
+      "duration_ms": 72.0,
+      "details": "synchronous Python round-trips per hover enter"
+    },
+    {
+      "category": "frame_render",
+      "component": "browserList",
+      "source": "src/workbench_qml.py:browserList",
+      "line": null,
+      "count": 40,
+      "duration_ms": 12.0,
+      "details": "paint cost secondary in this window"
+    },
+    {
+      "category": "binding",
+      "component": "rowSelection.containsMouse",
+      "source": "src/workbench_qml.py:browserList delegate",
+      "line": null,
+      "count": 40,
+      "duration_ms": 4.0,
+      "details": "local hover binding minority"
+    }
+  ],
+  "confounders": ["instrumentation_overhead_checked"]
+}

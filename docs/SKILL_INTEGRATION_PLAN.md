@@ -142,3 +142,6 @@ Bei Bedarf einzeln anfragen â€“ nicht bulk-kopieren.
 - `sample-brain-qml-test-run` – QML/Component-Tests ausführen, beobachten und Fehlerschichten klassifizieren (kein zweites Harness, keine Root-Cause-Vermutung)
 | `sample-brain-qml-test-run` | QML/Component-pytest ausführen und Harness/Load/Behavior/Platform klassifizieren |
 QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)
+- `sample-brain-qml-profiler`
+| `sample-brain-qml-profiler` | PySide6/Qt Quick/QML Runtime-Profiling: erst messen, dann Quelle mappen, dann hypothesieren |
+QML-/Qt-Quick-Performance-Slice -> sample-brain-qml-profiler -> bei HOTSPOT_PROVEN und unklarer Ursache sample-brain-root-cause -> bei durablem Schutz sample-brain-regression-gap -> sample-brain-test-first

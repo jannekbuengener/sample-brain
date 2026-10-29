@@ -1439,6 +1439,45 @@
         "skill_contract_gap_count",
         "fallback_to_generic_flow_count"
       ]
+    },
+    {
+      "id": "sample-brain-qml-profiler",
+      "type": "skill",
+      "purpose": "Reproducible PySide6/Qt Quick/QML runtime profiling with source-mapped hotspots and measured-vs-speculative discipline.",
+      "problem_solved": "Guessing QML performance causes, profiling the wrong workload, or optimizing without a bounded source-mapped hotspot.",
+      "trigger": [
+        "QML/Qt Quick performance investigation",
+        "Browser scroll or delegate churn lag",
+        "waveform/hover/frame spikes",
+        "Python↔QML bridge traffic cost"
+      ],
+      "inputs": [
+        "reproducible user action",
+        "live tool discovery",
+        "bounded capture or repo instrumentation summary"
+      ],
+      "outputs": [
+        "HOTSPOT_PROVEN|NO_ACTIONABLE_HOTSPOT|PROFILE_INCONCLUSIVE report",
+        "measured hotspots with source mapping",
+        "hypothesis and smallest next experiment"
+      ],
+      "authority": "local-repo",
+      "mutation_level": "read-only-diagnosis",
+      "dependencies": [],
+      "fallback": "manual bounded timing + delegate/bridge counters without skill helper",
+      "canonical_source": "docs/skills/sample-brain-qml-profiler/SKILL.md",
+      "source_kind": "local",
+      "repo_areas": [
+        "screen-1",
+        "qml",
+        "performance"
+      ],
+      "validation": "reproduction required; live tool discovery; no second Qt SDK; no optimize without measured hotspot",
+      "lifecycle": "active",
+      "linked_kpis": [
+        "skill_contract_gap_count",
+        "fallback_to_generic_flow_count"
+      ]
     }
   ],
   "routing": {
@@ -1571,6 +1610,12 @@
         "capability_ids": [
           "sample-brain-qml-test-run"
         ]
+      },
+      {
+        "situation": "PySide6/Qt Quick/QML Runtime-Profiling (Hotspots, Bridge, Delegates)",
+        "capability_ids": [
+          "sample-brain-qml-profiler"
+        ]
       }
     ],
     "priority_b_matrix": [
@@ -1628,7 +1673,8 @@
       "QML-Interaktions-/Lifecycle-Coverage planen -> sample-brain-qml-component-test -> optional sample-brain-test-first",
       "Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung",
       "Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung",
-      "QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)"
+      "QML-/Component-Test-Ausführung -> sample-brain-qml-test-run -> bei Verhaltensversagen sample-brain-root-cause; bei Coverage-Lücke sample-brain-qml-component-test (wenn verfügbar); bei QML-Review-Bedarf sample-brain-qml-review (wenn verfügbar)",
+      "QML-/Qt-Quick-Performance-Slice -> sample-brain-qml-profiler -> bei HOTSPOT_PROVEN und unklarer Ursache sample-brain-root-cause -> bei durablem Schutz sample-brain-regression-gap -> sample-brain-test-first"
     ],
     "special_routes": {
       "screen1_visual_acceptance": {
