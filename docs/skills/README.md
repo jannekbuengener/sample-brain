@@ -18,10 +18,11 @@ External skills remain routing references; their bodies are not copied here.
 - `sample-brain-issue-to-session-plan`
 - `sample-brain-jules-dispatch`
 - `sample-brain-skill-effectiveness`
+- `sample-brain-qml-component-test`
 
 ## Skill Relationships
 
-All listed repository-owned skills are **standalone** â€” each runs independently
+All listed repository-owned skills are **standalone** — each runs independently
 with complete inputs. Other skill outputs are optional context enhancements,
 not mandatory predecessors.
 
