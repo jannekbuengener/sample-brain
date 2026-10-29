@@ -227,7 +227,11 @@ def test_browser_intent_keyboard_and_virtualization_contracts_preserved():
     assert "contextAddToKit" in QML_SOURCE
     assert 'objectName: "sampleContextMenu"' in QML_SOURCE
     # stopPreview() gehört zwei Flächen: Browser-Escape UND Harmonic-Panel (vorbestehend).
-    assert 'else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }' in QML_SOURCE
+    # #1207: Esc routes through escapeLiveKitContext (still stops preview).
+    assert (
+        'else if (event.key === Qt.Key_Escape) { window.interaction.escapeLiveKitContext(); event.accepted = true }'
+        in QML_SOURCE
+    )
     assert "Keys.onEscapePressed: window.interaction.stopPreview()" in QML_SOURCE
     # #843: header button removed; #845 toggle helper call site remains.
     assert 'objectName: "harmonicMatchButton"' not in QML_SOURCE

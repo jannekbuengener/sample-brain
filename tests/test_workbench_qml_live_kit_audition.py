@@ -440,8 +440,12 @@ def test_qml_replacement_target_is_separate_from_slot_audition_state():
 
 
 def test_window_level_escape_stops_preview_independent_of_focus():
-    assert "event.key === Qt.Key_Escape && window.interaction.previewActive" in QML_SOURCE
-    assert "window.interaction.stopPreview()" in QML_SOURCE
+    # #1207: workspace Esc uses escapeLiveKitContext (stops preview + HUD close).
+    assert "event.key === Qt.Key_Escape" in QML_SOURCE
+    assert "escapeLiveKitContext()" in QML_SOURCE
+    workspace = QML_SOURCE.split('objectName: "workspaceRow"', 1)[1][:900]
+    assert "escapeLiveKitContext()" in workspace
+    assert "previewActive" in workspace
 
 
 @pytest.mark.skipif(
