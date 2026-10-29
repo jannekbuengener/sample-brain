@@ -155,28 +155,55 @@ void Voice::set_signalsmith_available_for_test(bool available) {
 }
 
 void Voice::set_sync_mode(int mode) {
+    const sb_voice_state_t prior = state.load(std::memory_order_acquire);
+    const bool was_audible =
+        prior == SB_VOICE_PLAYING || prior == SB_VOICE_SCHEDULED;
     sync_mode = mode;
     configure_key_lock();
+    if (was_audible && is_key_lock_active() && kl_voice) {
+        // Re-arm the replacement DSP without dropping the outer voice state.
+        if (prior == SB_VOICE_PLAYING) {
+            kl_voice->kv.schedule_start(0);
+            keylock_arm_on_play_ = false;
+        } else {
+            keylock_arm_on_play_ = true;
+        }
+    }
 }
 
 void Voice::set_source_bpm(float bpm) {
     source_bpm = bpm;
+    if (sync_mode == 1 && kl_voice && kl_voice->prepared &&
+        bpm_is_syncable(source_bpm) && bpm_is_syncable(master_bpm)) {
+        // Update the live DSP instance in place — do not tear down mid-playback.
+        kl_voice->kv.set_source_bpm(source_bpm);
+        kl_voice->kv.set_tempo_ratio(master_bpm / source_bpm);
+        if (!is_key_lock_active()) {
+            rate = master_bpm / source_bpm;
+        }
+        return;
+    }
     configure_key_lock();
-    if (!is_key_lock_active() && sync_mode == 1 && bpm_is_syncable(source_bpm) && bpm_is_syncable(master_bpm)) {
+    if (!is_key_lock_active() && sync_mode == 1 &&
+        bpm_is_syncable(source_bpm) && bpm_is_syncable(master_bpm)) {
         rate = master_bpm / source_bpm;
     }
 }
 
 void Voice::set_master_bpm(float bpm) {
     master_bpm = bpm;
-    if (is_key_lock_active() && kl_voice) {
+    if (kl_voice && kl_voice->prepared &&
+        bpm_is_syncable(source_bpm) && bpm_is_syncable(master_bpm)) {
         kl_voice->kv.set_master_bpm(bpm);
         kl_voice->kv.set_tempo_ratio(master_bpm / source_bpm);
-    } else {
-        configure_key_lock();
-        if (sync_mode == 1 && bpm_is_syncable(source_bpm) && bpm_is_syncable(master_bpm)) {
+        if (!is_key_lock_active() && sync_mode == 1) {
             rate = master_bpm / source_bpm;
         }
+        return;
+    }
+    configure_key_lock();
+    if (sync_mode == 1 && bpm_is_syncable(source_bpm) && bpm_is_syncable(master_bpm)) {
+        rate = master_bpm / source_bpm;
     }
 }
 

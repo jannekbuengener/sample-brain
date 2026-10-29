@@ -273,6 +273,80 @@ static void test_frame_zero_and_underflow_boundaries() {
                    "late pre-roll starts at current engine frame, no underflow");
 }
 
+static void test_stereo_pcm_keylock_into_mono_mix_does_not_crash() {
+    std::printf("test_stereo_pcm_keylock_into_mono_mix_does_not_crash...\n");
+    constexpr size_t stereo_frames = 48000;
+    std::vector<float> stereo(stereo_frames * 2);
+    for (size_t i = 0; i < stereo_frames; ++i) {
+        stereo[i * 2] = 0.25f;
+        stereo[i * 2 + 1] = -0.25f;
+    }
+    Voice voice(48000, make_pcm_config(60, stereo.data(), stereo_frames, 2, 1, 128.0f, 128.0f));
+    TEST_ASSERT(voice.is_key_lock_active(), "stereo PCM Key-Lock activates");
+    const int compensation = voice.get_grid_compensation_frames();
+    voice.schedule_start(0, 0);
+    std::vector<float> mono(256, 0.0f);
+    float energy = 0.0f;
+    sb_frame_t engine = 0;
+    // Advance past Signalsmith startup latency so the mix is audibly non-zero.
+    const size_t need = static_cast<size_t>(compensation) + 512;
+    for (size_t produced = 0; produced < need; produced += 256) {
+        std::fill(mono.begin(), mono.end(), 0.0f);
+        voice.process(mono.data(), 256, engine, 1);
+        engine += 256;
+        for (float s : mono) energy += s * s;
+    }
+    TEST_ASSERT(energy > 0.0f, "stereo→mono Key-Lock mix produces audio without crash");
+}
+
+static void test_pcm_keylock_drains_latency_tail_before_idle() {
+    std::printf("test_pcm_keylock_drains_latency_tail_before_idle...\n");
+    constexpr size_t frames = 48000;  // 1 second at 48 kHz
+    std::vector<float> pcm(frames, 0.5f);
+    Voice voice(48000, make_pcm_config(61, pcm.data(), frames, 1, 1, 128.0f, 128.0f));
+    TEST_ASSERT(voice.is_key_lock_active(), "Key-Lock active for drain probe");
+    const int compensation = voice.get_grid_compensation_frames();
+    TEST_ASSERT(compensation > 0, "compensation positive for drain probe");
+    voice.schedule_start(0, 0);
+
+    size_t produced = 0;
+    std::vector<float> block(256, 0.0f);
+    sb_frame_t engine = 0;
+    while (voice.get_state() != SB_VOICE_IDLE && produced < frames + static_cast<size_t>(compensation) + 4096) {
+        std::fill(block.begin(), block.end(), 0.0f);
+        voice.process(block.data(), 256, engine, 1);
+        engine += 256;
+        produced += 256;
+    }
+    TEST_ASSERT_EQ(voice.get_state(), SB_VOICE_IDLE, "voice reaches IDLE after drain");
+    TEST_ASSERT(produced >= frames + static_cast<size_t>(compensation),
+                "output spans at least source duration plus latency drain");
+}
+
+static void test_source_bpm_update_preserves_playing_keylock() {
+    std::printf("test_source_bpm_update_preserves_playing_keylock...\n");
+    auto pcm = make_tone(48000, 440.0f, 48000);
+    Voice voice(48000, make_pcm_config(62, pcm.data(), pcm.size(), 1, 1, 128.0f, 132.0f));
+    TEST_ASSERT(voice.is_key_lock_active(), "Key-Lock active before BPM update");
+    const int compensation = voice.get_grid_compensation_frames();
+    voice.schedule_start(0, 0);
+    std::vector<float> out(256, 0.0f);
+    sb_frame_t engine = 0;
+    for (size_t produced = 0; produced < static_cast<size_t>(compensation) + 256; produced += 256) {
+        voice.process(out.data(), 256, engine, 1);
+        engine += 256;
+    }
+    TEST_ASSERT_EQ(voice.get_state(), SB_VOICE_PLAYING, "playing before BPM update");
+    voice.set_source_bpm(130.0f);
+    TEST_ASSERT(voice.is_key_lock_active(), "Key-Lock remains effective after BPM update");
+    std::fill(out.begin(), out.end(), 0.0f);
+    voice.process(out.data(), 256, engine, 1);
+    TEST_ASSERT_EQ(voice.get_state(), SB_VOICE_PLAYING, "still playing after source BPM update");
+    float energy = 0.0f;
+    for (float s : out) energy += s * s;
+    TEST_ASSERT(energy > 0.0f, "audio continues after in-place source BPM update");
+}
+
 static void test_snapshot_requested_actual_latency_consistency() {
     std::printf("test_snapshot_requested_actual_latency_consistency...\n");
     sb_engine_t engine = nullptr;
@@ -336,6 +410,9 @@ int main() {
     test_keylock_scheduling_applies_compensation_once();
     test_rate_sync_scheduling_unchanged();
     test_frame_zero_and_underflow_boundaries();
+    test_stereo_pcm_keylock_into_mono_mix_does_not_crash();
+    test_pcm_keylock_drains_latency_tail_before_idle();
+    test_source_bpm_update_preserves_playing_keylock();
     test_snapshot_requested_actual_latency_consistency();
     std::printf("\n=== Results ===\nPassed: %d\nFailed: %d\n", tests_passed, tests_failed);
     return tests_failed > 0 ? 1 : 0;

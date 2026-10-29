@@ -133,6 +133,10 @@ private:
     size_t max_output_frames_ = 0;
     size_t max_input_frames_ = 0;
 
+    // Finite-PCM tail: keep processing zero-padded input until Signalsmith latency drains.
+    bool draining_ = false;
+    size_t drain_output_frames_remaining_ = 0;
+
     // Initialize Signalsmith Stretch
     bool init_signalsmith();
 

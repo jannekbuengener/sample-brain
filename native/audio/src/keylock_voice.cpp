@@ -110,11 +110,13 @@ void KeyLockVoice::prepare_process_capacity(size_t max_output_frames, float max_
     const size_t max_input = static_cast<size_t>(
         std::ceil(static_cast<double>(max_output_frames) * static_cast<double>(max_tempo_ratio))) + 64;
 
-    input_planar_.assign(static_cast<size_t>(config_.channels), std::vector<float>(max_input, 0.0f));
-    output_planar_.assign(static_cast<size_t>(std::max(config_.channels, 1)),
-                          std::vector<float>(max_output_frames, 0.0f));
-    input_ptrs_.assign(static_cast<size_t>(config_.channels), nullptr);
-    output_ptrs_.assign(static_cast<size_t>(std::max(config_.channels, 1)), nullptr);
+    const size_t ch_count = static_cast<size_t>(std::max(config_.channels, 1));
+    input_planar_.assign(ch_count, std::vector<float>(max_input, 0.0f));
+    // Always allocate one planar buffer per DSP channel. Signalsmith writes every
+    // configured channel even when the engine mix destination has fewer channels.
+    output_planar_.assign(ch_count, std::vector<float>(max_output_frames, 0.0f));
+    input_ptrs_.assign(ch_count, nullptr);
+    output_ptrs_.assign(ch_count, nullptr);
     max_output_frames_ = max_output_frames;
     max_input_frames_ = max_input;
 }
@@ -181,6 +183,8 @@ void KeyLockVoice::schedule_start(sb_frame_t engine_frame) {
     actual_start_frame_ = engine_frame;
     source_read_pos_ = 0;
     rate_playback_pos_ = 0.0;
+    draining_ = false;
+    drain_output_frames_remaining_ = 0;
 
     if (stretch_ && key_lock_active_) {
         stretch_->reset();
@@ -369,9 +373,9 @@ void KeyLockVoice::process_key_lock(float* output, size_t num_frames, size_t out
         input_ptrs_[static_cast<size_t>(ch)] = input_planar_[static_cast<size_t>(ch)].data();
     }
 
-    const size_t out_ch_count = std::min(output_channels, output_planar_.size());
-    for (size_t ch = 0; ch < out_ch_count; ++ch) {
-        output_ptrs_[ch] = output_planar_[ch].data();
+    // Signalsmith always writes config_.channels planar outputs.
+    for (int ch = 0; ch < config_.channels; ++ch) {
+        output_ptrs_[static_cast<size_t>(ch)] = output_planar_[static_cast<size_t>(ch)].data();
     }
 
     stretch_->process(
@@ -380,17 +384,31 @@ void KeyLockVoice::process_key_lock(float* output, size_t num_frames, size_t out
 
     if (pcm_source_loaded_) {
         source_read_pos_ += input_frames_needed;
-        if (source_read_pos_ >= source_frames) {
-            state_ = SB_VOICE_IDLE;
+        if (source_read_pos_ >= source_frames && !draining_) {
+            // Source consumed, but stretch still holds latency tail — drain with zeros.
+            draining_ = true;
+            drain_output_frames_remaining_ =
+                static_cast<size_t>(std::max(0, effective_compensation_frames_));
         }
     } else {
         source_read_pos_ = (source_read_pos_ + input_frames_needed) % source_frames;
     }
 
+    const size_t dsp_channels = static_cast<size_t>(std::max(config_.channels, 1));
     for (size_t i = 0; i < num_frames; ++i) {
         for (size_t ch = 0; ch < output_channels; ++ch) {
-            const size_t src_ch = std::min(ch, out_ch_count - 1);
+            const size_t src_ch = std::min(ch, dsp_channels - 1);
             output[i * output_channels + ch] = output_planar_[src_ch][i] * config_.gain;
+        }
+    }
+
+    if (draining_) {
+        if (drain_output_frames_remaining_ <= num_frames) {
+            draining_ = false;
+            drain_output_frames_remaining_ = 0;
+            state_ = SB_VOICE_IDLE;
+        } else {
+            drain_output_frames_remaining_ -= num_frames;
         }
     }
 }
