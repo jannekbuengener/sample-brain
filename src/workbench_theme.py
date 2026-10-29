@@ -1,9 +1,13 @@
-"""Screen-1 Theme Core (#785).
+"""Screen-1 Theme Core (#785) + Appearance V2 seam (#1253).
 
 Preset-based dark appearance tokens with local custom-theme persistence.
 Derived tokens are computed from base accent/background/foreground only.
 QML consumes mapped semantic colors through the Theme Authority bridge in
-``workbench_qml`` — this module remains the sole derivation/persistence owner.
+``workbench_qml`` — this module remains the #785 derivation/persistence owner.
+
+Appearance V2 state resolution and full semantic token derivation live in
+``workbench_appearance`` (#1253). Persistence schema migration remains #1254;
+QML projection remains #1255. Do not persist derived V2 tokens here.
 """
 
 from __future__ import annotations
@@ -689,7 +693,32 @@ def theme_tokens_to_qml_semantics(tokens: Mapping[str, Any] | ThemeTokens) -> di
     return out
 
 
+_APPEARANCE_V2_EXPORTS = frozenset(
+    {
+        "APPEARANCE_V2_EXIT",
+        "AppearanceProfileInput",
+        "AppearanceRequestedState",
+        "AppearanceResolvedSnapshot",
+        "derive_semantic_tokens",
+        "resolve_appearance",
+    }
+)
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy Appearance V2 seam — avoids import cycles with workbench_appearance."""
+    if name in _APPEARANCE_V2_EXPORTS:
+        from . import workbench_appearance as _appearance
+
+        return getattr(_appearance, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
+    "APPEARANCE_V2_EXIT",
+    "AppearanceProfileInput",
+    "AppearanceRequestedState",
+    "AppearanceResolvedSnapshot",
     "BLOOD_A_ACCENT",
     "BLOOD_B_ACCENT",
     "DEFAULT_PRESET_NAME",
@@ -703,6 +732,7 @@ __all__ = [
     "create_custom_theme",
     "default_preset_name",
     "delete_custom_theme",
+    "derive_semantic_tokens",
     "derive_tokens",
     "list_custom_themes",
     "list_presets",
@@ -710,6 +740,7 @@ __all__ = [
     "presets_canon_path",
     "rename_custom_theme",
     "reset_custom_theme",
+    "resolve_appearance",
     "resolve_theme",
     "save_custom_theme",
     "select_theme",
