@@ -16,6 +16,12 @@ public:
     void schedule_start(sb_frame_t frame, sb_frame_t current_engine_frame);
     void stop();
     void set_rate(float rate);
+    void set_sync_mode(int mode);
+    void set_source_bpm(float bpm);
+    void set_master_bpm(float bpm);
+
+    // Test/control hook: force Signalsmith availability before (re)configure.
+    void set_signalsmith_available_for_test(bool available);
 
     sb_voice_state_t get_state() const { return state.load(); }
 
@@ -69,9 +75,17 @@ private:
     void render_click(float* output, size_t offset, size_t num_frames,
                       sb_frame_t engine_frame, size_t output_channels);
 
-    // #324 Key-Lock Voice
+    // #324 / #1279 Key-Lock Voice (prepared on control path, not in the callback)
     class KeyLockVoiceImpl;
     KeyLockVoiceImpl* kl_voice = nullptr;
+    bool signalsmith_available_ = true;
+    bool keylock_arm_on_play_ = false;
+    std::vector<float> keylock_mix_scratch_;
+
+    void configure_key_lock();
+    void render_pcm_keylock(float* output, size_t offset, size_t num_frames,
+                            size_t output_channels);
+    static bool bpm_is_syncable(float bpm);
 };
 
 #endif
