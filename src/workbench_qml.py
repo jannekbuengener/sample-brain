@@ -4979,6 +4979,15 @@ ApplicationWindow {
                             }
                         }
                     }
+                    // #1281: settle timer lives on the pane (not inside browserList) so playhead
+                    // contracts stay free of per-list Timer clutter; presentation-only.
+                    Timer {
+                        id: browserHoverSettleTimer
+                        objectName: "browserHoverSettleTimer"
+                        interval: 120
+                        repeat: false
+                        onTriggered: browser.hoverScrollSuppressing = false
+                    }
                     // All Samples list-viewport reuses Clean-Start canvas fill (theme.surfaceRoot).
                     // Outer browserPane chrome stays surfaceBrowser; Library/Harmony/Live Kit unchanged.
                     Rectangle {
@@ -4997,16 +5006,10 @@ ApplicationWindow {
                         property int hoverSettleMs: 120
                         function setHoveredWaveform(i) { hoveredWaveformIndex = i }
                         function clearHoveredWaveform(i) { if (hoveredWaveformIndex === i) hoveredWaveformIndex = -1 }
-                        Timer {
-                            id: hoverSettleTimer
-                            interval: browser.hoverSettleMs
-                            repeat: false
-                            onTriggered: browser.hoverScrollSuppressing = false
-                        }
-                        onMovementStarted: { hoverScrollSuppressing = true; hoverSettleTimer.stop() }
-                        onMovementEnded: hoverSettleTimer.restart()
-                        onFlickStarted: { hoverScrollSuppressing = true; hoverSettleTimer.stop() }
-                        onFlickEnded: hoverSettleTimer.restart()
+                        onMovementStarted: { hoverScrollSuppressing = true; browserHoverSettleTimer.stop() }
+                        onMovementEnded: browserHoverSettleTimer.restart()
+                        onFlickStarted: { hoverScrollSuppressing = true; browserHoverSettleTimer.stop() }
+                        onFlickEnded: browserHoverSettleTimer.restart()
                         function requestVisibleWaveforms() {
                             if (rowHeight <= 0 || height <= 0)
                                 return
@@ -5168,14 +5171,9 @@ ApplicationWindow {
                                         anchors.fill: parent
                                         radius: 5
                                         z: -1
-                                        visible: waveformSurface.waveformHoverLuminanceActive
-                                        color: {
-                                            if (browser.hoverScrollSuppressing)
-                                                return "transparent"
-                                            if (waveformSurface.isPrimaryHover)
-                                                return Qt.rgba(1, 1, 1, 0.028)
-                                            return Qt.rgba(1, 1, 1, 0.010)
-                                        }
+                                        visible: waveformSurface.waveformHoverLuminanceActive && !browser.hoverScrollSuppressing
+                                        color: theme.hoverSurface
+                                        opacity: waveformSurface.isPrimaryHover ? 0.55 : 0.28
                                     }
                                     Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
                                         property bool waveformSelected: index === window.screenData.selectedBrowserIndex
@@ -5188,15 +5186,14 @@ ApplicationWindow {
                                         onPaint: {
                                             var context = getContext("2d")
                                             context.clearRect(0, 0, width, height)
-                                            var stroke = theme.waveformDefault
-                                            if (waveformSelected)
-                                                stroke = theme.waveformActive
-                                            else if (hoverRole === "primary" && !scrollQuiet)
-                                                stroke = "#b1bbc5"
-                                            else if (hoverRole === "neighbour" && !scrollQuiet)
-                                                stroke = "#87919b"
-                                            else if (hoverRole === "primary" || hoverRole === "neighbour")
-                                                stroke = "#747d86"
+                                            // Keep selected ternary for paint contracts; hover only retints non-selected.
+                                            var stroke = waveformSelected ? theme.waveformActive : theme.waveformDefault
+                                            if (!waveformSelected && hoverRole === "primary" && !scrollQuiet)
+                                                stroke = theme.textSecondary
+                                            else if (!waveformSelected && hoverRole === "neighbour" && !scrollQuiet)
+                                                stroke = theme.textMuted
+                                            else if (!waveformSelected && (hoverRole === "primary" || hoverRole === "neighbour"))
+                                                stroke = theme.waveformDefault
                                             context.strokeStyle = stroke
                                             context.lineWidth = 1.2
                                             context.beginPath()
@@ -5295,7 +5292,8 @@ ApplicationWindow {
                         }
                     }
                         // #1281: short dark edge immersion on sample viewport only (not search/header).
-                        Rectangle {
+                        // Stacked surfaceRoot bands approximate the MagicPath edge mask (no shader path).
+                        Item {
                             id: browserEdgeImmersionTop
                             objectName: "browserEdgeImmersionTop"
                             anchors.left: parent.left
@@ -5304,13 +5302,11 @@ ApplicationWindow {
                             height: 32
                             z: 20
                             enabled: false
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: theme.surfaceRoot }
-                                GradientStop { position: 0.3125; color: Qt.rgba(theme.surfaceRoot.r, theme.surfaceRoot.g, theme.surfaceRoot.b, 0.58) }
-                                GradientStop { position: 1.0; color: "transparent" }
-                            }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 10; color: theme.surfaceRoot; opacity: 0.92 }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.topMargin: 10; height: 10; color: theme.surfaceRoot; opacity: 0.55 }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.topMargin: 20; height: 12; color: theme.surfaceRoot; opacity: 0.22 }
                         }
-                        Rectangle {
+                        Item {
                             id: browserEdgeImmersionBottom
                             objectName: "browserEdgeImmersionBottom"
                             anchors.left: parent.left
@@ -5319,11 +5315,9 @@ ApplicationWindow {
                             height: 32
                             z: 20
                             enabled: false
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: "transparent" }
-                                GradientStop { position: 0.6875; color: Qt.rgba(theme.surfaceRoot.r, theme.surfaceRoot.g, theme.surfaceRoot.b, 0.58) }
-                                GradientStop { position: 1.0; color: theme.surfaceRoot }
-                            }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 20; height: 12; color: theme.surfaceRoot; opacity: 0.22 }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 10; height: 10; color: theme.surfaceRoot; opacity: 0.55 }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 10; color: theme.surfaceRoot; opacity: 0.92 }
                         }
                     }
                 }
