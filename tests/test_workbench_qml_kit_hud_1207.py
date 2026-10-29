@@ -334,6 +334,13 @@ def test_escape_closes_presentation_only_when_owned():
     assert adapter.escape_live_kit_context() is True
     assert adapter.live_kit_hud_mode == LIVE_KIT_HUD_MODE_HIDDEN
     assert adapter._live_kit.state.assignment_for("Kick + Bass", "Kick") is not None
+    # Browser / Harmony / workspace Esc must reach the same seam (#1207 review).
+    assert "escapeLiveKitContext()" in QML_SOURCE
+    browser_keys = QML_SOURCE.split("Keys.onPressed: function(event) {", 1)[1][:500]
+    assert "escapeLiveKitContext()" in browser_keys or (
+        "Key_Escape" in QML_SOURCE
+        and QML_SOURCE.count("escapeLiveKitContext()") >= 3
+    )
 
 
 def test_pending_escape_still_cancels_add_without_clearing_kit():

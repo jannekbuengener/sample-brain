@@ -3439,9 +3439,15 @@ ApplicationWindow {
         spacing: 0
         visible: window.activeScreen === "screen1"
         Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Escape && window.interaction.previewActive) {
-                window.interaction.stopPreview()
-                event.accepted = true
+            // #1207: Esc stops preview and closes Kit HUD presentation (never kit state).
+            // Popup/Menu CloseOnEscape still wins while a popup holds focus.
+            if (event.key === Qt.Key_Escape) {
+                var hadPreview = window.interaction.previewActive
+                var hudOpen = window.interaction.liveKitDrawerOpen
+                        || window.interaction.liveKitPendingAdd !== ""
+                window.interaction.escapeLiveKitContext()
+                if (hadPreview || hudOpen)
+                    event.accepted = true
             }
         }
         onWidthChanged: layoutModel.setContentWidth(width)
@@ -4952,7 +4958,7 @@ ApplicationWindow {
                         Keys.onPressed: function(event) {
                             if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
                             else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
-                            else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }
+                            else if (event.key === Qt.Key_Escape) { window.interaction.escapeLiveKitContext(); event.accepted = true }
                             else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
                                 if (window.screenData.selectedBrowserIndex >= 0) {
                                     browserPane.openSampleContextMenu(window.screenData.selectedBrowserIndex, browser.width * 0.35, browser.mapToItem(browserPane, 0, browser.height * 0.25).y)
@@ -5264,7 +5270,7 @@ ApplicationWindow {
                             harmonicMatchList.currentIndex = window.interaction.selectedHarmonyIndex
                             harmonicMatchList.positionViewAtIndex(harmonicMatchList.currentIndex, ListView.Contain)
                         }
-                        Keys.onEscapePressed: window.interaction.stopPreview()
+                        Keys.onEscapePressed: window.interaction.escapeLiveKitContext()
                         onContentYChanged: {
                             window.interaction.setHarmonyScrollY(contentY)
                             window.interaction.requestHarmonyWaveforms(
