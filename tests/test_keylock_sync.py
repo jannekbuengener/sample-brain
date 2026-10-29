@@ -489,8 +489,14 @@ def test_keylock_latency_exposed_in_snapshot():
     assert in_lat > 0, f"Input latency should be > 0, got {in_lat}"
     assert out_lat > 0, f"Output latency should be > 0, got {out_lat}"
     assert grid_comp > 0, f"Grid compensation should be > 0, got {grid_comp}"
-    assert grid_comp == in_lat + out_lat, \
-        f"Grid compensation ({grid_comp}) should equal input_latency + output_latency ({in_lat} + {out_lat} = {in_lat + out_lat})"
+    # Input latency is in source frames; convert to output frames via tempo ratio.
+    tempo_ratio = 132.0 / 128.0
+    expected = int(round(in_lat / tempo_ratio)) + out_lat
+    assert grid_comp == expected, (
+        f"Grid compensation ({grid_comp}) should equal "
+        f"round(input_latency/tempo_ratio)+output_latency "
+        f"(round({in_lat}/{tempo_ratio})+{out_lat}={expected})"
+    )
 
     print(f"Latency: input={in_lat} frames, output={out_lat} frames, grid_comp={grid_comp} frames")
 

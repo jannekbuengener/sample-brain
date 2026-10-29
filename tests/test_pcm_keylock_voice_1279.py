@@ -109,10 +109,9 @@ def test_adapter_native_pcm_keylock_requested_vs_effective(tmp_path: Path):
         assert snap.voice_sync_modes[idx] == SB_SYNC_MODE_KEY_LOCK_SYNC
         assert snap.voice_key_lock_active[idx] is True
         assert snap.voice_grid_compensation_frames[idx] > 0
-        assert (
-            snap.voice_grid_compensation_frames[idx]
-            == snap.voice_input_latency_frames[idx] + snap.voice_output_latency_frames[idx]
-        )
+        ratio = 132.0 / 128.0
+        expected = int(round(snap.voice_input_latency_frames[idx] / ratio)) + snap.voice_output_latency_frames[idx]
+        assert snap.voice_grid_compensation_frames[idx] == expected
     finally:
         engine.stop()
         engine.close()
@@ -213,9 +212,8 @@ def test_objective_tonal_and_percussive_probe(source_bpm: float, master_bpm: flo
         assert snap.voice_key_lock_active[perc_idx] is True
 
         compensation = snap.voice_grid_compensation_frames[kl_idx]
-        assert compensation == (
-            snap.voice_input_latency_frames[kl_idx] + snap.voice_output_latency_frames[kl_idx]
-        )
+        expected = int(round(snap.voice_input_latency_frames[kl_idx] / ratio)) + snap.voice_output_latency_frames[kl_idx]
+        assert compensation == expected
 
         now = snap.engine_frame
         musical_p = now + compensation + 4096

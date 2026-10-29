@@ -27,6 +27,17 @@ static int tests_failed = 0;
 
 #define TEST_ASSERT_EQ(a, b, msg) TEST_ASSERT((a) == (b), msg)
 
+static int expected_grid_compensation(int input_latency, int output_latency,
+                                      float source_bpm, float master_bpm) {
+    double ratio = 1.0;
+    if (std::isfinite(source_bpm) && source_bpm > 0.0f &&
+        std::isfinite(master_bpm) && master_bpm > 0.0f) {
+        ratio = static_cast<double>(master_bpm) / static_cast<double>(source_bpm);
+    }
+    return static_cast<int>(std::lround(static_cast<double>(input_latency) / ratio)) +
+           output_latency;
+}
+
 static sb_voice_config_t make_pcm_config(
     sb_voice_id_t id,
     const float* data,
@@ -95,8 +106,11 @@ static void test_pcm_keylock_activates_when_prerequisites_met() {
     TEST_ASSERT(voice.get_grid_compensation_frames() > 0,
                 "effective Key-Lock exposes positive grid compensation");
     TEST_ASSERT_EQ(voice.get_grid_compensation_frames(),
-                   voice.get_input_latency_frames() + voice.get_output_latency_frames(),
-                   "compensation equals input + output latency");
+                   expected_grid_compensation(
+                       voice.get_input_latency_frames(),
+                       voice.get_output_latency_frames(),
+                       128.0f, 132.0f),
+                   "compensation is tempo-adjusted input latency + output latency");
 }
 
 static void test_pcm_keylock_inactive_for_rate_sync_and_sync_off() {
@@ -323,6 +337,31 @@ static void test_pcm_keylock_drains_latency_tail_before_idle() {
                 "output spans at least source duration plus latency drain");
 }
 
+static void test_large_callback_is_chunked_not_truncated() {
+    std::printf("test_large_callback_is_chunked_not_truncated...\n");
+    auto pcm = make_tone(96000, 440.0f, 48000);
+    Voice voice(48000, make_pcm_config(63, pcm.data(), pcm.size(), 1, 1, 128.0f, 128.0f));
+    TEST_ASSERT(voice.is_key_lock_active(), "Key-Lock active for large callback");
+    voice.schedule_start(0, 0);
+    std::vector<float> out(8192, 0.0f);
+    voice.process(out.data(), 8192, 0, 1);
+    float energy = 0.0f;
+    for (float s : out) energy += s * s;
+    // Even inside startup latency, chunking must advance DSP; after enough
+    // large callbacks the buffer should contain energy. Drive past latency.
+    const int compensation = voice.get_grid_compensation_frames();
+    sb_frame_t engine = 8192;
+    for (int i = 0; i < (compensation / 8192) + 2; ++i) {
+        std::fill(out.begin(), out.end(), 0.0f);
+        voice.process(out.data(), 8192, engine, 1);
+        engine += 8192;
+        for (float s : out) energy += s * s;
+    }
+    TEST_ASSERT(energy > 0.0f, "callbacks larger than scratch chunk still produce audio");
+    TEST_ASSERT(voice.get_state() == SB_VOICE_PLAYING || voice.get_state() == SB_VOICE_IDLE,
+                "large chunked callback leaves voice in a valid state");
+}
+
 static void test_source_bpm_update_preserves_playing_keylock() {
     std::printf("test_source_bpm_update_preserves_playing_keylock...\n");
     auto pcm = make_tone(48000, 440.0f, 48000);
@@ -368,8 +407,11 @@ static void test_snapshot_requested_actual_latency_consistency() {
     TEST_ASSERT(snap.voice_key_lock_active[0], "snapshot reports effective Key-Lock active");
     TEST_ASSERT(snap.voice_grid_compensation_frames[0] > 0, "snapshot compensation > 0");
     TEST_ASSERT_EQ(snap.voice_grid_compensation_frames[0],
-                   snap.voice_input_latency_frames[0] + snap.voice_output_latency_frames[0],
-                   "snapshot latency identity holds");
+                   expected_grid_compensation(
+                       snap.voice_input_latency_frames[0],
+                       snap.voice_output_latency_frames[0],
+                       128.0f, 132.0f),
+                   "snapshot compensation matches tempo-adjusted latency model");
     TEST_ASSERT_EQ(snap.voice_sync_modes[0], 1, "snapshot retains requested sync mode");
 
     const sb_frame_t now = snap.engine_frame;
@@ -413,6 +455,7 @@ int main() {
     test_stereo_pcm_keylock_into_mono_mix_does_not_crash();
     test_pcm_keylock_drains_latency_tail_before_idle();
     test_source_bpm_update_preserves_playing_keylock();
+    test_large_callback_is_chunked_not_truncated();
     test_snapshot_requested_actual_latency_consistency();
     std::printf("\n=== Results ===\nPassed: %d\nFailed: %d\n", tests_passed, tests_failed);
     return tests_failed > 0 ? 1 : 0;

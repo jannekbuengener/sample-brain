@@ -8,6 +8,7 @@
 namespace {
 constexpr double kPi = 3.141592653589793238462643383279502884;
 constexpr size_t kKeyLockMaxCallbackFrames = 4096;
+constexpr uint32_t kKeyLockMaxMixChannels = 8;
 }
 
 // KeyLockVoiceImpl implementation
@@ -140,7 +141,9 @@ void Voice::configure_key_lock() {
     kl_voice->kv.set_pcm_source(pcm_samples.data(), static_cast<size_t>(pcm_frame_count),
                                 static_cast<int>(pcm_channels));
     kl_voice->kv.prepare_process_capacity(kKeyLockMaxCallbackFrames, 4.0f);
-    keylock_mix_scratch_.assign(kKeyLockMaxCallbackFrames * std::max<uint32_t>(pcm_channels, 2u), 0.0f);
+    // Scratch covers one max chunk across the largest supported engine channel count.
+    keylock_mix_scratch_.assign(
+        kKeyLockMaxCallbackFrames * static_cast<size_t>(kKeyLockMaxMixChannels), 0.0f);
     kl_voice->prepared = true;
 
     if (!kl_voice->kv.is_key_lock_active()) {
@@ -309,23 +312,33 @@ void Voice::process(float* output, size_t num_frames, sb_frame_t engine_frame, s
 
 void Voice::render_pcm_keylock(float* output, size_t offset, size_t num_frames,
                                size_t output_channels) {
-    if (!kl_voice || num_frames == 0) {
+    if (!kl_voice || num_frames == 0 || output_channels == 0) {
         return;
     }
-    if (num_frames > kKeyLockMaxCallbackFrames) {
-        // Bound work; remainder is dropped for this callback rather than allocating.
-        num_frames = kKeyLockMaxCallbackFrames;
-    }
-    const size_t scratch_need = num_frames * output_channels;
-    if (keylock_mix_scratch_.size() < scratch_need) {
-        // Scratch is prepared on the control path; fail closed without reallocating.
+    if (output_channels > kKeyLockMaxMixChannels) {
+        // Control-path scratch is sized for the supported mix width; fail closed.
         return;
     }
+    const size_t max_chunk_frames = keylock_mix_scratch_.size() / output_channels;
+    if (max_chunk_frames == 0) {
+        return;
+    }
+    const size_t chunk_limit = (std::min)(max_chunk_frames, kKeyLockMaxCallbackFrames);
 
     float* scratch = keylock_mix_scratch_.data();
-    kl_voice->kv.process(scratch, num_frames, output_channels);
-    for (size_t i = 0; i < scratch_need; ++i) {
-        output[offset * output_channels + i] += scratch[i];
+    size_t frames_done = 0;
+    while (frames_done < num_frames) {
+        const size_t chunk = (std::min)(chunk_limit, num_frames - frames_done);
+        kl_voice->kv.process(scratch, chunk, output_channels);
+        const size_t sample_count = chunk * output_channels;
+        const size_t out_base = (offset + frames_done) * output_channels;
+        for (size_t i = 0; i < sample_count; ++i) {
+            output[out_base + i] += scratch[i];
+        }
+        frames_done += chunk;
+        if (kl_voice->kv.get_state() == SB_VOICE_IDLE) {
+            break;
+        }
     }
 }
 

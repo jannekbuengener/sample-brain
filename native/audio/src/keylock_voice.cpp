@@ -92,7 +92,14 @@ void KeyLockVoice::update_latency() {
     if (stretch_) {
         input_latency_frames_ = stretch_->inputLatency();
         output_latency_frames_ = stretch_->outputLatency();
-        effective_compensation_frames_ = input_latency_frames_ + output_latency_frames_;
+        // Input latency is measured in source frames; convert to output frames via
+        // the current tempo ratio so audible alignment lands on musical P.
+        const double ratio = (std::isfinite(current_tempo_ratio_) && current_tempo_ratio_ > 0.0f)
+            ? static_cast<double>(current_tempo_ratio_)
+            : 1.0;
+        effective_compensation_frames_ =
+            static_cast<int>(std::lround(static_cast<double>(input_latency_frames_) / ratio)) +
+            output_latency_frames_;
     } else {
         input_latency_frames_ = 0;
         output_latency_frames_ = 0;
@@ -205,6 +212,7 @@ void KeyLockVoice::set_tempo_ratio(float tempo_ratio) {
         double interval_sec = 60.0 / config_.source_bpm;
         rate_interval_frames_ = interval_sec * config_.sample_rate / current_tempo_ratio_;
     }
+    update_latency();
 }
 
 void KeyLockVoice::set_sync_mode(SyncMode mode) {
@@ -238,6 +246,7 @@ void KeyLockVoice::set_source_bpm(float bpm) {
         double interval_sec = 60.0 / config_.source_bpm;
         rate_interval_frames_ = interval_sec * config_.sample_rate / current_tempo_ratio_;
     }
+    update_latency();
 
     if (!pcm_source_loaded_ && config_.load_synthetic_source) {
         load_source_buffer();
@@ -253,6 +262,7 @@ void KeyLockVoice::set_master_bpm(float bpm) {
         double interval_sec = 60.0 / config_.source_bpm;
         rate_interval_frames_ = interval_sec * config_.sample_rate / current_tempo_ratio_;
     }
+    update_latency();
 }
 
 bool KeyLockVoice::process(float* output, size_t num_frames, size_t output_channels) {
