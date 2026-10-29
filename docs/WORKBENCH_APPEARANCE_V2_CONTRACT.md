@@ -3,7 +3,7 @@
 **Status:** ACTIVE_SUPPORTING — contract freeze for [#1252](https://github.com/jannekbuengener/sample-brain/issues/1252)
 **Parent:** [#1251](https://github.com/jannekbuengener/sample-brain/issues/1251) Appearance System V2
 **Runtime implementation:** [#1253](https://github.com/jannekbuengener/sample-brain/issues/1253) → `src/workbench_appearance.py` (Python Appearance Authority; Theme Core re-exports the resolve seam)
-**Persistence migration:** [#1254](https://github.com/jannekbuengener/sample-brain/issues/1254)
+**Persistence migration:** [#1254](https://github.com/jannekbuengener/sample-brain/issues/1254) → versioned `screen1_theme_preferences.json` in Theme Core (`schema_version` 2; exit `APPEARANCE_V2_PREFERENCES_MIGRATED`)
 **QML bridge:** [#1255](https://github.com/jannekbuengener/sample-brain/issues/1255)
 **Settings UI:** [#1256](https://github.com/jannekbuengener/sample-brain/issues/1256)
 **Screen-1 adoption:** [#1257](https://github.com/jannekbuengener/sample-brain/issues/1257)
@@ -334,14 +334,41 @@ No bundled font is required by this contract; use the platform/existing product 
 
 ## 11. Persistence boundary
 
-#1252 freezes the **state semantics**, not the storage JSON shape.
+#1252 freezes the **state semantics**. #1254 owns the versioned persistence schema and migration execution.
 
-#1254 owns the versioned persistence schema and migration execution.
+Authority split:
+
+```text
+#1253 → Appearance derivation authority (requested → resolved snapshot)
+#1254 → persisted Appearance user intent + v1→v2 migration authority
+#1255 → renderer/QML projection
+#1214 → native Windows chrome consumer of windowChrome.*
+```
+
+Storage reuses the existing #785 Theme Core file `screen1_theme_preferences.json` (`schema = sample_brain.theme_preferences`).
+
+| `schema_version` | Meaning |
+|---|---|
+| `1` | #785 selected + `custom_themes` only; migrated deterministically to v2 on load |
+| `2` | current Appearance intent + #785 selected/custom compatibility fields |
+| `>2` | unsupported future — fail closed, leave original file untouched, start with canonical defaults |
+
+Persisted intent (user overrides only):
+
+- `appearance.mode` (`system | light | dark`)
+- `appearance.separateLightDark`
+- `appearance.selectedTheme` (+ top-level `selected` for #785 APIs)
+- `appearance.profiles.{shared,dark,light}` → `themeRef` / explicit BG/FG/Accent / Contrast
+- `appearance.uiFontSize` / `appearance.codeFontSize`
+- `appearance.motionMode` (`system | on | reduced | off`; concrete modes stay aligned with #696 display preferences)
+- `custom_themes` name + base triplet (never derived tokens)
+
+Migration policy: v1→v2 is deterministic and idempotent; missing V2 fields receive contract defaults; custom theme names and normalized BG/FG/Accent survive; #696 `off` is never rewritten to `reduced`/`on`. Writes use temp + atomic replace. Corrupt JSON and unsupported future schemas must not block launch and must not silently rewrite an unknown/future source file.
 
 Required persistence behavior:
 
 - store user intent / explicit overrides only;
-- do not persist the full derived token snapshot;
+- do not persist the full derived token snapshot (`surface.*`, `text.*`, `border.*`, `accent.hover`, `interaction.*`, `status.*`, `protectedHighlight.*`, `windowChrome.*`, resolved motion/platform state);
 - preserve valid #785 selected preset and custom theme triplets;
 - no QML-owned second store;
 - no account/cloud dependency;

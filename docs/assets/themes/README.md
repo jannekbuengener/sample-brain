@@ -235,8 +235,14 @@ functional-only.
 
 - Python Theme Core resolves presets/customs and persists base tokens only in
   `workbench_state_dir` (`screen1_theme_preferences.json`).
-- QML `theme` QtObject is a thin facade over `themeAuthority` semantic colors.
+- Preference schema v2 (#1254) adds Appearance user intent (`mode`,
+  Light/Dark profiles, Contrast, UI/code font sizes, `motionMode`) beside the
+  existing #785 `selected` / `custom_themes` fields. Derived semantic tokens are
+  never persisted; #1253 regenerates them from intent.
+- QML `theme` QtObject is a thin facade over `themeAuthority` semantic colors
+  (#1255 projection).
 - No atmosphere PNG cache, stop derivation, or overlay URLs in Theme Authority.
-- Display Preferences hosts Appearance controls; it does not own a second theme
-  store.
-- Corrupt preference payloads fail closed to Blood A.
+- Display Preferences (#696) remains the concrete motion-density façade;
+  Appearance v2 reuses that motion vocabulary and must not fork a second store.
+- Corrupt preference payloads fail closed to Blood A / canonical Appearance
+  defaults; unsupported future `schema_version` leaves the source file untouched.

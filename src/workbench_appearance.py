@@ -659,20 +659,48 @@ def resolve_appearance(
 
 
 def appearance_requested_from_mapping(payload: Mapping[str, Any] | None) -> AppearanceRequestedState:
-    """Fail-closed adapter for future #1254 persistence payloads."""
+    """Fail-closed adapter for #1254 persistence payloads / requested-state JSON."""
     if not isinstance(payload, Mapping):
         return AppearanceRequestedState()
 
     def _profile(raw: Any) -> AppearanceProfileInput | None:
         if not isinstance(raw, Mapping):
             return None
-        return AppearanceProfileInput(
-            theme_ref=str(raw["themeRef"]).strip() if isinstance(raw.get("themeRef"), str) else None,
-            background=raw.get("background") if isinstance(raw.get("background"), str) else None,
-            foreground=raw.get("foreground") if isinstance(raw.get("foreground"), str) else None,
-            accent=raw.get("accent") if isinstance(raw.get("accent"), str) else None,
-            contrast=raw.get("contrast") if type(raw.get("contrast")) is int else None,
+        theme_ref = None
+        if isinstance(raw.get("themeRef"), str) and raw["themeRef"].strip():
+            theme_ref = raw["themeRef"].strip()
+        contrast_raw = raw.get("contrast")
+        contrast = (
+            _clamp_int(
+                contrast_raw,
+                minimum=CONTRAST_MIN,
+                maximum=CONTRAST_MAX,
+                default=DEFAULT_CONTRAST,
+            )
+            if type(contrast_raw) is int
+            else None
         )
+        # Invalid contrast outside bounds fails closed to default when present.
+        if type(contrast_raw) is int and (
+            contrast_raw < CONTRAST_MIN or contrast_raw > CONTRAST_MAX
+        ):
+            contrast = DEFAULT_CONTRAST
+        profile = AppearanceProfileInput(
+            theme_ref=theme_ref,
+            background=_normalize_hex(raw.get("background")),
+            foreground=_normalize_hex(raw.get("foreground")),
+            accent=_normalize_hex(raw.get("accent")),
+            contrast=contrast,
+        )
+        if (
+            profile.theme_ref is None
+            and profile.background is None
+            and profile.foreground is None
+            and profile.accent is None
+            and profile.contrast is None
+        ):
+            return None
+        return profile
 
     return AppearanceRequestedState(
         mode=_normalize_mode(payload.get("mode")),
