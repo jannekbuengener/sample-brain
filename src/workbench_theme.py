@@ -531,6 +531,40 @@ def _seed_motion_from_display(
     return "on"
 
 
+def _reconcile_motion_mode(
+    stored: Any,
+    *,
+    state_dir: Path | None,
+    env: Mapping[str, str] | None,
+) -> str:
+    """Keep Appearance motion aligned with #696 for concrete values.
+
+    ``system`` stays Appearance-owned (display prefs cannot express it).
+    When a concrete display-preferences file exists, that owner wins for
+    ``on|reduced|off`` so a later #696/QML motion change is not undone by an
+    Appearance reload/save. Missing display prefs leave the Appearance value.
+    """
+    token = str(stored or "").strip().lower()
+    if token == "system":
+        return "system"
+    try:
+        from .workbench_display_preferences import (
+            display_preferences_path,
+            load_display_preferences,
+        )
+
+        if display_preferences_path(state_dir=state_dir, env=env).is_file():
+            prefs = load_display_preferences(state_dir=state_dir, env=env)
+            display_motion = str(getattr(prefs, "motion_mode", "") or "").strip().lower()
+            if display_motion in {"on", "reduced", "off"}:
+                return display_motion
+    except Exception:
+        pass
+    if token in {"on", "reduced", "off"}:
+        return token
+    return _seed_motion_from_display(state_dir=state_dir, env=env)
+
+
 def _sync_motion_to_display(
     motion_mode: str,
     *,
@@ -615,8 +649,11 @@ def _parse_v2_store(
         selected = _normalize_selected(raw.get("selected"), customs)
 
     mapping = _appearance_mapping_from_store_payload(appearance_raw)
-    if mapping.get("motionMode") is None:
-        mapping["motionMode"] = _seed_motion_from_display(state_dir=state_dir, env=env)
+    mapping["motionMode"] = _reconcile_motion_mode(
+        mapping.get("motionMode"),
+        state_dir=state_dir,
+        env=env,
+    )
 
     # Ensure themeRef mirrors selected when profiles omit it.
     profiles = appearance_raw.get("profiles")
@@ -1058,10 +1095,10 @@ def rename_custom_theme(
     entry = dict(customs.pop(old_name))
     entry["name"] = cleaned_new
     customs[cleaned_new] = entry
+    store["custom_themes"] = customs
     if store.get("selected") == old_name:
         store["selected"] = cleaned_new
         _sync_appearance_selection(store, cleaned_new)
-    store["custom_themes"] = customs
     _require_write(store, state_dir=state_dir, env=env)
 
 

@@ -618,3 +618,50 @@ def test_schema_version_constant_is_v2() -> None:
     assert getattr(theme, "APPEARANCE_V2_PREFERENCES_EXIT", None) == (
         "APPEARANCE_V2_PREFERENCES_MIGRATED"
     )
+
+
+def test_rename_selected_custom_preserves_appearance_colors(tmp_path: Path) -> None:
+    theme.create_custom_theme(
+        name="Night Desk",
+        base_preset="Carbon",
+        accent="#b0b8c0",
+        background="#050607",
+        foreground="#eaecf0",
+        state_dir=tmp_path,
+    )
+    theme.select_theme("Night Desk", state_dir=tmp_path)
+    theme.rename_custom_theme("Night Desk", "Night Desk II", state_dir=tmp_path)
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.shared is not None
+    assert loaded.shared.theme_ref == "Night Desk II"
+    assert loaded.shared.accent == "#b0b8c0"
+    assert loaded.shared.background == "#050607"
+    assert loaded.shared.foreground == "#eaecf0"
+    tokens = theme.resolve_theme(state_dir=tmp_path)
+    assert tokens.accent == "#b0b8c0"
+    assert tokens.name == "Night Desk II"
+
+
+def test_concrete_motion_reconciles_with_display_preferences_owner(tmp_path: Path) -> None:
+    theme.save_appearance_preferences(
+        appearance.AppearanceRequestedState(motion_mode="on"),
+        state_dir=tmp_path,
+    )
+    display.save_display_preferences({"motion_mode": "off"}, state_dir=tmp_path)
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.motion_mode == "off"
+    # Unrelated Appearance save must not restore the stale Appearance motion.
+    theme.save_appearance_preferences(loaded, state_dir=tmp_path)
+    assert display.load_display_preferences(state_dir=tmp_path).motion_mode == "off"
+    assert theme.load_appearance_preferences(state_dir=tmp_path).motion_mode == "off"
+
+
+def test_system_motion_remains_appearance_owned(tmp_path: Path) -> None:
+    display.save_display_preferences({"motion_mode": "reduced"}, state_dir=tmp_path)
+    theme.save_appearance_preferences(
+        appearance.AppearanceRequestedState(motion_mode="system"),
+        state_dir=tmp_path,
+    )
+    loaded = theme.load_appearance_preferences(state_dir=tmp_path)
+    assert loaded.motion_mode == "system"
+    assert display.load_display_preferences(state_dir=tmp_path).motion_mode == "reduced"
