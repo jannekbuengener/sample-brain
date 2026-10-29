@@ -95,7 +95,7 @@ def test_browser_search_field_is_visually_integrated():
     assert QML_SOURCE.count(SEARCH_MARKER) == 1
     assert 'placeholderText: "Search samples"' in search
     assert "background: Rectangle" in search
-    assert "placeholderTextColor: theme.textSecondary" in search
+    assert "placeholderTextColor: theme.textMuted" in search
     assert "activeFocus ? theme.focusRing" in search
     assert "activeFocus ? theme.actionActive" not in search
 
