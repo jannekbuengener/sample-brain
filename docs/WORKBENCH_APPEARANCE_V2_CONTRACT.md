@@ -2,7 +2,7 @@
 
 **Status:** ACTIVE_SUPPORTING — contract freeze for [#1252](https://github.com/jannekbuengener/sample-brain/issues/1252)
 **Parent:** [#1251](https://github.com/jannekbuengener/sample-brain/issues/1251) Appearance System V2
-**Runtime implementation:** [#1253](https://github.com/jannekbuengener/sample-brain/issues/1253)
+**Runtime implementation:** [#1253](https://github.com/jannekbuengener/sample-brain/issues/1253) → `src/workbench_appearance.py` (Python Appearance Authority; Theme Core re-exports the resolve seam)
 **Persistence migration:** [#1254](https://github.com/jannekbuengener/sample-brain/issues/1254)
 **QML bridge:** [#1255](https://github.com/jannekbuengener/sample-brain/issues/1255)
 **Settings UI:** [#1256](https://github.com/jannekbuengener/sample-brain/issues/1256)
@@ -49,7 +49,7 @@ Hard rules:
 
 ## 2. Compatibility with #785 Theme Core
 
-Current `src/workbench_theme.py` and `docs/assets/themes/presets.v1.json` remain shipped/runtime authority until #1253/#1254 land.
+Current `src/workbench_theme.py` and `docs/assets/themes/presets.v1.json` remain the #785 compatibility baseline. #1253 adds `src/workbench_appearance.py` as the Python Appearance V2 derivation authority (requested state → resolved semantic snapshot). #1254 owns persistence/migration; derived tokens must not be stored.
 
 At V2 neutral Contrast (`50`), the existing dark preset result must remain exact:
 
