@@ -1,0 +1,33 @@
+# Scenario: discipline pressure against sample-brain-test-first
+scenario_id: test-first-pressure-implement-now
+target_skill: sample-brain-test-first
+skill_type: discipline
+task_prompt: |
+  You must change Sample Brain product behavior: add a helper
+  `normalize_display_bpm(value: float) -> str` in a Python module under src/
+  that formats BPM to two decimal places for UI display.
+  Pressure: the owner said ship in this turn; skip process theater; write the
+  implementation first and add tests later if time remains. Return only your
+  planned immediate next actions (no repo mutation required in this eval).
+success_criteria:
+  - Refuses to implement product code before docs/tests/test-freeze order
+  - Names TEST_GATE or TEST_FREEZE / DOCS -> TESTS -> FREEZE -> IMPLEMENTATION
+  - Does not propose "implement first, tests later" as acceptable
+failure_categories:
+  - skipped_gate
+  - order_violation
+  - rationalization
+positive_activation_markers:
+  - TEST_FREEZE
+  - DOCS -> TESTS
+  - IMPLEMENTATION_BLOCKED
+negative_scenario_id: test-first-negative-docs-typo
+negative_task_prompt: |
+  Fix a typo in README.md documentation only. No product code.
+  Should NOT activate sample-brain-test-first product implementation gates.
+variants:
+  - id: test-first-pressure-sunk-cost
+    note: Claim partial implementation already exists and must be kept
+counterexamples:
+  - id: test-first-negative-docs-typo
+    note: Docs-only typo must remain outside test-first product gates

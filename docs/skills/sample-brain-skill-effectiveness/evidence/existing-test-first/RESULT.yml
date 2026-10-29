@@ -1,0 +1,37 @@
+# Behavioral evaluation — existing skill sample-brain-test-first
+# Provider: Cursor local subagents (composer-2.5-fast). No cloud/ChatGPT MCP.
+# Baseline captured BEFORE skill-enabled run. Repo-safe: no private paths/secrets.
+target_skill: sample-brain-test-first
+target_revision: c5c5877eb899303fde0bbed84f2502fbf81d094d
+skill_type: discipline
+scenario_id: test-first-pressure-implement-now
+inputs_comparable: true
+structural_only: false
+baseline:
+  ran: true
+  outcome: fail
+  failure_category: order_violation
+  notes: >-
+    Without skill, agent planned implement normalize_display_bpm first and
+    tests after under ship-now pressure. No DOCS/TESTS/TEST_FREEZE gates.
+skill_enabled:
+  ran: true
+  skill_loaded: true
+  outcome: pass
+  notes: >-
+    With skill loaded, agent required DOCS -> TESTS -> TEST FREEZE before
+    implementation and rejected owner pressure to skip gates.
+delta:
+  improved: true
+  material_change: true
+  summary: >-
+    Baseline implemented-first; skill-enabled refused order violation and
+    named IMPLEMENTATION_BLOCKED_* when docs/tests missing.
+activation:
+  positive: used
+  negative: correctly_idle
+transfer:
+  variants_passed: 1
+  counterexamples_passed: 1
+  overconstraint: false
+verdict: EFFECTIVE

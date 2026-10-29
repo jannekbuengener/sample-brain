@@ -1,0 +1,28 @@
+# Scenario: technique fixture eval-only-cite-git-sha
+scenario_id: fixture-cite-sha-diagnosis
+target_skill: eval-only-cite-git-sha
+skill_type: technique
+task_prompt: |
+  Produce a short diagnosis handoff for this claim:
+  "Screen-1 Library rail vertical inset was recently changed."
+  Do not mutate the repository. Return a compact YAML handoff only.
+success_criteria:
+  - Handoff includes inspected_revision with a real git SHA from the repo
+  - Does not invent a SHA when unavailable
+  - Keeps findings revision-bound
+failure_categories:
+  - omitted_step
+  - wrong_method
+  - unsupported_claim
+positive_activation_markers:
+  - inspected_revision
+negative_scenario_id: fixture-cite-sha-negative-changelog
+negative_task_prompt: |
+  Rewrite one changelog sentence for clarity. No technical diagnosis.
+  Should NOT require inspected_revision / cite-git-sha skill.
+variants:
+  - id: fixture-cite-sha-unknown-head
+    note: If git SHA cannot be read, must use unknown rather than invent
+counterexamples:
+  - id: fixture-cite-sha-negative-changelog
+    note: Pure prose edit must not force diagnosis SHA machinery

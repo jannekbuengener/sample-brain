@@ -98,6 +98,37 @@
       "linked_kpis": ["UNKNOWN"]
     },
     {
+      "id": "sample-brain-skill-effectiveness",
+      "type": "skill",
+      "purpose": "Behavior-level evaluator proving a repository-owned skill improves agent outcomes versus the same task without that skill.",
+      "problem_solved": "Schema/registry/mirror checks mistaken for skill effectiveness.",
+      "trigger": [
+        "skill effectiveness evaluation",
+        "baseline-vs-skill behavior comparison",
+        "skill quality beyond structural validation"
+      ],
+      "inputs": [
+        "target skill id/revision",
+        "scenario fixtures",
+        "baseline and skill-enabled observations"
+      ],
+      "outputs": [
+        "EFFECTIVE|INEFFECTIVE|UNNECESSARY|INCOMPLETE result",
+        "behavioral delta",
+        "activation and transfer notes"
+      ],
+      "authority": "local-repo",
+      "mutation_level": "read-only-evaluation",
+      "dependencies": [],
+      "fallback": "manual baseline-vs-skill notes on the skill issue/PR",
+      "canonical_source": "docs/skills/sample-brain-skill-effectiveness/SKILL.md",
+      "source_kind": "local",
+      "repo_areas": ["skills", "validation", "meta"],
+      "validation": "baseline required; structural-only checks insufficient; fail closed to INCOMPLETE",
+      "lifecycle": "active",
+      "linked_kpis": ["skill_contract_gap_count", "fallback_to_generic_flow_count"]
+    },
+    {
       "id": "jMerta/bug-triage",
       "type": "external-tool",
       "purpose": "Triage bugs/regressions in a generic agent workflow.",
@@ -840,6 +871,10 @@
       {
         "situation": "Klar abgegrenztes Issue explizit an Jules delegieren",
         "capability_ids": ["sample-brain-jules-dispatch"]
+      },
+      {
+        "situation": "Skill-Effektivität / Baseline-vs-Skill Verhaltensvergleich",
+        "capability_ids": ["sample-brain-skill-effectiveness"]
       },
       {
         "situation": "Screen-1 UI/QML Visual Acceptance nach automatisierten Tests",
