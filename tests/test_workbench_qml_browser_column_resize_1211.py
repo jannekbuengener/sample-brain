@@ -9,24 +9,19 @@ from __future__ import annotations
 import importlib.util
 
 import pytest
-from PySide6.QtCore import Q_ARG, QMetaObject, Qt
-from PySide6.QtQuick import QQuickItem
-
-from src.workbench_harmony import HarmonicMatchLibraryController
-from src.workbench_qml import Screen1QmlInteractionAdapter, _qml_engine, _settle_qml_frame
-from src.workbench_qml_spike import build_qml_view_model_from_fixture
-from src.workbench_visual_acceptance import build_screen1_visual_fixture_v1
 
 PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 pytestmark = pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 
 
-def _edge_x(item: QQuickItem) -> float:
+def _edge_x(item) -> float:
     return float(item.mapToItem(None, item.width(), 0.0).x())
 
 
-def _invoke_resize(browser: QQuickItem, role: str, delta: float) -> None:
+def _invoke_resize(browser, role: str, delta: float) -> None:
+    from PySide6.QtCore import Q_ARG, QMetaObject, Qt
+
     ok = QMetaObject.invokeMethod(
         browser,
         "resizeColumn",
@@ -39,6 +34,13 @@ def _invoke_resize(browser: QQuickItem, role: str, delta: float) -> None:
 
 @pytest.fixture
 def browser_resize_runtime():
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_harmony import HarmonicMatchLibraryController
+    from src.workbench_qml import Screen1QmlInteractionAdapter, _qml_engine, _settle_qml_frame
+    from src.workbench_qml_spike import build_qml_view_model_from_fixture
+    from src.workbench_visual_acceptance import build_screen1_visual_fixture_v1
+
     fixture = build_screen1_visual_fixture_v1()
     view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
     view_model.set_library_revealed(True)
@@ -73,6 +75,8 @@ def browser_resize_runtime():
 
 def test_runtime_independent_bpm_key_type_widths_and_direction(browser_resize_runtime):
     """+Δ grows only the grabbed role; BPM right edge is not mirrored."""
+    from PySide6.QtQuick import QQuickItem
+
     _app, window, browser, settle = browser_resize_runtime
     bpm = window.findChild(QQuickItem, "browserColumnHeader_bpm")
     key = window.findChild(QQuickItem, "browserColumnHeader_key")
@@ -147,7 +151,7 @@ def test_runtime_independent_bpm_key_type_widths_and_direction(browser_resize_ru
 
 
 def test_runtime_clamp_does_not_mutate_foreign_user_widths(browser_resize_runtime):
-    _app, window, browser, settle = browser_resize_runtime
+    _app, _window, browser, settle = browser_resize_runtime
     _invoke_resize(browser, "key", 20)
     settle()
     key_user = browser.property("keyUserWidth")
