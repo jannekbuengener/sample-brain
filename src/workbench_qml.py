@@ -5127,7 +5127,7 @@ ApplicationWindow {
                             selectionColor: theme.actionActive
                             Layout.preferredWidth: 230
                             Layout.minimumWidth: 120
-                            Layout.preferredHeight: 28
+                            Layout.preferredHeight: Math.max(28, implicitHeight)
                             font.pixelSize: themeAuthority.typographyUiStandardSize
                             leftPadding: 10
                             rightPadding: 10

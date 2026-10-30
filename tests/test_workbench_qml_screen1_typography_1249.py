@@ -69,6 +69,9 @@ def test_browser_producer_text_uses_role_bindings():
     assert "font.pixelSize: themeAuthority.typographyUiStandardSize" in _near(
         'objectName: "browserSearch"', 700
     )
+    assert "Layout.preferredHeight: Math.max(28, implicitHeight)" in _near(
+        'objectName: "browserSearch"', 700
+    )
     assert "font.pixelSize: themeAuthority.typographyUiStandardSize" in _near(
         "text: modelData.name; color: theme.textPrimary", 250
     )
