@@ -1614,6 +1614,12 @@ class Screen1QmlInteractionAdapter:
         )
         if not saved:
             return self.preferred_audio_output_device_id()
+        # Release audition ownership against the still-live engine before reopen
+        # destroys native voices (#1209 Codex finding).
+        try:
+            self.quiet_audition()
+        except Exception:
+            pass
         engine_transport = transport
         if engine_transport is None:
             engine_transport = getattr(self, "_session_transport", None)

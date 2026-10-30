@@ -187,7 +187,13 @@ class WorkbenchTransportAdapter:
         self._preferred_output_device_applied = output_device
 
     def reopen_native_output_device(self) -> bool:
-        """Close/reopen owned native engine so a new preferred device takes effect."""
+        """Close/reopen owned native engine so a new preferred device takes effect.
+
+        Callers must release any active audition voice before reopen so ownership
+        cannot point at destroyed native voices. Musical ``session_frame`` is
+        preserved; ``engine_frame`` is rebased onto the replacement native clock
+        so ``schedule_voice_start`` stays in the new engine's present.
+        """
         with self._lock:
             if (
                 not self._native_available
@@ -199,6 +205,9 @@ class WorkbenchTransportAdapter:
             applied = getattr(self, "_preferred_output_device_applied", None)
             if self._native_opened and desired == applied:
                 return True
+            # Drop voice registrations tied to the destroyed engine.
+            self._voice_source_bpms.clear()
+            self._voice_sync_states.clear()
             # Tear down owned engine so next ensure_engine_running reopens with preference.
             try:
                 if self._native_started and hasattr(self._native_engine, "stop"):
@@ -222,7 +231,22 @@ class WorkbenchTransportAdapter:
                 self._native_engine = None
                 self._native_available = False
                 return False
-            return self.ensure_engine_running()
+            if not self.ensure_engine_running():
+                return False
+            # Rebase scheduling clock onto the replacement native epoch while
+            # preserving musical session position.
+            native_frame = 0
+            if hasattr(self._native_engine, "snapshot"):
+                try:
+                    native_frame = int(self._native_engine.snapshot().engine_frame)
+                except Exception as exc:  # pragma: no cover - device specific
+                    warn("Native snapshot after device reopen failed: %s", exc)
+                    native_frame = 0
+            if native_frame < 0:
+                native_frame = 0
+            self._transport.engine_frame = native_frame
+            self._last_native_engine_frame = native_frame
+            return True
 
     def ensure_engine_running(self) -> bool:
         """Ensure the owned native engine is opened AND running (started).

@@ -135,6 +135,68 @@ def test_reopen_native_output_device_applies_new_preference(tmp_path, monkeypatc
     assert engines[1].open_calls[0].output_device == _OTHER_ID
 
 
+def test_reopen_rebases_engine_frame_while_preserving_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    engines: list[RecordingOpenEngine] = []
+
+    def _factory() -> RecordingOpenEngine:
+        engine = RecordingOpenEngine()
+        engines.append(engine)
+        return engine
+
+    monkeypatch.setattr(adapter_module._native_audio, "is_available", lambda: True)
+    monkeypatch.setattr(adapter_module._native_audio, "NativeAudioEngine", _factory)
+    adapter = adapter_module.WorkbenchTransportAdapter(sample_rate=48_000)
+    assert adapter.ensure_engine_running() is True
+    adapter.play()
+    adapter.advance(48000)
+    preserved_session = adapter.get_session_frame()
+    assert preserved_session == 48000
+    assert adapter.get_engine_frame() == 48000
+
+    save_workbench_audio_output_settings(
+        WorkbenchAudioOutputSettings(
+            preferred_output_device_id=_VALID_ID,
+            preferred_output_device_name="ASUS",
+        )
+    )
+    assert adapter.reopen_native_output_device() is True
+    assert adapter.get_session_frame() == preserved_session
+    assert adapter.get_engine_frame() == 0
+
+
+def test_stop_native_voice_clears_stale_ownership_after_engine_gone():
+    from src.workbench_preview import WorkbenchPreviewPlayer
+    from src.workbench_transport_preview import TransportAwarePreview
+
+    class GoneEngine:
+        def stop_voice(self, _voice_id: int) -> None:
+            raise RuntimeError("voice gone")
+
+        def remove_voice(self, _voice_id: int) -> None:
+            raise RuntimeError("voice gone")
+
+    transport = SimpleNamespace(
+        get_native_engine=lambda: GoneEngine(),
+        unregister_voice=lambda _voice_id: None,
+        is_native_available=lambda: True,
+        ensure_engine_running=lambda: True,
+        is_sync_enabled=lambda: False,
+        get_current_tempo=lambda: 120.0,
+        tempo_map=SimpleNamespace(sample_rate=48000),
+        set_source_bpm=lambda *a, **k: None,
+        set_voice_source_bpm=lambda *a, **k: None,
+        get_engine_frame=lambda: 0,
+        play=lambda: None,
+        stop=lambda: None,
+    )
+    preview = TransportAwarePreview(WorkbenchPreviewPlayer(), transport)  # type: ignore[arg-type]
+    preview._active_voice_id = 7
+    preview._native_current_path = SimpleNamespace()
+    assert preview._stop_native_voice() is True
+    assert preview.active_voice_id is None
+
+
 def test_interaction_adapter_set_preferred_reopens_transport(tmp_path, monkeypatch):
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     from src.workbench_qml import Screen1QmlInteractionAdapter, Screen1QmlViewModel
@@ -155,12 +217,15 @@ def test_interaction_adapter_set_preferred_reopens_transport(tmp_path, monkeypat
         live_kit_groups=(),
     )
     adapter = Screen1QmlInteractionAdapter(view_model=view_model)
+    quiet_calls: list[bool] = []
+    adapter.quiet_audition = lambda: quiet_calls.append(True)  # type: ignore[method-assign]
     applied = adapter.set_preferred_audio_output_device(
         _VALID_ID,
         "ASUS VP247",
         transport=FakeTransport(),
     )
     assert applied == _VALID_ID
+    assert quiet_calls == [True]
     assert reopen_calls == [True]
     loaded = load_workbench_audio_output_settings()
     assert loaded.preferred_output_device_id == _VALID_ID
