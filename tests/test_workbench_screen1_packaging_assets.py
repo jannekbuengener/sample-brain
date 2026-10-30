@@ -226,10 +226,47 @@ def test_spec_keeps_tkinter_for_transport_ui_import_chain() -> None:
 
 def test_spec_filters_foreign_icu_binaries() -> None:
     """Conda ICU must not ship; unrelated conda runtime files must remain."""
-    source = _spec_source()
-    assert "_is_foreign_icu" in source
-    assert "icuuc" in source
-    assert "return name_hit and conda_hit" in source
+    tree = _spec_tree()
+    predicate_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_is_foreign_icu"
+    )
+    predicate_module = ast.Module(
+        body=[
+            ast.ImportFrom(
+                module="pathlib",
+                names=[ast.alias(name="Path")],
+                level=0,
+            ),
+            predicate_node,
+        ],
+        type_ignores=[],
+    )
+    namespace: dict[str, object] = {}
+    exec(
+        compile(
+            ast.fix_missing_locations(predicate_module),
+            filename=str(SPEC_PATH),
+            mode="exec",
+        ),
+        namespace,
+    )
+    is_foreign_icu = namespace["_is_foreign_icu"]
+    assert callable(is_foreign_icu)
+
+    assert is_foreign_icu(
+        ("icuuc.dll", r"C:\\miniforge\\Library\\bin\\icuuc.dll", "BINARY")
+    )
+    assert not is_foreign_icu(
+        ("python312.dll", r"C:\\miniforge\\envs\\packaging\\python312.dll", "BINARY")
+    )
+    assert not is_foreign_icu(
+        ("Qt6Core.dll", r"C:\\miniforge\\envs\\packaging\\Qt6Core.dll", "BINARY")
+    )
+    assert not is_foreign_icu(
+        ("icuuc.dll", r"C:\\Windows\\System32\\icuuc.dll", "BINARY")
+    )
 
 
 def test_splash_typography_is_not_packed_without_a_runtime_consumer() -> None:
