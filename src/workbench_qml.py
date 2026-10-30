@@ -5594,6 +5594,20 @@ ApplicationWindow {
                                 property bool dragActive: false
                                 property real pressX: 0
                                 property real pressY: 0
+                                // #1281: nested waveform/favorite MouseAreas steal hover from this
+                                // row fill area. Keep hoveredWaveformIndex while ANY row pointer
+                                // owner still contains the mouse (no clear on child enter).
+                                function pointerOwnsWaveformHover() {
+                                    return rowSelection.containsMouse
+                                        || waveformHover.containsMouse
+                                        || favoriteMouseArea.containsMouse
+                                }
+                                function refreshHoveredWaveformFromPointer() {
+                                    if (pointerOwnsWaveformHover())
+                                        browser.setHoveredWaveform(index)
+                                    else
+                                        browser.clearHoveredWaveform(index)
+                                }
                                 onPressed: function(mouse) {
                                     if (mouse.button === Qt.RightButton)
                                         return
@@ -5641,11 +5655,11 @@ ApplicationWindow {
                                 // #1281: row pointer drives waveform-hover index only (presentation).
                                 onEntered: {
                                     contextHintState.reportHover("browser.sample_row")
-                                    browser.setHoveredWaveform(index)
+                                    refreshHoveredWaveformFromPointer()
                                 }
                                 onExited: {
                                     contextHintState.clearHover("browser.sample_row")
-                                    browser.clearHoveredWaveform(index)
+                                    refreshHoveredWaveformFromPointer()
                                 }
                             }
                             ListView.onPooled: {
@@ -5795,77 +5809,83 @@ ApplicationWindow {
                                             return 0
                                         return isPrimaryHover ? -2 : -1
                                     }
-                                    transform: [
-                                        Scale {
-                                            origin.x: waveformSurface.width / 2
-                                            origin.y: waveformSurface.height / 2
-                                            xScale: waveformSurface.waveformHoverScale
-                                            yScale: waveformSurface.waveformHoverScale
-                                        },
-                                        Translate { y: waveformSurface.waveformHoverLiftY }
-                                    ]
-                                    Rectangle {
+                                    // #1281 H2: keep hover/hit MouseArea untransformed. Scale/lift
+                                    // only the visual layer so geometry under the pointer stays put.
+                                    Item {
+                                        id: waveformVisualLayer
                                         anchors.fill: parent
-                                        radius: 5
-                                        z: -1
-                                        visible: waveformSurface.waveformHoverLuminanceActive && !browser.hoverScrollSuppressing
-                                        color: theme.hoverSurface
-                                        opacity: waveformSurface.isPrimaryHover ? 0.55 : 0.28
-                                    }
-                                    Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
-                                        property bool waveformSelected: index === window.screenData.selectedBrowserIndex
-                                        property string hoverRole: waveformSurface.waveformHoverRole
-                                        property bool scrollQuiet: browser.hoverScrollSuppressing
-                                        onEnvelopeChanged: requestPaint()
-                                        onWaveformSelectedChanged: requestPaint()
-                                        onHoverRoleChanged: requestPaint()
-                                        onScrollQuietChanged: requestPaint()
-                                        onPaint: {
-                                            var context = getContext("2d")
-                                            context.clearRect(0, 0, width, height)
-                                            // Keep selected ternary for paint contracts; hover only retints non-selected.
-                                            var stroke = waveformSelected ? theme.waveformActive : theme.waveformDefault
-                                            if (!waveformSelected && hoverRole === "primary" && !scrollQuiet)
-                                                stroke = theme.textSecondary
-                                            else if (!waveformSelected && hoverRole === "neighbour" && !scrollQuiet)
-                                                stroke = theme.textMuted
-                                            else if (!waveformSelected && (hoverRole === "primary" || hoverRole === "neighbour"))
-                                                stroke = theme.waveformDefault
-                                            context.strokeStyle = stroke
-                                            context.lineWidth = 1.2
-                                            context.beginPath()
-                                            var points = envelope || []
-                                            var center = height / 2
-                                            if (points.length === 0) {
-                                                context.moveTo(0, center)
-                                                context.lineTo(width, center)
-                                            } else {
-                                                var step = width / points.length
-                                                for (var point = 0; point < points.length; point++) {
-                                                    var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
-                                                    var x = Math.min(width, point * step + step / 2)
-                                                    var amplitude = Math.max(1, height * 0.42 * value)
-                                                    context.moveTo(x, center - amplitude)
-                                                    context.lineTo(x, center + amplitude)
-                                                }
-                                            }
-                                            context.stroke()
+                                        transform: [
+                                            Scale {
+                                                origin.x: waveformVisualLayer.width / 2
+                                                origin.y: waveformVisualLayer.height / 2
+                                                xScale: waveformSurface.waveformHoverScale
+                                                yScale: waveformSurface.waveformHoverScale
+                                            },
+                                            Translate { y: waveformSurface.waveformHoverLiftY }
+                                        ]
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 5
+                                            z: -1
+                                            visible: waveformSurface.waveformHoverLuminanceActive && !browser.hoverScrollSuppressing
+                                            color: theme.hoverSurface
+                                            opacity: waveformSurface.isPrimaryHover ? 0.55 : 0.28
                                         }
-                                    }
-                                    Rectangle {
-                                        id: browserPreviewPlayhead
-                                        objectName: "previewPlayhead"
-                                        width: 2
-                                        height: parent ? parent.height : 0
-                                        color: theme.textPrimary
-                                        z: 3
-                                        visible: window.previewPlayheadArmed && parent
-                                            && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
-                                        x: {
-                                            if (!parent)
-                                                return 0
-                                            var span = Math.max(0, parent.width - width)
-                                            return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
+                                        Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
+                                            property bool waveformSelected: index === window.screenData.selectedBrowserIndex
+                                            property string hoverRole: waveformSurface.waveformHoverRole
+                                            property bool scrollQuiet: browser.hoverScrollSuppressing
+                                            onEnvelopeChanged: requestPaint()
+                                            onWaveformSelectedChanged: requestPaint()
+                                            onHoverRoleChanged: requestPaint()
+                                            onScrollQuietChanged: requestPaint()
+                                            onPaint: {
+                                                var context = getContext("2d")
+                                                context.clearRect(0, 0, width, height)
+                                                // Keep selected ternary for paint contracts; hover only retints non-selected.
+                                                var stroke = waveformSelected ? theme.waveformActive : theme.waveformDefault
+                                                if (!waveformSelected && hoverRole === "primary" && !scrollQuiet)
+                                                    stroke = theme.textSecondary
+                                                else if (!waveformSelected && hoverRole === "neighbour" && !scrollQuiet)
+                                                    stroke = theme.textMuted
+                                                else if (!waveformSelected && (hoverRole === "primary" || hoverRole === "neighbour"))
+                                                    stroke = theme.waveformDefault
+                                                context.strokeStyle = stroke
+                                                context.lineWidth = 1.2
+                                                context.beginPath()
+                                                var points = envelope || []
+                                                var center = height / 2
+                                                if (points.length === 0) {
+                                                    context.moveTo(0, center)
+                                                    context.lineTo(width, center)
+                                                } else {
+                                                    var step = width / points.length
+                                                    for (var point = 0; point < points.length; point++) {
+                                                        var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
+                                                        var x = Math.min(width, point * step + step / 2)
+                                                        var amplitude = Math.max(1, height * 0.42 * value)
+                                                        context.moveTo(x, center - amplitude)
+                                                        context.lineTo(x, center + amplitude)
+                                                    }
+                                                }
+                                                context.stroke()
+                                            }
+                                        }
+                                        Rectangle {
+                                            id: browserPreviewPlayhead
+                                            objectName: "previewPlayhead"
+                                            width: 2
+                                            height: parent ? parent.height : 0
+                                            color: theme.textPrimary
+                                            z: 3
+                                            visible: window.previewPlayheadArmed && parent
+                                                && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
+                                            x: {
+                                                if (!parent)
+                                                    return 0
+                                                var span = Math.max(0, parent.width - width)
+                                                return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
+                                            }
                                         }
                                     }
                                     MouseArea {
@@ -5875,11 +5895,13 @@ ApplicationWindow {
                                         hoverEnabled: true
                                         onEntered: {
                                             contextHintState.reportHover("browser.audition")
+                                            rowSelection.refreshHoveredWaveformFromPointer()
                                         }
                                         onExited: {
                                             contextHintState.clearHover("browser.audition")
                                             if (rowSelection.containsMouse)
                                                 contextHintState.reportHover("browser.sample_row")
+                                            rowSelection.refreshHoveredWaveformFromPointer()
                                         }
                                         onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) }
                                     }
@@ -5908,11 +5930,15 @@ ApplicationWindow {
                                         id: favoriteMouseArea
                                         anchors.fill: parent
                                         hoverEnabled: true
-                                        onEntered: contextHintState.reportHover("browser.favorite")
+                                        onEntered: {
+                                            contextHintState.reportHover("browser.favorite")
+                                            rowSelection.refreshHoveredWaveformFromPointer()
+                                        }
                                         onExited: {
                                             contextHintState.clearHover("browser.favorite")
                                             if (rowSelection.containsMouse)
                                                 contextHintState.reportHover("browser.sample_row")
+                                            rowSelection.refreshHoveredWaveformFromPointer()
                                         }
                                         onClicked: {
                                             browser.forceActiveFocus()

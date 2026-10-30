@@ -236,6 +236,98 @@ def _hover_leave(app, area) -> None:
     app.processEvents()
 
 
+def _waveform_hover_areas(browser):
+    """Nested waveform MouseAreas (narrower than full-row selection)."""
+    areas = []
+
+    def walk(item) -> None:
+        meta = item.metaObject().className()
+        if "MouseArea" in meta and item.property("hoverEnabled") is True:
+            width = float(item.width())
+            # Waveform column hit target is far narrower than the full row.
+            if 40.0 < width < 360.0:
+                areas.append(item)
+        for child in item.childItems():
+            walk(child)
+
+    walk(browser)
+    areas.sort(key=lambda a: float(a.mapToScene(a.boundingRect().center()).y()))
+    return areas
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
+def test_1281_nested_waveform_hover_keeps_row_hover_index():
+    """Pointer entering waveform must not clear hoveredWaveformIndex (H1).
+
+    Real Qt nesting: child ``waveformHover`` steals hover from ``rowSelection``,
+    which fires ``rowSelection.onExited``. Clearing hover there makes the row
+    flicker/unusable when the pointer is over the waveform column.
+    """
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_harmony import HarmonicMatchLibraryController
+    from src.workbench_qml_spike import (
+        Screen1QmlInteractionAdapter,
+        _qml_engine,
+        _settle_qml_frame,
+        build_qml_view_model_from_fixture,
+    )
+    from src.workbench_visual_acceptance import build_screen1_visual_fixture_v1
+
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=HarmonicMatchLibraryController(),
+    )
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    QGuiApplication.styleHints().setUseHoverEffects(True)
+    window.show()
+    window.requestActivate()
+    _settle_qml_frame(app)
+    try:
+        browser = window.findChild(QQuickItem, "browserList")
+        assert browser is not None
+        rows = _row_selection_areas(browser)
+        waves = _waveform_hover_areas(browser)
+        assert len(rows) >= 3
+        assert len(waves) >= 3
+
+        target = 2
+        _hover_enter(app, rows[target])
+        _settle_qml_frame(app)
+        after_row = int(browser.property("hoveredWaveformIndex"))
+        assert after_row == target
+
+        # Simulate Qt nested steal: parent leaves, child waveform enters.
+        _hover_leave(app, rows[target])
+        _hover_enter(app, waves[target])
+        _settle_qml_frame(app)
+        after_wave = int(browser.property("hoveredWaveformIndex"))
+        assert after_wave == target, (
+            "hoveredWaveformIndex cleared when pointer entered nested waveformHover "
+            f"(got {after_wave}, want {target})"
+        )
+
+        _hover_leave(app, waves[target])
+        _settle_qml_frame(app)
+        after_leave = int(browser.property("hoveredWaveformIndex"))
+        assert after_leave == -1
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("PySide6") is None,
     reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
