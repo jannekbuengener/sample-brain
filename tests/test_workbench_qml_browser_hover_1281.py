@@ -22,7 +22,7 @@ from src.workbench_qml import QML_SOURCE
 
 BROWSER_LIST_MARKER = 'objectName: "browserList"'
 BROWSER_VIEWPORT_MARKER = 'objectName: "browserListViewport"'
-BROWSER_ROW_DELEGATE_MARKER = "delegate: Rectangle { id: browserRow"
+BROWSER_ROW_DELEGATE_MARKER = "id: browserRow"
 BROWSER_ROW_DELEGATE_SPAN = (
     QML_SOURCE.index('objectName: "elasticHandleAfterBrowser"')
     - QML_SOURCE.index(BROWSER_ROW_DELEGATE_MARKER)
@@ -78,6 +78,7 @@ def test_1281_neighbour_response_limited_to_immediate_plus_minus_one():
     assert "Math.abs(index - browser.hoveredWaveformIndex) === 1" in delegate or (
         "Math.abs(index - browser.hoveredWaveformIndex) == 1" in delegate
     )
+    assert "!browserRow.isLoopOwner" in delegate
     # Second-ring must not be special-cased.
     assert "=== 2" not in delegate or "hoveredWaveformIndex) === 2" not in delegate
     assert "hoverRing" not in delegate
@@ -100,8 +101,9 @@ def test_1281_sample_name_and_metadata_have_no_hover_geometry():
 
 def test_1281_row_geometry_not_bound_to_hover_scale():
     delegate = _delegate_block()
-    assert "height: browser.rowHeight" in delegate
+    assert "height: browserRow.isLoopOwner ? browser.loopOwnerRowHeight : browser.rowHeight" in delegate
     assert "height: browser.rowHeight * " not in delegate
+    assert "hoveredWaveformIndex" not in delegate.split("height:", 1)[1].split("color:", 1)[0]
     assert "Layout.preferredHeight:" not in delegate.split("waveformSurface")[0] or True
     # Waveform layout height stays density token — scale is transform-only.
     assert "Layout.preferredHeight: window.densityWaveformHeight" in delegate

@@ -5223,7 +5223,19 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         color: theme.surfaceRoot
-                        ListView { id: browser; objectName: "browserList"; anchors.fill: parent; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
+                        ListView {
+                        id: browser
+                        objectName: "browserList"
+                        anchors.fill: parent
+                        model: window.screenData.browserRows
+                        clip: true
+                        reuseItems: true
+                        focus: true
+                        property int rowHeight: window.densityRowHeight
+                        // #1285: one owner row expands in-place; ordinary Browser rows keep compact density.
+                        property int loopOwnerRowHeight: 112
+                        property int waveformPrefetchMargin: 2
+                        implicitHeight: window.densityRowHeight * 2
                         // #1281: presentation-only waveform hover (not product state).
                         property int hoveredWaveformIndex: -1
                         property bool hoverScrollSuppressing: false
@@ -5237,17 +5249,42 @@ ApplicationWindow {
                         onMovementEnded: browserHoverSettleTimer.restart()
                         onFlickStarted: { hoverScrollSuppressing = true; browserHoverSettleTimer.stop() }
                         onFlickEnded: browserHoverSettleTimer.restart()
+                        function visibleIndexNear(viewportY, direction) {
+                            if (width <= 0 || height <= 0 || window.screenData.browserRows.length <= 0)
+                                return -1
+                            var baseY = contentY + Math.max(0, Math.min(height - 1, viewportY))
+                            var probeX = Math.max(1, width * 0.5)
+                            var stride = Math.max(1, Math.floor(rowHeight / 4))
+                            var budget = Math.max(rowHeight, 32)
+                            for (var delta = 0; delta <= budget; delta += stride) {
+                                var found = indexAt(probeX, baseY + direction * delta)
+                                if (found >= 0)
+                                    return found
+                            }
+                            return indexAt(probeX, contentY + height * 0.5)
+                        }
+                        // Cached presentation diagnostics; recomputed from actual delegate geometry.
+                        property int waveformFirstVisibleIndex: -1
+                        property int waveformLastVisibleIndex: -1
                         function requestVisibleWaveforms() {
-                            if (rowHeight <= 0 || height <= 0)
+                            var first = visibleIndexNear(1, 1)
+                            if (first < 0)
                                 return
-                            window.interaction.requestWaveforms(
-                                Math.max(0, Math.floor(contentY / rowHeight)),
-                                Math.ceil(height / rowHeight) + 2
+                            var last = visibleIndexNear(Math.max(1, height - 2), -1)
+                            if (last < first)
+                                last = first
+                            waveformFirstVisibleIndex = first
+                            waveformLastVisibleIndex = last
+                            var endExclusive = Math.min(
+                                window.screenData.browserRows.length,
+                                last + 1 + waveformPrefetchMargin
                             )
+                            window.interaction.requestWaveforms(first, Math.max(1, endExclusive - first))
                         }
                         Component.onCompleted: Qt.callLater(requestVisibleWaveforms)
                         onContentYChanged: requestVisibleWaveforms()
                         onHeightChanged: requestVisibleWaveforms()
+                        onContentHeightChanged: Qt.callLater(requestVisibleWaveforms)
                         onModelChanged: Qt.callLater(requestVisibleWaveforms)
                         Keys.onPressed: function(event) {
                             if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
@@ -5260,7 +5297,15 @@ ApplicationWindow {
                                 }
                             }
                         }
-                        delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : "transparent"; border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
+                        delegate: Rectangle {
+                            id: browserRow
+                            width: browser.width
+                            readonly property bool isLoopOwner: window.interaction.browserLoopActive
+                                && (("" + modelData.path) === ("" + window.interaction.browserLoopOwnerPath))
+                            height: browserRow.isLoopOwner ? browser.loopOwnerRowHeight : browser.rowHeight
+                            color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : "transparent"
+                            border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0
+                            border.color: theme.selectionBorder
                             // #1281: freeze logical index for pool clear (index may change on reuse).
                             property int logicalIndex: index
                             Component.onCompleted: window.browserDelegateCreations += 1
@@ -5339,7 +5384,10 @@ ApplicationWindow {
                                     if (dragActive)
                                         return
                                     browser.forceActiveFocus()
-                                    window.interaction.selectRow(index)
+                                    if (browserRow.isLoopOwner)
+                                        window.interaction.previewRow(index)
+                                    else
+                                        window.interaction.selectRow(index)
                                 }
                                 // #1210: stable row-family hint (no row identity); leave restores selection context.
                                 // #1281: row pointer drives waveform-hover index only (presentation).
@@ -5365,12 +5413,105 @@ ApplicationWindow {
                             ListView.onReused: {
                                 browserRow.logicalIndex = index
                             }
-                            RowLayout { id: rowBody; anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
+                            Item {
+                                id: loopInlineSurface
+                                objectName: "browserLoopInlineSurface"
+                                visible: browserRow.isLoopOwner
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                anchors.leftMargin: window.densityHorizontalInset
+                                anchors.rightMargin: window.densityHorizontalInset
+                                anchors.topMargin: 8
+                                anchors.bottomMargin: 8
+                                z: 2
+                                Item {
+                                    id: loopInlineWaveform
+                                    objectName: "browserLoopInlineWaveform"
+                                    anchors.fill: parent
+                                    Canvas {
+                                        id: loopInlineWaveformCanvas
+                                        anchors.fill: parent
+                                        property var envelope: modelData.waveform
+                                        onEnvelopeChanged: requestPaint()
+                                        onPaint: {
+                                            var context = getContext("2d")
+                                            context.clearRect(0, 0, width, height)
+                                            context.strokeStyle = theme.waveformActive
+                                            context.lineWidth = 1.4
+                                            context.beginPath()
+                                            var points = envelope || []
+                                            var center = height / 2
+                                            if (points.length === 0) {
+                                                context.moveTo(0, center)
+                                                context.lineTo(width, center)
+                                            } else {
+                                                var step = width / points.length
+                                                for (var point = 0; point < points.length; point++) {
+                                                    var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
+                                                    var x = Math.min(width, point * step + step / 2)
+                                                    var amplitude = Math.max(1, height * 0.38 * value)
+                                                    context.moveTo(x, center - amplitude)
+                                                    context.lineTo(x, center + amplitude)
+                                                }
+                                            }
+                                            context.stroke()
+                                        }
+                                    }
+                                    Repeater {
+                                        model: window.interaction.browserLoopBarPositions
+                                        Rectangle {
+                                            width: 1
+                                            height: loopInlineWaveform.height
+                                            x: Math.round(Math.max(0, Math.min(1, Number(modelData) || 0)) * Math.max(0, loopInlineWaveform.width - width))
+                                            color: theme.dividerDefault
+                                            opacity: 0.42
+                                        }
+                                    }
+                                    Rectangle {
+                                        id: loopInlinePlayhead
+                                        objectName: "browserLoopInlinePlayhead"
+                                        width: 2
+                                        height: parent.height
+                                        color: theme.textPrimary
+                                        opacity: 0.9
+                                        visible: window.interaction.browserLoopPlaybackAvailable
+                                        x: Math.round(
+                                            Math.max(0, Math.min(1, window.interaction.browserLoopProgress))
+                                            * Math.max(0, parent.width - width)
+                                        )
+                                    }
+                                }
+                                Label {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.leftMargin: 8
+                                    anchors.topMargin: 5
+                                    text: modelData.name
+                                    color: theme.textPrimary
+                                    opacity: 0.88
+                                    font.pixelSize: window.textBody
+                                    elide: Text.ElideRight
+                                    width: Math.max(80, parent.width - 96)
+                                }
+                                Label {
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.rightMargin: 8
+                                    anchors.topMargin: 5
+                                    text: "LOOP"
+                                    color: theme.actionActive
+                                    opacity: 0.78
+                                    font.pixelSize: window.textCaption
+                                }
+                            }
+                            RowLayout { id: rowBody; visible: !browserRow.isLoopOwner; anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
                                 Item { id: waveformSurface; objectName: "browserWaveformSurface"; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
                                     // #1281: transform/presentation only — layout height stays densityWaveformHeight.
                                     property int rowIndex: index
-                                    readonly property bool isPrimaryHover: browser.hoveredWaveformIndex === index
-                                    readonly property bool isNeighbourHover: browser.hoveredWaveformIndex >= 0 && Math.abs(index - browser.hoveredWaveformIndex) === 1
+                                    readonly property bool isPrimaryHover: !browserRow.isLoopOwner && browser.hoveredWaveformIndex === index
+                                    readonly property bool isNeighbourHover: !browserRow.isLoopOwner && browser.hoveredWaveformIndex >= 0 && Math.abs(index - browser.hoveredWaveformIndex) === 1
                                     readonly property string waveformHoverRole: isPrimaryHover ? "primary" : (isNeighbourHover ? "neighbour" : "none")
                                     readonly property bool waveformHoverLuminanceActive: isPrimaryHover || isNeighbourHover
                                     readonly property real waveformHoverScale: {

@@ -20,7 +20,7 @@ from src.workbench_qml import QML_SOURCE
 # Hex color literals in QML (not issue markers like "#846").
 _HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 
-BROWSER_ROW_DELEGATE_MARKER = "delegate: Rectangle { id: browserRow"
+BROWSER_ROW_DELEGATE_MARKER = "id: browserRow"
 # Span the full row delegate (through the bottom horizontal divider) but stop
 # before the panel resize handle, so panel-resize (layoutModel) code never leaks
 # into delegate assertions. Derive the span from elasticHandleAfterBrowser.
@@ -86,7 +86,7 @@ def _full_browser_column_header(source: str) -> str:
     marker = source.index(COLUMN_HEADER_MARKER)
     start = source.rfind("RowLayout { Layout.fillWidth: true", 0, marker)
     assert start != -1, "Spalten-Header-RowLayout fehlt"
-    end = source.index("ListView { id: browser", marker)
+    end = source.index('objectName: "browserList"', marker)
     return source[start:end]
 
 
@@ -188,7 +188,7 @@ def test_browser_density_waveform_and_divider_invariants():
     assert "property int browserRowHeight:" not in QML_SOURCE
 
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
-    assert "height: browser.rowHeight" in delegate
+    assert "height: browserRow.isLoopOwner ? browser.loopOwnerRowHeight : browser.rowHeight" in delegate
     assert "property int rowHeight: window.densityRowHeight" in QML_SOURCE
     assert "Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth" in delegate
     assert "height: window.densityDividerHeight" in delegate
@@ -226,7 +226,9 @@ def test_browser_shared_column_spec_uses_single_definition_each():
 
 
 def test_browser_intent_keyboard_and_virtualization_contracts_preserved():
-    assert QML_SOURCE.count("previewRow(index)") == 1
+    # #1285 adds one whole-row audition route for the expanded Loop owner;
+    # ordinary waveform audition remains the original route.
+    assert QML_SOURCE.count("previewRow(index)") == 2
     assert QML_SOURCE.count("toggleFavorite(index)") == 1
     # #840: Browser Add-to-Kit is context-menu only (no visible row addToKit route).
     assert "window.interaction.addToKit(index)" not in QML_SOURCE
@@ -629,7 +631,7 @@ def test_browser_column_resize_reuses_shared_header_row_geometry():
         assert QML_SOURCE.count(f"browserPane.{role}") >= 2
     # Virtualization and existing row intents remain intact alongside resize.
     assert QML_SOURCE.count("reuseItems: true") == 2
-    assert QML_SOURCE.count("previewRow(index)") == 1
+    assert QML_SOURCE.count("previewRow(index)") == 2
     assert QML_SOURCE.count("toggleFavorite(index)") == 1
     # #840: no visible Browser row Add-to-Kit; context menu owns the route.
     assert "window.interaction.addToKit(index)" not in QML_SOURCE

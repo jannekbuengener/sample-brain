@@ -306,3 +306,43 @@ def test_1285_bridge_context_loop_toggle_returns_success_and_projects_status() -
     assert bridge.contextLoopToggle() is True
     assert loop.owner_row is row_b
     assert bridge.property("browserLoopContextStatus") == ""
+
+
+
+def _browser_block() -> str:
+    source = qml.QML_SOURCE
+    start = source.index('objectName: "browserList"')
+    end = source.index('objectName: "elasticHandleAfterBrowser"', start)
+    return source[start:end]
+
+
+def test_1285_inline_loop_owner_is_path_bound_and_materially_expands_only_owner_row() -> None:
+    browser = _browser_block()
+    assert "isLoopOwner" in browser
+    assert "browserLoopOwnerPath" in browser
+    assert 'modelData.path' in browser
+    assert "property int loopOwnerRowHeight" in browser
+    assert "height: browserRow.isLoopOwner ? browser.loopOwnerRowHeight : browser.rowHeight" in browser
+    assert "height =" not in browser.split("delegate: Rectangle", 1)[1].split("RowLayout", 1)[0]
+
+
+def test_1285_inline_loop_surface_is_nearly_full_width_and_recedes_ordinary_metadata() -> None:
+    browser = _browser_block()
+    assert 'objectName: "browserLoopInlineSurface"' in browser
+    assert 'objectName: "browserLoopInlineWaveform"' in browser
+    assert "anchors.left: parent.left" in browser
+    assert "anchors.right: parent.right" in browser
+    assert "browserLoopBarPositions" in browser
+    assert "visible: !browserRow.isLoopOwner" in browser
+    assert "bpmCell" in browser and "keyCell" in browser and "lengthCell" in browser and "typeCell" in browser
+    inline_start = browser.index('objectName: "browserLoopInlineSurface"')
+    inline_end = browser.index("RowLayout", inline_start)
+    inline = browser[inline_start:inline_end]
+    assert "BPM" not in inline and "KEY" not in inline and "LENGTH" not in inline and "TYPE" not in inline
+    assert "Arrangement" not in inline and "Timeline" not in inline and "Pattern" not in inline
+
+
+def test_1285_inline_loop_owner_does_not_use_ordinary_hover_scale_or_luminance() -> None:
+    browser = _browser_block()
+    assert "!browserRow.isLoopOwner && browser.hoveredWaveformIndex === index" in browser
+    assert "!browserRow.isLoopOwner && browser.hoveredWaveformIndex >= 0" in browser
