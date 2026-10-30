@@ -1004,6 +1004,7 @@ class Screen1QmlInteractionAdapter:
             self._HARMONIC_CLOSE_SELECTION_UNSET
         )
         self._waveform_motion_mode = "on"
+        self._session_transport: object | None = None
         self._gesture_rack_apply_enabled = False
         # #1121 projection only: #1070 remains the single layout/lock owner.
         self._workspace_panel_docking_enabled = False
@@ -1533,6 +1534,102 @@ class Screen1QmlInteractionAdapter:
         if hasattr(self.view_model, "set_brand_motion_mode"):
             self.view_model.set_brand_motion_mode(normalized)
         return self._waveform_motion_mode
+
+    def list_audio_output_devices(self) -> list[dict[str, object]]:
+        """Return playback devices for Display Preferences (#1209).
+
+        Always prefixes a System default entry (empty id). Enumeration failures
+        degrade to that single entry so preferences stay usable.
+        """
+        devices: list[dict[str, object]] = [
+            {
+                "id": "",
+                "name": "System default",
+                "is_default": True,
+            }
+        ]
+        try:
+            from . import native_audio
+
+            if not native_audio.is_available():
+                return devices
+            enumerated = native_audio.NativeAudioEngine.enumerate_devices(False)
+        except Exception:
+            return devices
+        for item in enumerated or []:
+            device_id = str(item.get("id_hex") or "")
+            name = str(item.get("name") or "").strip() or "Unnamed device"
+            if len(device_id) != 512:
+                continue
+            devices.append(
+                {
+                    "id": device_id,
+                    "name": name,
+                    "is_default": bool(item.get("is_default")),
+                }
+            )
+        return devices
+
+    def preferred_audio_output_device_id(self) -> str:
+        from .workbench_audio_output import load_workbench_audio_output_settings
+
+        return str(
+            load_workbench_audio_output_settings().preferred_output_device_id or ""
+        )
+
+    def preferred_audio_output_device_name(self) -> str:
+        from .workbench_audio_output import load_workbench_audio_output_settings
+
+        settings = load_workbench_audio_output_settings()
+        device_id = str(settings.preferred_output_device_id or "")
+        if not device_id:
+            return "System default"
+        name = str(settings.preferred_output_device_name or "").strip()
+        return name or "Selected device"
+
+    def set_preferred_audio_output_device(
+        self,
+        device_id: str,
+        device_name: str = "",
+        *,
+        transport: object | None = None,
+    ) -> str:
+        """Persist preferred render device and reopen owned native engine (#1209)."""
+        from .workbench_audio_output import (
+            WorkbenchAudioOutputSettings,
+            save_workbench_audio_output_settings,
+        )
+
+        normalized_id = str(device_id or "").strip()
+        normalized_name = str(device_name or "").strip()
+        if normalized_id and len(normalized_id) != 512:
+            return self.preferred_audio_output_device_id()
+        if not normalized_id:
+            normalized_name = ""
+        saved = save_workbench_audio_output_settings(
+            WorkbenchAudioOutputSettings(
+                preferred_output_device_id=normalized_id,
+                preferred_output_device_name=normalized_name,
+            )
+        )
+        if not saved:
+            return self.preferred_audio_output_device_id()
+        # Release audition ownership against the still-live engine before reopen
+        # destroys native voices (#1209 Codex finding).
+        try:
+            self.quiet_audition()
+        except Exception:
+            pass
+        engine_transport = transport
+        if engine_transport is None:
+            engine_transport = getattr(self, "_session_transport", None)
+        reopen = getattr(engine_transport, "reopen_native_output_device", None)
+        if callable(reopen):
+            try:
+                reopen()
+            except Exception:
+                pass
+        return normalized_id
 
     @property
     def gesture_rack_apply_enabled(self) -> bool:
@@ -3584,6 +3681,22 @@ ApplicationWindow {
                                 onClicked: window.interaction.setWaveformMotionMode("off")
                             }
                         }
+                        Label {
+                            text: "Audition output"
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                        ComboBox {
+                            id: audioOutputDeviceCombo
+                            objectName: "audioOutputDeviceCombo"
+                            Layout.fillWidth: true
+                            model: window.interaction.audioOutputDeviceNames
+                            currentIndex: window.interaction.preferredAudioOutputDeviceIndex
+                            onActivated: function(index) {
+                                window.interaction.setPreferredAudioOutputDeviceByIndex(index)
+                            }
+                            Accessible.name: "Audition output device"
+                        }
                         Label { text: "Functional"; color: theme.textSecondary; font.pixelSize: 11 }
                         Button {
                             id: gestureRackApplyToggle
@@ -5594,6 +5707,20 @@ ApplicationWindow {
                                 property bool dragActive: false
                                 property real pressX: 0
                                 property real pressY: 0
+                                // #1281: nested waveform/favorite MouseAreas steal hover from this
+                                // row fill area. Keep hoveredWaveformIndex while ANY row pointer
+                                // owner still contains the mouse (no clear on child enter).
+                                function pointerOwnsWaveformHover() {
+                                    return rowSelection.containsMouse
+                                        || waveformHover.containsMouse
+                                        || favoriteMouseArea.containsMouse
+                                }
+                                function refreshHoveredWaveformFromPointer() {
+                                    if (pointerOwnsWaveformHover())
+                                        browser.setHoveredWaveform(index)
+                                    else
+                                        browser.clearHoveredWaveform(index)
+                                }
                                 onPressed: function(mouse) {
                                     if (mouse.button === Qt.RightButton)
                                         return
@@ -5641,11 +5768,11 @@ ApplicationWindow {
                                 // #1281: row pointer drives waveform-hover index only (presentation).
                                 onEntered: {
                                     contextHintState.reportHover("browser.sample_row")
-                                    browser.setHoveredWaveform(index)
+                                    refreshHoveredWaveformFromPointer()
                                 }
                                 onExited: {
                                     contextHintState.clearHover("browser.sample_row")
-                                    browser.clearHoveredWaveform(index)
+                                    refreshHoveredWaveformFromPointer()
                                 }
                             }
                             ListView.onPooled: {
@@ -5795,77 +5922,83 @@ ApplicationWindow {
                                             return 0
                                         return isPrimaryHover ? -2 : -1
                                     }
-                                    transform: [
-                                        Scale {
-                                            origin.x: waveformSurface.width / 2
-                                            origin.y: waveformSurface.height / 2
-                                            xScale: waveformSurface.waveformHoverScale
-                                            yScale: waveformSurface.waveformHoverScale
-                                        },
-                                        Translate { y: waveformSurface.waveformHoverLiftY }
-                                    ]
-                                    Rectangle {
+                                    // #1281 H2: keep hover/hit MouseArea untransformed. Scale/lift
+                                    // only the visual layer so geometry under the pointer stays put.
+                                    Item {
+                                        id: waveformVisualLayer
                                         anchors.fill: parent
-                                        radius: 5
-                                        z: -1
-                                        visible: waveformSurface.waveformHoverLuminanceActive && !browser.hoverScrollSuppressing
-                                        color: theme.hoverSurface
-                                        opacity: waveformSurface.isPrimaryHover ? 0.55 : 0.28
-                                    }
-                                    Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
-                                        property bool waveformSelected: index === window.screenData.selectedBrowserIndex
-                                        property string hoverRole: waveformSurface.waveformHoverRole
-                                        property bool scrollQuiet: browser.hoverScrollSuppressing
-                                        onEnvelopeChanged: requestPaint()
-                                        onWaveformSelectedChanged: requestPaint()
-                                        onHoverRoleChanged: requestPaint()
-                                        onScrollQuietChanged: requestPaint()
-                                        onPaint: {
-                                            var context = getContext("2d")
-                                            context.clearRect(0, 0, width, height)
-                                            // Keep selected ternary for paint contracts; hover only retints non-selected.
-                                            var stroke = waveformSelected ? theme.waveformActive : theme.waveformDefault
-                                            if (!waveformSelected && hoverRole === "primary" && !scrollQuiet)
-                                                stroke = theme.textSecondary
-                                            else if (!waveformSelected && hoverRole === "neighbour" && !scrollQuiet)
-                                                stroke = theme.textMuted
-                                            else if (!waveformSelected && (hoverRole === "primary" || hoverRole === "neighbour"))
-                                                stroke = theme.waveformDefault
-                                            context.strokeStyle = stroke
-                                            context.lineWidth = 1.2
-                                            context.beginPath()
-                                            var points = envelope || []
-                                            var center = height / 2
-                                            if (points.length === 0) {
-                                                context.moveTo(0, center)
-                                                context.lineTo(width, center)
-                                            } else {
-                                                var step = width / points.length
-                                                for (var point = 0; point < points.length; point++) {
-                                                    var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
-                                                    var x = Math.min(width, point * step + step / 2)
-                                                    var amplitude = Math.max(1, height * 0.42 * value)
-                                                    context.moveTo(x, center - amplitude)
-                                                    context.lineTo(x, center + amplitude)
-                                                }
-                                            }
-                                            context.stroke()
+                                        transform: [
+                                            Scale {
+                                                origin.x: waveformVisualLayer.width / 2
+                                                origin.y: waveformVisualLayer.height / 2
+                                                xScale: waveformSurface.waveformHoverScale
+                                                yScale: waveformSurface.waveformHoverScale
+                                            },
+                                            Translate { y: waveformSurface.waveformHoverLiftY }
+                                        ]
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 5
+                                            z: -1
+                                            visible: waveformSurface.waveformHoverLuminanceActive && !browser.hoverScrollSuppressing
+                                            color: theme.hoverSurface
+                                            opacity: waveformSurface.isPrimaryHover ? 0.55 : 0.28
                                         }
-                                    }
-                                    Rectangle {
-                                        id: browserPreviewPlayhead
-                                        objectName: "previewPlayhead"
-                                        width: 2
-                                        height: parent ? parent.height : 0
-                                        color: theme.textPrimary
-                                        z: 3
-                                        visible: window.previewPlayheadArmed && parent
-                                            && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
-                                        x: {
-                                            if (!parent)
-                                                return 0
-                                            var span = Math.max(0, parent.width - width)
-                                            return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
+                                        Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
+                                            property bool waveformSelected: index === window.screenData.selectedBrowserIndex
+                                            property string hoverRole: waveformSurface.waveformHoverRole
+                                            property bool scrollQuiet: browser.hoverScrollSuppressing
+                                            onEnvelopeChanged: requestPaint()
+                                            onWaveformSelectedChanged: requestPaint()
+                                            onHoverRoleChanged: requestPaint()
+                                            onScrollQuietChanged: requestPaint()
+                                            onPaint: {
+                                                var context = getContext("2d")
+                                                context.clearRect(0, 0, width, height)
+                                                // Keep selected ternary for paint contracts; hover only retints non-selected.
+                                                var stroke = waveformSelected ? theme.waveformActive : theme.waveformDefault
+                                                if (!waveformSelected && hoverRole === "primary" && !scrollQuiet)
+                                                    stroke = theme.textSecondary
+                                                else if (!waveformSelected && hoverRole === "neighbour" && !scrollQuiet)
+                                                    stroke = theme.textMuted
+                                                else if (!waveformSelected && (hoverRole === "primary" || hoverRole === "neighbour"))
+                                                    stroke = theme.waveformDefault
+                                                context.strokeStyle = stroke
+                                                context.lineWidth = 1.2
+                                                context.beginPath()
+                                                var points = envelope || []
+                                                var center = height / 2
+                                                if (points.length === 0) {
+                                                    context.moveTo(0, center)
+                                                    context.lineTo(width, center)
+                                                } else {
+                                                    var step = width / points.length
+                                                    for (var point = 0; point < points.length; point++) {
+                                                        var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
+                                                        var x = Math.min(width, point * step + step / 2)
+                                                        var amplitude = Math.max(1, height * 0.42 * value)
+                                                        context.moveTo(x, center - amplitude)
+                                                        context.lineTo(x, center + amplitude)
+                                                    }
+                                                }
+                                                context.stroke()
+                                            }
+                                        }
+                                        Rectangle {
+                                            id: browserPreviewPlayhead
+                                            objectName: "previewPlayhead"
+                                            width: 2
+                                            height: parent ? parent.height : 0
+                                            color: theme.textPrimary
+                                            z: 3
+                                            visible: window.previewPlayheadArmed && parent
+                                                && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
+                                            x: {
+                                                if (!parent)
+                                                    return 0
+                                                var span = Math.max(0, parent.width - width)
+                                                return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
+                                            }
                                         }
                                     }
                                     MouseArea {
@@ -5875,11 +6008,13 @@ ApplicationWindow {
                                         hoverEnabled: true
                                         onEntered: {
                                             contextHintState.reportHover("browser.audition")
+                                            rowSelection.refreshHoveredWaveformFromPointer()
                                         }
                                         onExited: {
                                             contextHintState.clearHover("browser.audition")
                                             if (rowSelection.containsMouse)
                                                 contextHintState.reportHover("browser.sample_row")
+                                            rowSelection.refreshHoveredWaveformFromPointer()
                                         }
                                         onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) }
                                     }
@@ -5908,11 +6043,15 @@ ApplicationWindow {
                                         id: favoriteMouseArea
                                         anchors.fill: parent
                                         hoverEnabled: true
-                                        onEntered: contextHintState.reportHover("browser.favorite")
+                                        onEntered: {
+                                            contextHintState.reportHover("browser.favorite")
+                                            rowSelection.refreshHoveredWaveformFromPointer()
+                                        }
                                         onExited: {
                                             contextHintState.clearHover("browser.favorite")
                                             if (rowSelection.containsMouse)
                                                 contextHintState.reportHover("browser.sample_row")
+                                            rowSelection.refreshHoveredWaveformFromPointer()
                                         }
                                         onClicked: {
                                             browser.forceActiveFocus()
@@ -7926,6 +8065,37 @@ def _qml_interaction_bridge(
                 )
             except OSError:
                 pass
+            self._refresh()
+
+        @Property(list, notify=state_changed)
+        def audioOutputDeviceNames(self) -> list:
+            return [
+                str(item.get("name") or "")
+                for item in adapter.list_audio_output_devices()
+            ]
+
+        @Property(int, notify=state_changed)
+        def preferredAudioOutputDeviceIndex(self) -> int:
+            preferred = adapter.preferred_audio_output_device_id()
+            devices = adapter.list_audio_output_devices()
+            for index, item in enumerate(devices):
+                if str(item.get("id") or "") == preferred:
+                    return int(index)
+            return 0
+
+        @Slot(int)
+        def setPreferredAudioOutputDeviceByIndex(self, index: int) -> None:
+            devices = adapter.list_audio_output_devices()
+            try:
+                selected = devices[int(index)]
+            except (IndexError, TypeError, ValueError):
+                selected = devices[0] if devices else {"id": "", "name": "System default"}
+            transport = getattr(adapter, "_session_transport", None)
+            adapter.set_preferred_audio_output_device(
+                str(selected.get("id") or ""),
+                str(selected.get("name") or ""),
+                transport=transport,
+            )
             self._refresh()
 
         @Property(bool, notify=state_changed)
@@ -10455,6 +10625,7 @@ def _qml_engine(
         # Keep the caller-provided view_model as the renderer surface while
         # reusing the session-owned kit + TransportAwarePreview audition.
         adapter.view_model = view_model
+        adapter._session_transport = session_transport
         view_model.live_kit_groups = live_kit.groups
         view_model.auditioning_live_kit_slot = adapter.auditioning_live_kit_slot
     else:
