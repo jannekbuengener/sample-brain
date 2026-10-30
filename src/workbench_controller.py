@@ -1438,11 +1438,14 @@ def workbench_scope_requires_refresh(
             return False
         cached = load_folder_samples(folder_path, db_path=db)
     for row in cached:
-        if row.analyzer_version == WORKBENCH_ANALYZER_VERSION:
-            continue
         if not os.path.isfile(row.original_path):
             continue
-        return True
+        if row.analyzer_version != WORKBENCH_ANALYZER_VERSION:
+            return True
+        # #1220: Length was previously dropped on cache reload. Rows analyzed
+        # before duration_sec persistence still need one refresh when on disk.
+        if row.status == "ok" and getattr(row, "duration_sec", None) is None:
+            return True
     return False
 
 

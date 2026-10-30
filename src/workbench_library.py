@@ -22,7 +22,7 @@ from typing import Any, Iterable, Iterator, Literal, Mapping, Sequence
 # BPM/Key/brightness absent under workbench_v2) miss the sticky cache and are
 # re-analyzed by the existing refresh contract. Not a new analyzer algorithm.
 WORKBENCH_ANALYZER_VERSION = "workbench_v3"
-WORKBENCH_LIBRARY_SCHEMA_VERSION = 6
+WORKBENCH_LIBRARY_SCHEMA_VERSION = 7
 WAVEFORM_ARTIFACT_VERSION = "waveform_envelope_v1"
 WAVEFORM_POINT_BUDGET = 96
 _LIBRARY_DB_NAME = "workbench_library.db"
@@ -71,6 +71,7 @@ _SAMPLES_CREATE_SQL = """
                 cue_updated_at TEXT DEFAULT NULL,
                 loop_source TEXT DEFAULT NULL,
                 attack_source TEXT DEFAULT NULL,
+                duration_sec REAL DEFAULT NULL,
                 FOREIGN KEY(folder_id) REFERENCES folders(id)
             );
 """
@@ -421,6 +422,7 @@ def init_workbench_library(db_path: Path | None = None) -> None:
         _migrate_library_schema_v4(conn)
         _migrate_library_schema_v5(conn)
         _migrate_library_schema_v6(conn)
+        _migrate_library_schema_v7(conn)
         conn.commit()
 
 
@@ -552,6 +554,15 @@ def _migrate_library_schema_v6(conn: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def _migrate_library_schema_v7(conn: sqlite3.Connection) -> None:
+    """Persist analyzed duration for Browser Length after cache reload (#1220)."""
+    columns = _sample_table_columns(conn)
+    if not columns:
+        return
+    if "duration_sec" not in columns:
+        conn.execute("ALTER TABLE samples ADD COLUMN duration_sec REAL DEFAULT NULL")
 
 
 def _normalize_favorite_sample_path(sample_path: Path | str) -> str:
@@ -1294,6 +1305,7 @@ class CachedWorkbenchRow:
     analyzed_at: str | None = None
     analyzer_version: str | None = None
     library_folder_path: str | None = None
+    duration_sec: float | None = None
 
     def to_workbench_row(self) -> Any:
         from .workbench_controller import WorkbenchRow, error_message_for_code
@@ -1305,6 +1317,8 @@ class CachedWorkbenchRow:
             "source_size_bytes": self.size_bytes,
             "source_mtime_ns": self.mtime_ns,
         }
+        if self.duration_sec is not None:
+            details["duration_sec"] = self.duration_sec
         if self.library_folder_path:
             details["library_folder"] = self.library_folder_path
         if self.error_code:
@@ -1352,6 +1366,18 @@ def _cached_row_from_sqlite_row(
     if folder_path is None and "library_folder_path" in row.keys():
         folder_path = row["library_folder_path"]
     original_path = row["original_path"]
+    duration_sec = None
+    if "duration_sec" in row.keys():
+        raw_duration = row["duration_sec"]
+        if raw_duration is not None:
+            try:
+                duration_sec = float(raw_duration)
+            except (TypeError, ValueError):
+                duration_sec = None
+            if duration_sec is not None and (
+                not math.isfinite(duration_sec) or duration_sec < 0
+            ):
+                duration_sec = None
     return CachedWorkbenchRow(
         original_path=original_path,
         relative_path=row["relative_path"] or "",
@@ -1372,6 +1398,7 @@ def _cached_row_from_sqlite_row(
         analyzed_at=row["analyzed_at"],
         analyzer_version=row["analyzer_version"],
         library_folder_path=folder_path,
+        duration_sec=duration_sec,
     )
 
 
@@ -1567,28 +1594,21 @@ def lookup_sample(
         ).fetchone()
     if row is None:
         return None
-    tags_raw = row["tags"]
-    tags = json.loads(tags_raw) if tags_raw else None
-    return CachedWorkbenchRow(
-        original_path=row["original_path"],
-        relative_path=row["relative_path"] or "",
-        display_name=row["display_name"] or PurePath(path).name,
-        size_bytes=int(row["size_bytes"]),
-        mtime_ns=int(row["mtime_ns"]),
-        bpm=row["bpm"],
-        key=row["key"],
-        key_conf=row["key_conf"],
-        loudness=row["loudness"],
-        brightness=row["brightness"],
-        sample_class=row["sample_class"],
-        pred_type=row["pred_type"],
-        status=row["status"] or "ok",
-        error_code=row["error_code"],
-        quality_note=row["quality_note"],
-        tags=tags,
-        analyzed_at=row["analyzed_at"],
-        analyzer_version=row["analyzer_version"],
-    )
+    return _cached_row_from_sqlite_row(row)
+
+
+def _duration_sec_from_workbench_row(row: Any) -> float | None:
+    details = getattr(row, "details", None) or {}
+    raw = details.get("duration_sec", details.get("duration"))
+    if raw is None or raw == "":
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value) or value < 0:
+        return None
+    return value
 
 
 def upsert_sample(
@@ -1611,6 +1631,7 @@ def upsert_sample(
     quality_note = row.details.get("short_audio_warning")
     if row.status == "error":
         quality_note = row.details.get("error_detail") or quality_note
+    duration_sec = _duration_sec_from_workbench_row(row)
 
     init_workbench_library(db_path)
     with connect_workbench_library(db_path) as conn:
@@ -1620,12 +1641,12 @@ def upsert_sample(
                 folder_id, original_path, relative_path, size_bytes, mtime_ns,
                 display_name, bpm, key, key_conf, loudness, brightness,
                 sample_class, pred_type, status, error_code, quality_note,
-                tags, analyzed_at, analyzer_version
+                tags, analyzed_at, analyzer_version, duration_sec
             ) VALUES (
                 ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?,
-                ?, ?, ?
+                ?, ?, ?, ?
             )
             ON CONFLICT(original_path) DO UPDATE SET
                 folder_id=excluded.folder_id,
@@ -1645,7 +1666,8 @@ def upsert_sample(
                 quality_note=excluded.quality_note,
                 tags=excluded.tags,
                 analyzed_at=excluded.analyzed_at,
-                analyzer_version=excluded.analyzer_version
+                analyzer_version=excluded.analyzer_version,
+                duration_sec=excluded.duration_sec
             """,
             (
                 folder_id,
@@ -1667,6 +1689,7 @@ def upsert_sample(
                 json.dumps(tags) if tags else None,
                 _utc_now_iso(),
                 analyzer_version,
+                duration_sec,
             ),
         )
         conn.commit()

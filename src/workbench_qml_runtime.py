@@ -360,8 +360,14 @@ class Screen1QmlRuntimeComposition:
                 return None
         if self.browser_state.scope == scope and self.browser_state.error is None:
             needs_refresh = any(
-                row.details.get("analyzer_version") != WORKBENCH_ANALYZER_VERSION
-                and Path(row.path).is_file()
+                Path(row.path).is_file()
+                and (
+                    row.details.get("analyzer_version") != WORKBENCH_ANALYZER_VERSION
+                    or (
+                        row.status == "ok"
+                        and row.details.get("duration_sec") in (None, "")
+                    )
+                )
                 for row in self.browser_state.rows
             )
         else:
