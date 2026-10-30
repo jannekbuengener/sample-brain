@@ -1004,6 +1004,7 @@ class Screen1QmlInteractionAdapter:
             self._HARMONIC_CLOSE_SELECTION_UNSET
         )
         self._waveform_motion_mode = "on"
+        self._session_transport: object | None = None
         self._gesture_rack_apply_enabled = False
         # #1121 projection only: #1070 remains the single layout/lock owner.
         self._workspace_panel_docking_enabled = False
@@ -1533,6 +1534,96 @@ class Screen1QmlInteractionAdapter:
         if hasattr(self.view_model, "set_brand_motion_mode"):
             self.view_model.set_brand_motion_mode(normalized)
         return self._waveform_motion_mode
+
+    def list_audio_output_devices(self) -> list[dict[str, object]]:
+        """Return playback devices for Display Preferences (#1209).
+
+        Always prefixes a System default entry (empty id). Enumeration failures
+        degrade to that single entry so preferences stay usable.
+        """
+        devices: list[dict[str, object]] = [
+            {
+                "id": "",
+                "name": "System default",
+                "is_default": True,
+            }
+        ]
+        try:
+            from . import native_audio
+
+            if not native_audio.is_available():
+                return devices
+            enumerated = native_audio.NativeAudioEngine.enumerate_devices(False)
+        except Exception:
+            return devices
+        for item in enumerated or []:
+            device_id = str(item.get("id_hex") or "")
+            name = str(item.get("name") or "").strip() or "Unnamed device"
+            if len(device_id) != 512:
+                continue
+            devices.append(
+                {
+                    "id": device_id,
+                    "name": name,
+                    "is_default": bool(item.get("is_default")),
+                }
+            )
+        return devices
+
+    def preferred_audio_output_device_id(self) -> str:
+        from .workbench_audio_output import load_workbench_audio_output_settings
+
+        return str(
+            load_workbench_audio_output_settings().preferred_output_device_id or ""
+        )
+
+    def preferred_audio_output_device_name(self) -> str:
+        from .workbench_audio_output import load_workbench_audio_output_settings
+
+        settings = load_workbench_audio_output_settings()
+        device_id = str(settings.preferred_output_device_id or "")
+        if not device_id:
+            return "System default"
+        name = str(settings.preferred_output_device_name or "").strip()
+        return name or "Selected device"
+
+    def set_preferred_audio_output_device(
+        self,
+        device_id: str,
+        device_name: str = "",
+        *,
+        transport: object | None = None,
+    ) -> str:
+        """Persist preferred render device and reopen owned native engine (#1209)."""
+        from .workbench_audio_output import (
+            WorkbenchAudioOutputSettings,
+            save_workbench_audio_output_settings,
+        )
+
+        normalized_id = str(device_id or "").strip()
+        normalized_name = str(device_name or "").strip()
+        if normalized_id and len(normalized_id) != 512:
+            return self.preferred_audio_output_device_id()
+        if not normalized_id:
+            normalized_name = ""
+        saved = save_workbench_audio_output_settings(
+            WorkbenchAudioOutputSettings(
+                preferred_output_device_id=normalized_id,
+                preferred_output_device_name=normalized_name,
+            )
+        )
+        if not saved:
+            return self.preferred_audio_output_device_id()
+        engine_transport = transport
+        if engine_transport is None:
+            engine_transport = getattr(self, "_session_transport", None)
+        reopen = getattr(engine_transport, "reopen_native_output_device", None)
+        if callable(reopen):
+            try:
+                reopen()
+            except Exception:
+                pass
+        return normalized_id
 
     @property
     def gesture_rack_apply_enabled(self) -> bool:
@@ -3583,6 +3674,22 @@ ApplicationWindow {
                                 checked: window.interaction.waveformMotionMode === "off"
                                 onClicked: window.interaction.setWaveformMotionMode("off")
                             }
+                        }
+                        Label {
+                            text: "Audition output"
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                        ComboBox {
+                            id: audioOutputDeviceCombo
+                            objectName: "audioOutputDeviceCombo"
+                            Layout.fillWidth: true
+                            model: window.interaction.audioOutputDeviceNames
+                            currentIndex: window.interaction.preferredAudioOutputDeviceIndex
+                            onActivated: function(index) {
+                                window.interaction.setPreferredAudioOutputDeviceByIndex(index)
+                            }
+                            Accessible.name: "Audition output device"
                         }
                         Label { text: "Functional"; color: theme.textSecondary; font.pixelSize: 11 }
                         Button {
@@ -7954,6 +8061,37 @@ def _qml_interaction_bridge(
                 pass
             self._refresh()
 
+        @Property(list, notify=state_changed)
+        def audioOutputDeviceNames(self) -> list:
+            return [
+                str(item.get("name") or "")
+                for item in adapter.list_audio_output_devices()
+            ]
+
+        @Property(int, notify=state_changed)
+        def preferredAudioOutputDeviceIndex(self) -> int:
+            preferred = adapter.preferred_audio_output_device_id()
+            devices = adapter.list_audio_output_devices()
+            for index, item in enumerate(devices):
+                if str(item.get("id") or "") == preferred:
+                    return int(index)
+            return 0
+
+        @Slot(int)
+        def setPreferredAudioOutputDeviceByIndex(self, index: int) -> None:
+            devices = adapter.list_audio_output_devices()
+            try:
+                selected = devices[int(index)]
+            except (IndexError, TypeError, ValueError):
+                selected = devices[0] if devices else {"id": "", "name": "System default"}
+            transport = getattr(adapter, "_session_transport", None)
+            adapter.set_preferred_audio_output_device(
+                str(selected.get("id") or ""),
+                str(selected.get("name") or ""),
+                transport=transport,
+            )
+            self._refresh()
+
         @Property(bool, notify=state_changed)
         def gestureRackApplyEnabled(self) -> bool:
             return adapter.gesture_rack_apply_enabled
@@ -10481,6 +10619,7 @@ def _qml_engine(
         # Keep the caller-provided view_model as the renderer surface while
         # reusing the session-owned kit + TransportAwarePreview audition.
         adapter.view_model = view_model
+        adapter._session_transport = session_transport
         view_model.live_kit_groups = live_kit.groups
         view_model.auditioning_live_kit_slot = adapter.auditioning_live_kit_slot
     else:
