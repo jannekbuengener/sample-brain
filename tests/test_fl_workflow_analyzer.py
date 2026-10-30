@@ -439,6 +439,56 @@ def test_background_beats_listening_in_gaps() -> None:
     assert result["coverage"]["listening_ns"] < 10 * NS
 
 
+def test_plugin_clear_on_mixer_not_plugin_interaction() -> None:
+    t0 = 1500 * NS
+    events = [
+        _ev(
+            source="fl",
+            seq=1,
+            etype="FOCUS_PLUGIN",
+            wall=t0,
+            props={"plugin": "Serum", "surface": "Plugin"},
+        ),
+        _ev(source="win", seq=1, etype="CLICK", wall=t0 + int(0.1 * NS), props={"button": "left"}),
+        _ev(source="fl", seq=2, etype="FOCUS_SURFACE", wall=t0 + NS, props={"surface": "Mixer"}),
+        _ev(
+            source="fl",
+            seq=3,
+            etype="FOCUS_PLUGIN",
+            wall=t0 + NS + 1000,
+            props={"plugin": "", "surface": "Mixer"},
+        ),
+        _ev(source="win", seq=2, etype="CLICK", wall=t0 + 5 * NS, props={"button": "left"}),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + 6 * NS
+    )
+    mixer_ns = sum(s["duration_ns"] for s in result["segments"] if s["activity"] == "mixer")
+    plugin_ns = sum(
+        s["duration_ns"] for s in result["segments"] if s["activity"] == "plugin_interaction"
+    )
+    assert mixer_ns >= 4 * NS
+    assert plugin_ns < 2 * NS
+
+
+def test_fl_dirty_resets_idle_deadline() -> None:
+    t0 = 1600 * NS
+    events = [
+        _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "Mixer"}),
+        _ev(source="fl", seq=2, etype="DIRTY_MIXER", wall=t0 + 60 * NS, props={"items": [1]}),
+        _ev(source="fl", seq=3, etype="DIRTY_MIXER", wall=t0 + 110 * NS, props={"items": [1]}),
+        _ev(source="fl", seq=4, etype="DIRTY_MIXER", wall=t0 + 160 * NS, props={"items": [1]}),
+        _ev(source="fl", seq=5, etype="DIRTY_MIXER", wall=t0 + 210 * NS, props={"items": [1]}),
+        _ev(source="fl", seq=6, etype="DIRTY_MIXER", wall=t0 + 260 * NS, props={"items": [1]}),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + 300 * NS
+    )
+    idle_ns = sum(s["duration_ns"] for s in result["segments"] if s["activity"] == "idle")
+    # With DIRTY every ~50s (< 120s idle), idle share must stay small.
+    assert idle_ns < 60 * NS
+
+
 def test_deterministic_rerun() -> None:
     t0 = 900 * NS
     events = [

@@ -14,6 +14,20 @@ from .rules import (
     SEGMENT_MERGE_GAP_NS,
 )
 
+# Align with recorder ActivityTracker.ACTIVE_EVENT_TYPES for idle quiet reset.
+_FL_ACTIVITY_EVENT_TYPES = frozenset(
+    {
+        "FOCUS_SURFACE",
+        "FOCUS_FORM",
+        "HINT",
+        "UNDO",
+        "REFRESH",
+        "DIRTY_MIXER",
+        "DIRTY_CHANNEL",
+        "FOCUS_PLUGIN",
+    }
+)
+
 
 @dataclass
 class ActivitySegment:
@@ -276,9 +290,24 @@ def build_segments(
     prev_activity: str | None = None
     prev_surface: str | None = None
 
+    # FL semantic activity (even without Windows input) resets the idle clock,
+    # matching the recorder idle contract: idle requires no relevant FL state change.
+    fl_activity_times = sorted(
+        e.t_wall_ns for e in events if e.event_type in _FL_ACTIVITY_EVENT_TYPES
+    )
+
+    def bump_relevant_through(t: int) -> None:
+        nonlocal last_relevant_ns
+        for tw in fl_activity_times:
+            if tw > t:
+                break
+            if tw >= last_relevant_ns:
+                last_relevant_ns = tw
+
     relevant = [a for a in actions if is_relevant(a)]
 
     for action in relevant:
+        bump_relevant_through(action.start_wall_ns)
         gap_start = cursor
         gap_end = action.start_wall_ns
         raw_spans.extend(
@@ -312,6 +341,7 @@ def build_segments(
             if action.action_type != "foreground_leave":
                 last_relevant_ns = action.start_wall_ns
 
+    bump_relevant_through(session_end_ns)
     raw_spans.extend(
         classify_gap(
             cursor,

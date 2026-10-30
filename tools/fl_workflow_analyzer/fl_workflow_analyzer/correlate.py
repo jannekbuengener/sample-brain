@@ -140,7 +140,14 @@ def correlate_actions(events: list[NormalizedEvent]) -> list[CorrelatedAction]:
 
         if ev.event_type == "FOCUS_PLUGIN":
             plugin_present = bool(ev.props.get("plugin_present"))
-            surface = ev.surface or surface or "Plugin"
+            # Empty plugin name on a non-plugin surface is focus *loss*, not interaction.
+            # Recorder emits FOCUS_PLUGIN whenever the name changes, including → "".
+            measured_surface = ev.surface or surface
+            if not plugin_present and measured_surface and measured_surface != "Plugin":
+                surface = measured_surface
+                surface_at = ev.t_wall_ns
+                continue
+            surface = "Plugin"
             surface_at = ev.t_wall_ns
             conf = "medium" if plugin_present else "low"
             reasons = ["measured_plugin_focus"]
