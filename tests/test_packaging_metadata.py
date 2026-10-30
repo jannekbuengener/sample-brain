@@ -18,9 +18,9 @@ DIRECT_CORE_DEPENDENCIES = {
 }
 ANALYSIS_PACKAGE_REQUIREMENT = (
     "sample-brain-analysis @ https://github.com/jannekbuengener/"
-    "sample-brain-analysis/releases/download/v0.1.2/"
-    "sample_brain_analysis-0.1.2-py3-none-any.whl#sha256="
-    "ca2b168d9724adfc7254650eb7d40bea99deb815341685a7b661949a0ec5b61d"
+    "sample-brain-analysis/releases/download/v0.1.3/"
+    "sample_brain_analysis-0.1.3-py3-none-any.whl#sha256="
+    "030a64c6fcfa9e1c7c13d5a9d32083c405766d4683ba634a6ff3b99b49f1739f"
 )
 
 OPTIONAL_ONLY_DEPENDENCIES = {
