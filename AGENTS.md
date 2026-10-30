@@ -104,7 +104,7 @@ Benchmark harness (local only, work-dir outside repo): `python -m src.cli benchm
 - `libsndfile1` is required for real `analyze` runs. `xvfb` is required to run the Tk tests headlessly. Both are present on the default Cloud Agent image.
 
 ### Dependency refresh (`install`)
-The executable Cloud Agent install is `.cursor/environment.json`. It is idempotent, uses LF line endings, and creates `.venv` in the discovered checkout rather than assuming the shell working directory is the repository root. When Claire de Binare or gpt-mcp-server checkouts are present beside this repository, the same install prepares those projects too. It keeps the default Ubuntu image and does not start a server.
+The executable Cloud Agent install is `.cursor/environment.json`. It is idempotent, uses LF line endings, and creates `.venv` in the discovered checkout rather than assuming the shell working directory is the repository root. When optional sibling checkouts are present beside this repository (`Claire_de_Binare`, `gpt-mcp-server`, `agent-brain`, `sample-brain-analysis`, `arvp`), the same install prepares those projects too. Dashboard-/DB-managed multi-repo Cloud environments must still invoke this script (or an equivalent) in their saved `install`; a committed `.cursor/environment.json` alone is not applied unless the environment records that file. It keeps the default Ubuntu image and does not start a server.
 
 The sample-brain portion of that install is:
 
