@@ -21,7 +21,9 @@ from typing import Any, Iterable, Iterator, Literal, Mapping, Sequence
 # Bumped in #763 so historically hollow ok-rows (loudness/class present but
 # BPM/Key/brightness absent under workbench_v2) miss the sticky cache and are
 # re-analyzed by the existing refresh contract. Not a new analyzer algorithm.
-WORKBENCH_ANALYZER_VERSION = "workbench_v3"
+# v4: duration_sec persistence for Browser Length after cache reload (#1220).
+# Existing on-disk rows miss cache and refresh through the version contract.
+WORKBENCH_ANALYZER_VERSION = "workbench_v4"
 WORKBENCH_LIBRARY_SCHEMA_VERSION = 7
 WAVEFORM_ARTIFACT_VERSION = "waveform_envelope_v1"
 WAVEFORM_POINT_BUDGET = 96
