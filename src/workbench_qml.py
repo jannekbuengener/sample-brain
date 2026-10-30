@@ -4367,6 +4367,9 @@ ApplicationWindow {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             browser.forceActiveFocus()
                             event.accepted = true
+                        } else if (event.key === Qt.Key_Escape) {
+                            window.interaction.escapeLiveKitContext()
+                            event.accepted = true
                         }
                     }
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
