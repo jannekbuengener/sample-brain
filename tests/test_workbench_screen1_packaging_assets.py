@@ -30,6 +30,7 @@ SPEC_PATH = REPO_ROOT / "tools" / "windows" / "sample_brain_screen1.spec"
 
 INTERNAL = "_internal"
 LOGO_RELATIVE = Path("docs/assets/portfolio/references/brand/sample_brain_logo_primary.png")
+THEME_PRESETS_RELATIVE = Path("docs/assets/themes/presets.v1.json")
 BACKGROUND_RELATIVE = Path(
     "docs/assets/portfolio/references/screen1_background_reference.png"
 )
@@ -181,6 +182,17 @@ def test_spec_gate_targets_the_real_required_asset() -> None:
     """A fail-closed gate stays — but only for the consumed brand asset."""
     source = _spec_source()
     assert "REQUIRED Screen-1 brand asset missing" in source
+
+
+def test_required_theme_presets_canon_is_packed_for_frozen_theme_resolve() -> None:
+    """Frozen Theme Core loads presets.v1.json via _repo_root(); pack it or Carbon/Arctic fall to Blood."""
+    source = _spec_source()
+    assert "REQUIRED Screen-1 theme presets canon missing" in source
+    entries = _spec_datas(_spec_tree())
+    presets = [e for e in entries if e[0].endswith(THEME_PRESETS_RELATIVE.name)]
+    assert len(presets) == 1, f"expected exactly one presets datas entry, got {presets}"
+    assert presets[0][1] == THEME_PRESETS_RELATIVE.parent.as_posix()
+    assert (REPO_ROOT / THEME_PRESETS_RELATIVE).is_file()
 
 
 def test_spec_collects_sample_brain_analysis_for_frozen_launch() -> None:

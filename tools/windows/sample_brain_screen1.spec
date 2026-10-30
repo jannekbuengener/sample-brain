@@ -27,6 +27,13 @@ SCREEN1_BRAND_ASSET = (
 SCREEN1_BRAND_ASSET_DEST = (
     Path("docs") / "assets" / "portfolio" / "references" / "brand"
 )
+# Theme Core canon — frozen workbench_theme._repo_root() resolves presets under
+# _internal/docs/assets/themes. Without this, Carbon/Arctic fail closed to Blood
+# and native windowChrome (#1214) cannot inherit non-Blood presets.
+SCREEN1_THEME_PRESETS = (
+    REPO / "docs" / "assets" / "themes" / "presets.v1.json"
+)
+SCREEN1_THEME_PRESETS_DEST = Path("docs") / "assets" / "themes"
 
 datas = []
 binaries = []
@@ -81,6 +88,12 @@ if DLL.is_file():
 if not SCREEN1_BRAND_ASSET.is_file():
     raise SystemExit(f"REQUIRED Screen-1 brand asset missing: {SCREEN1_BRAND_ASSET}")
 datas.append((str(SCREEN1_BRAND_ASSET), str(SCREEN1_BRAND_ASSET_DEST)))
+
+if not SCREEN1_THEME_PRESETS.is_file():
+    raise SystemExit(
+        f"REQUIRED Screen-1 theme presets canon missing: {SCREEN1_THEME_PRESETS}"
+    )
+datas.append((str(SCREEN1_THEME_PRESETS), str(SCREEN1_THEME_PRESETS_DEST)))
 
 a = Analysis(
     [str(ENTRY)],
