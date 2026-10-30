@@ -22,7 +22,7 @@ from src.workbench_visual_acceptance import build_screen1_visual_fixture_v1
 _WORKBENCH_QML_PY = Path(__file__).resolve().parents[1] / "src" / "workbench_qml.py"
 _BROWSER_LIST = 'objectName: "browserList"'
 _ELASTIC_AFTER_BROWSER = 'objectName: "elasticHandleAfterBrowser"'
-_BROWSER_ROW_DELEGATE = "delegate: Rectangle { id: browserRow"
+_BROWSER_ROW_DELEGATE = "id: browserRow"
 
 
 def _browser_panel() -> str:
@@ -40,7 +40,7 @@ def _browser_delegate() -> str:
 def _column_header() -> str:
     marker = QML_SOURCE.index('text: "SAMPLE NAME"')
     start = QML_SOURCE.rfind("RowLayout { Layout.fillWidth: true", 0, marker)
-    end = QML_SOURCE.index("ListView { id: browser", marker)
+    end = QML_SOURCE.index(_BROWSER_LIST, marker)
     return QML_SOURCE[start:end]
 
 

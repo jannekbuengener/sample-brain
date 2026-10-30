@@ -2971,7 +2971,7 @@ ApplicationWindow {
     readonly property bool previewPlayheadArmed: window.interaction.previewPlaybackPlaying
         && window.waveformMotionMode !== "off"
         && window.interaction.previewPlayingPath !== ""
-    // #1285: Loop phase remains Python/transport-owned; QML only asks for fresh projection.
+    // #1285: Loop phase remains Python-owned; QML only asks for fresh projection.
     readonly property bool loopPlayheadArmed: window.interaction.browserLoopActive
         && window.interaction.browserLoopPlaybackAvailable
         && window.waveformMotionMode !== "off"
