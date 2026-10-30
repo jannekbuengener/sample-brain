@@ -319,6 +319,9 @@ def test_install_layout_present() -> None:
     assert (base / "install_autostart.ps1").is_file()
     assert (base / "uninstall_autostart.ps1").is_file()
     assert (base / "fl_workflow_recorder" / "service.py").is_file()
+    install = (base / "install.ps1").read_text(encoding="utf-8")
+    assert "SBWorkflowSignalProbe" in install
+    assert "device_SBWorkflowSignalProbe.py" in install
     device = (base / "SBWorkflowObserver" / "device_SBWorkflowObserver.py").read_text(
         encoding="utf-8"
     )
