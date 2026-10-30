@@ -6,7 +6,9 @@
 [#840](https://github.com/jannekbuengener/sample-brain/issues/840)
 (Browser Add-to-Kit via context menu only — delivered),
 [#843](https://github.com/jannekbuengener/sample-brain/issues/843)
-(context Harmonic Matches open/retarget + header producer-entry removal)  
+(context Harmonic Matches open/retarget + header producer-entry removal),
+[#1284](https://github.com/jannekbuengener/sample-brain/issues/1284)
+(Browser Loop audio runtime — context LOOP ON/OFF consumes the same target)  
 **Parent UX meta:** [#838](https://github.com/jannekbuengener/sample-brain/issues/838)  
 **Matching authority (delivered):**
 [#842](https://github.com/jannekbuengener/sample-brain/issues/842)  
@@ -19,10 +21,11 @@ Tkinter remains legacy/fallback only.
 ## Product goal
 
 Right-click (or keyboard context-open) on a Browser sample row opens a compact
-wine-red context surface with exactly two actions for **the opened sample**:
+wine-red context surface for **the opened sample**. Canonical actions:
 
 - `Add to Kit`
 - `Harmonic Matches`
+- `LOOP ON` / `LOOP OFF` (audio/domain via #1284; QML chrome projection owned by #1285)
 
 Central invariant:
 
@@ -33,6 +36,7 @@ User opens context on Sample B
 → selection remains A
 → no preview / audition / select_row(B)
 → menu actions dispatch for B
+→ LOOP ON sets Loop owner = B while selection/audition remain A
 ```
 
 ## Authority
@@ -45,6 +49,7 @@ User opens context on Sample B
 | Harmonic matching domain | #842 — `HarmonicMatchLibraryController` / `find_harmony_matches` |
 | Harmonic panel open/retarget | #843 — adapter `open_harmonic_matches_for_row` |
 | Harmonic collapse/reopen chrome | #845 — panel handles; not context menu |
+| Browser Loop domain/audio | #1284 — `BrowserLoopOwner` via `request_loop_on_for_row` / context LOOP seams |
 | Theme tokens | Theme Core / QML semantic facade |
 | QML presentation | Thin intent + themed Popup chrome only |
 
@@ -60,6 +65,10 @@ close_sample_context() -> None
 request_context_add_to_kit() -> WorkbenchRow
 request_context_harmonic_matches() -> WorkbenchRow
 open_harmonic_matches_for_row(row: WorkbenchRow) -> bool
+request_loop_on_for_row(row: WorkbenchRow) -> BrowserLoopResult
+request_loop_off() -> BrowserLoopResult
+request_context_loop_on() -> WorkbenchRow
+request_context_loop_off() -> None
 ```
 
 Rules:
