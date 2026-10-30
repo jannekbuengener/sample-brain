@@ -21,6 +21,7 @@ session).
 
 from __future__ import annotations
 
+import inspect
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -77,6 +78,7 @@ from .workbench_session_store import (
     track_package_musical_from_snapshot,
 )
 from .workbench_transport_adapter import WorkbenchTransportAdapter
+from .browser_loop_playback import BrowserLoopOwner
 from .workbench_transport_preview import TransportAwarePreview
 from .workbench_user_sample_metadata import (
     WorkbenchLibraryUserSampleMetadataResolver,
@@ -95,6 +97,7 @@ class WorkbenchSession:
     live_kit_presenter: LiveKitPresenter
     transport: WorkbenchTransportAdapter
     audition: TransportAwarePreview
+    browser_loop: BrowserLoopOwner
     qml_interaction_adapter: Screen1QmlInteractionAdapter
     channel_rack: ChannelRackController
     session_id: str
@@ -454,6 +457,15 @@ class WorkbenchSession:
         self.persistence_status = self._resume_persistence_status
         self._notify_persistence_status()
 
+    def tick_browser_loop(self) -> None:
+        """Advance persistent Browser Loop scheduling from observed engine time (#1284).
+
+        Must be driven by a recurring playback update (QML timer / session poll).
+        Tempo/SYNC observers alone do not sustain multi-cycle Loop playback.
+        """
+        if self.browser_loop.is_active:
+            self.browser_loop.tick()
+
     def release_screen1_audition(self) -> None:
         """Release audition voice + projection without shared-transport teardown.
 
@@ -498,7 +510,7 @@ class _SessionAuditionPlayRow:
     that stop does not restart Rack.
     """
 
-    __slots__ = ("_audition", "_library_db_path", "_rack_holder")
+    __slots__ = ("_audition", "_library_db_path", "_rack_holder", "_loop_holder")
 
     def __init__(
         self,
@@ -506,10 +518,12 @@ class _SessionAuditionPlayRow:
         *,
         library_db_path: Path | None = None,
         rack_holder: list[ChannelRackController | None] | None = None,
+        loop_holder: list[BrowserLoopOwner | None] | None = None,
     ) -> None:
         self._audition = audition
         self._library_db_path = library_db_path
         self._rack_holder = rack_holder if rack_holder is not None else [None]
+        self._loop_holder = loop_holder if loop_holder is not None else [None]
 
     @property
     def __self__(self) -> TransportAwarePreview:
@@ -523,6 +537,14 @@ class _SessionAuditionPlayRow:
         rack = self._rack_holder[0]
         if rack is not None and rack.is_playing:
             rack.stop()
+        loop = self._loop_holder[0]
+        source_start_frame: int | None = None
+        if (
+            loop is not None
+            and loop.is_active
+            and self._audition.transport.is_sync_enabled()
+        ):
+            source_start_frame = loop.comparison_source_frame_for_row(row)
         if start_ms is None:
             resolved = get_preview_start_ms(
                 row.path,
@@ -530,7 +552,18 @@ class _SessionAuditionPlayRow:
             )
         else:
             resolved = start_ms
-        return self._audition.play_row(row, start_ms=resolved)
+        play_row = self._audition.play_row
+        kwargs: dict[str, Any] = {"start_ms": resolved}
+        if source_start_frame is not None:
+            try:
+                params = inspect.signature(play_row).parameters
+            except (TypeError, ValueError):
+                params = {}
+            if "source_start_frame" in params or any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+            ):
+                kwargs["source_start_frame"] = source_start_frame
+        return play_row(row, **kwargs)
 
 
 def _apply_package_live_kit(
@@ -668,6 +701,28 @@ def _detach_session_persistence(session: WorkbenchSession) -> None:
     session.transport.set_on_session_clock_changed(None)
 
 
+def _notify_browser_loop_clock(session: WorkbenchSession) -> None:
+    """Keep Browser Loop coherent with MASTER SYNC/BPM and schedule voices (#1284).
+
+    Composed into the session-clock observer so persistence wiring cannot
+    overwrite Loop audio policy with a single-callback setter.
+    """
+    loop = getattr(session, "browser_loop", None)
+    if loop is None:
+        return
+    sync_now = bool(session.transport.is_sync_enabled())
+    prev = getattr(session, "_browser_loop_prev_sync", None)
+    if prev is None:
+        session._browser_loop_prev_sync = sync_now  # type: ignore[attr-defined]
+    elif sync_now != prev:
+        loop.on_sync_changed(enabled=sync_now)
+        session._browser_loop_prev_sync = sync_now  # type: ignore[attr-defined]
+    else:
+        loop.on_master_bpm_changed()
+    if loop.is_active:
+        loop.tick()
+
+
 def _wire_session_persistence(session: WorkbenchSession) -> None:
     def _on_channel_rack_mutation() -> None:
         _autosave_musical_session(
@@ -699,6 +754,7 @@ def _wire_session_persistence(session: WorkbenchSession) -> None:
             state_dir=session._state_dir,
             env=session._env,
         )
+        _notify_browser_loop_clock(session)
 
     session.live_kit.set_on_assignment_changed(_on_live_kit_mutation)
     session.channel_rack.set_on_musical_state_changed(_on_channel_rack_mutation)
@@ -795,6 +851,8 @@ def compose_workbench_session(
         )
         audition = TransportAwarePreview(WorkbenchPreviewPlayer(), transport)
 
+    browser_loop = BrowserLoopOwner(transport)
+
     if snapshot is not None:
         apply_snapshot_to_live_kit(snapshot, live_kit)
         # #820: enrich restored path refs from local library before projection.
@@ -824,6 +882,7 @@ def compose_workbench_session(
 
     # Late-bound so preview start can arbitrate against Rack after controller exists.
     rack_holder: list[ChannelRackController | None] = [None]
+    loop_holder: list[BrowserLoopOwner | None] = [browser_loop]
     adapter = Screen1QmlInteractionAdapter(
         view_model=view_model,
         harmony_controller=HarmonicMatchLibraryController(
@@ -833,6 +892,7 @@ def compose_workbench_session(
             audition,
             library_db_path=library_db_path,
             rack_holder=rack_holder,
+            loop_holder=loop_holder,
         ),
         on_preview_stopped=audition.stop,
         on_preview_released=audition.release_voice,
@@ -840,6 +900,7 @@ def compose_workbench_session(
         live_kit=presenter,
         library_db_path=library_db_path,
     )
+    adapter.bind_browser_loop(browser_loop)
 
     channel_rack = ChannelRackController(
         live_kit=live_kit,
@@ -864,6 +925,7 @@ def compose_workbench_session(
         live_kit_presenter=presenter,
         transport=transport,
         audition=audition,
+        browser_loop=browser_loop,
         qml_interaction_adapter=adapter,
         channel_rack=channel_rack,
         session_id=session_id,
@@ -895,6 +957,10 @@ def compose_workbench_session(
     audition.set_before_shared_transport_stop(
         _reconcile_rack_before_shared_transport_stop
     )
+    audition.set_should_keep_shared_transport(lambda: browser_loop.is_active)
+    # Persistence wiring owns the single clock callback and composes Loop policy
+    # inside it so SYNC/BPM observers are not overwritten (#1284 Codex P1).
+    session._browser_loop_prev_sync = transport.is_sync_enabled()  # type: ignore[attr-defined]
 
     _wire_session_persistence(session)
     return session
