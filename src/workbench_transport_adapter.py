@@ -180,6 +180,9 @@ class WorkbenchTransportAdapter:
             _native_audio.EngineConfig(
                 sample_rate=self._sample_rate,
                 output_device=output_device,
+                # Audition/transport clock is playback-only. Opening duplex
+                # capture-by-default can interfere with other Windows sessions.
+                input_channels=0,
             )
         )
         self._native_opened = True
