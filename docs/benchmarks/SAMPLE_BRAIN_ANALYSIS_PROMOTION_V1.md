@@ -63,7 +63,10 @@ No host-local commands or paths are accepted in semantic inputs.
 ## Isolation and durable attempt
 
 The host repository must be clean (tracked, untracked and ignored files included)
-and origin must identify the manifest repository. Local origin/main and live
+and origin must identify the manifest repository. Origin comparison is fail-closed
+on host, owner, repository name, and protocol/security identity; only URL userinfo
+(credentials/token) may be ignored when an otherwise identical GitHub remote is
+rewritten by the execution host. Local origin/main and live
 main must equal expected_base_sha before mutation and before merge. Never rebase.
 An isolated branch/worktree is derived from the manifest fingerprint; host supplies
 the parent directory. Existing foreign branch/worktree contents are not adopted.

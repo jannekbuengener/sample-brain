@@ -415,6 +415,116 @@ def test_live_drift_and_review_gates_fail_closed(setup, condition):
     assert host.merges == 0
 
 
+@pytest.mark.parametrize(
+    "remote",
+    [
+        "https://github.com/example/repo.git",
+        "https://github.com/example/repo",
+        "git@github.com:example/repo.git",
+    ],
+)
+def test_origin_accepts_expected_github_remote(remote):
+    from src.analysis_promotion import origin_matches_repository
+
+    assert origin_matches_repository(remote, "example/repo") is True
+
+
+@pytest.mark.parametrize(
+    "remote",
+    [
+        "https://x-access-token:ghs_exampletokenvalue@github.com/example/repo.git",
+        "https://x-access-token:ghs_exampletokenvalue@github.com/example/repo",
+        "https://token-only@github.com/example/repo.git",
+        "https://user:pass@github.com/example/repo.git",
+    ],
+)
+def test_origin_accepts_same_remote_with_injected_userinfo(remote):
+    from src.analysis_promotion import origin_matches_repository
+
+    assert origin_matches_repository(remote, "example/repo") is True
+
+
+def test_origin_rejects_different_owner():
+    from src.analysis_promotion import origin_matches_repository
+
+    assert (
+        origin_matches_repository("https://github.com/other/repo.git", "example/repo")
+        is False
+    )
+    assert (
+        origin_matches_repository(
+            "https://x-access-token:tok@github.com/other/repo.git", "example/repo"
+        )
+        is False
+    )
+
+
+def test_origin_rejects_different_repository():
+    from src.analysis_promotion import origin_matches_repository
+
+    assert (
+        origin_matches_repository(
+            "https://github.com/example/other.git", "example/repo"
+        )
+        is False
+    )
+    assert (
+        origin_matches_repository(
+            "https://x-access-token:tok@github.com/example/other.git", "example/repo"
+        )
+        is False
+    )
+
+
+def test_origin_rejects_different_host():
+    from src.analysis_promotion import origin_matches_repository
+
+    assert (
+        origin_matches_repository(
+            "https://gitlab.com/example/repo.git", "example/repo"
+        )
+        is False
+    )
+    assert (
+        origin_matches_repository(
+            "https://x-access-token:tok@evil.example/example/repo.git", "example/repo"
+        )
+        is False
+    )
+    assert (
+        origin_matches_repository(
+            "https://x-access-token:tok@github.com.evil/example/repo.git",
+            "example/repo",
+        )
+        is False
+    )
+    assert (
+        origin_matches_repository(
+            "http://github.com/example/repo.git", "example/repo"
+        )
+        is False
+    )
+
+
+def test_preflight_accepts_credential_rewritten_origin(setup):
+    from src.analysis_promotion import PromotionError
+
+    root = setup["repository"].path
+    # Simulate Cloud Agent insteadOf / credential injection on an otherwise
+    # identical GitHub remote without weakening host/owner/repo identity.
+    git(
+        root,
+        "remote",
+        "set-url",
+        "origin",
+        "https://x-access-token:ghs_exampletokenvalue@github.com/example/repo.git",
+    )
+    setup["repository"].preflight(setup["manifest"])
+    git(root, "remote", "set-url", "origin", "https://github.com/other/repo.git")
+    with pytest.raises(PromotionError, match="origin repository mismatch"):
+        setup["repository"].preflight(setup["manifest"])
+
+
 def test_explicit_review_disposition_is_bound_to_head_and_snapshot(setup):
     host = setup["host"]
     host.feedback = [{"id": "issue:1", "body": "review", "updated_at": "now"}]
