@@ -457,6 +457,15 @@ class WorkbenchSession:
         self.persistence_status = self._resume_persistence_status
         self._notify_persistence_status()
 
+    def tick_browser_loop(self) -> None:
+        """Advance persistent Browser Loop scheduling from observed engine time (#1284).
+
+        Must be driven by a recurring playback update (QML timer / session poll).
+        Tempo/SYNC observers alone do not sustain multi-cycle Loop playback.
+        """
+        if self.browser_loop.is_active:
+            self.browser_loop.tick()
+
     def release_screen1_audition(self) -> None:
         """Release audition voice + projection without shared-transport teardown.
 
@@ -692,6 +701,28 @@ def _detach_session_persistence(session: WorkbenchSession) -> None:
     session.transport.set_on_session_clock_changed(None)
 
 
+def _notify_browser_loop_clock(session: WorkbenchSession) -> None:
+    """Keep Browser Loop coherent with MASTER SYNC/BPM and schedule voices (#1284).
+
+    Composed into the session-clock observer so persistence wiring cannot
+    overwrite Loop audio policy with a single-callback setter.
+    """
+    loop = getattr(session, "browser_loop", None)
+    if loop is None:
+        return
+    sync_now = bool(session.transport.is_sync_enabled())
+    prev = getattr(session, "_browser_loop_prev_sync", None)
+    if prev is None:
+        session._browser_loop_prev_sync = sync_now  # type: ignore[attr-defined]
+    elif sync_now != prev:
+        loop.on_sync_changed(enabled=sync_now)
+        session._browser_loop_prev_sync = sync_now  # type: ignore[attr-defined]
+    else:
+        loop.on_master_bpm_changed()
+    if loop.is_active:
+        loop.tick()
+
+
 def _wire_session_persistence(session: WorkbenchSession) -> None:
     def _on_channel_rack_mutation() -> None:
         _autosave_musical_session(
@@ -723,6 +754,7 @@ def _wire_session_persistence(session: WorkbenchSession) -> None:
             state_dir=session._state_dir,
             env=session._env,
         )
+        _notify_browser_loop_clock(session)
 
     session.live_kit.set_on_assignment_changed(_on_live_kit_mutation)
     session.channel_rack.set_on_musical_state_changed(_on_channel_rack_mutation)
@@ -926,21 +958,9 @@ def compose_workbench_session(
         _reconcile_rack_before_shared_transport_stop
     )
     audition.set_should_keep_shared_transport(lambda: browser_loop.is_active)
-
-    _prev_sync = transport.is_sync_enabled()
-
-    def _on_session_clock_changed() -> None:
-        nonlocal _prev_sync
-        sync_now = transport.is_sync_enabled()
-        if sync_now != _prev_sync:
-            browser_loop.on_sync_changed(enabled=sync_now)
-            _prev_sync = sync_now
-        else:
-            browser_loop.on_master_bpm_changed()
-        if browser_loop.is_active:
-            browser_loop.tick()
-
-    transport.set_on_session_clock_changed(_on_session_clock_changed)
+    # Persistence wiring owns the single clock callback and composes Loop policy
+    # inside it so SYNC/BPM observers are not overwritten (#1284 Codex P1).
+    session._browser_loop_prev_sync = transport.is_sync_enabled()  # type: ignore[attr-defined]
 
     _wire_session_persistence(session)
     return session

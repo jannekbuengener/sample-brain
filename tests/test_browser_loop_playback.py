@@ -588,3 +588,42 @@ def test_declick_does_not_shift_musical_boundary(monkeypatch):
     # Crossfade may overlap voices but the scheduled musical start remains exact.
     assert any(frame == cycle for _vid, frame in engine.schedule_calls)
     assert owner.declick_frames() <= 64
+
+
+def test_sync_mid_cycle_loop_on_enters_at_current_phase(monkeypatch):
+    from src.session_grid import MusicalPosition
+
+    owner, engine, transport = _owner(monkeypatch, sync=True, bpm=120.0)
+    # Seek into bar 2 of a 4-bar comparison cycle before LOOP ON.
+    target = transport.tempo_map.bar_beat_to_frame(MusicalPosition(bar=2, beat=0))
+    transport._transport.seek(target)  # noqa: SLF001
+    engine._engine_frame = 9000
+    row = _row("loop.wav", bpm=120.0, downbeats=_downbeats_for_bars(4))
+    assert owner.loop_on(row).ok
+    # First voice starts at the live engine frame; first cycle is shortened.
+    assert engine.schedule_calls
+    assert engine.schedule_calls[0][1] == 9000
+    first = owner._first_cycle_duration_frames  # noqa: SLF001
+    steady = owner.comparison_cycle_frames()
+    assert first is not None and steady is not None
+    assert first < steady
+    # Entry PCM is a remainder of the musical span (not the full buffer).
+    voice = engine.voices[engine.schedule_calls[0][0]]
+    full_frames = owner.extent.source_end_frame_exclusive - owner.extent.source_start_frame
+    assert 0 < voice.pcm_frames < full_frames
+
+
+def test_session_persistence_composes_loop_sync_observer(monkeypatch):
+    """Persistence wiring must not overwrite the Loop SYNC observer (#1284 P1)."""
+    from src.workbench_session import compose_workbench_session
+
+    session = compose_workbench_session()
+    calls: list[str] = []
+
+    def _track_sync(*, enabled: bool) -> None:
+        calls.append(f"sync:{enabled}")
+        BrowserLoopOwner.on_sync_changed(session.browser_loop, enabled=enabled)
+
+    monkeypatch.setattr(session.browser_loop, "on_sync_changed", _track_sync)
+    session.transport.set_sync_enabled(True)
+    assert any(c.startswith("sync:True") for c in calls)

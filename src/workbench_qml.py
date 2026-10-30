@@ -950,6 +950,7 @@ class Screen1QmlInteractionAdapter:
         self._pending_live_kit_row: WorkbenchRow | None = None
         self._sample_context_target: WorkbenchRow | None = None
         self._browser_loop: Any | None = None
+        self._on_browser_loop_started: Callable[[], object] | None = None
         self._preview_active = False
         self._auditioning_live_kit_slot: tuple[str, str] | None = None
         self._live_kit_export_status = ""
@@ -1061,11 +1062,18 @@ class Screen1QmlInteractionAdapter:
         """Bind the session-owned persistent Browser Loop role (#1284)."""
         self._browser_loop = browser_loop
 
+    def set_on_browser_loop_started(self, callback: Callable[[], object] | None) -> None:
+        """Optional hook to start the recurring Loop scheduler timer (#1284)."""
+        self._on_browser_loop_started = callback
+
     def request_loop_on_for_row(self, row: WorkbenchRow) -> Any:
         """Canonical Loop ON seam for a concrete resolved ``WorkbenchRow`` (#1284)."""
         if self._browser_loop is None:
             raise RuntimeError("Browser Loop runtime is not bound")
-        return self._browser_loop.loop_on(row)
+        result = self._browser_loop.loop_on(row)
+        if getattr(result, "ok", False) and self._on_browser_loop_started is not None:
+            self._on_browser_loop_started()
+        return result
 
     def request_loop_off(self) -> Any:
         """Clear the persistent Loop role only (#1284)."""
@@ -10570,6 +10578,35 @@ def _qml_engine(
         else channel_rack_timer.stop()
     )
     engine._screen1_channel_rack_timer = channel_rack_timer
+
+    # #1284: recurring native-frame Loop scheduling (not tempo/SYNC observers alone).
+    browser_loop_timer = QTimer(engine)
+    browser_loop_timer.setInterval(20)
+
+    def _tick_browser_loop() -> None:
+        sess = getattr(engine, "_screen1_session", None)
+        if sess is None or not getattr(sess, "browser_loop", None):
+            browser_loop_timer.stop()
+            return
+        if sess.browser_loop.is_active:
+            sess.tick_browser_loop()
+        else:
+            browser_loop_timer.stop()
+
+    browser_loop_timer.timeout.connect(_tick_browser_loop)
+    engine._screen1_browser_loop_timer = browser_loop_timer
+
+    def _ensure_browser_loop_timer() -> None:
+        sess = getattr(engine, "_screen1_session", None)
+        if sess is not None and sess.browser_loop.is_active:
+            if not browser_loop_timer.isActive():
+                browser_loop_timer.start()
+
+    engine._screen1_ensure_browser_loop_timer = _ensure_browser_loop_timer
+    if hasattr(adapter, "set_on_browser_loop_started"):
+        adapter.set_on_browser_loop_started(_ensure_browser_loop_timer)
+    # Kick once so an already-active Loop (session restore) starts ticking.
+    _ensure_browser_loop_timer()
     request_visible_browser_waveforms_from_window()
     if analysis_coordinator is not None:
         app.aboutToQuit.connect(analysis_coordinator.shutdown)

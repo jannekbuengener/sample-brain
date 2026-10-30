@@ -188,6 +188,7 @@ class BrowserLoopOwner:
         self._next_cycle_index: int = 0
         self._cycle_anchor_engine_frame: int | None = None
         self._cycle_duration_frames: int | None = None
+        self._first_cycle_duration_frames: int | None = None
         self._source_phase_frame: int = 0
         self._reduced_capability_reason: str | None = None
         self._pcm_start_offset: int = 0  # within extent buffer for phase entry
@@ -280,6 +281,7 @@ class BrowserLoopOwner:
         self._next_cycle_index = 0
         self._cycle_anchor_engine_frame = None
         self._cycle_duration_frames = self._compute_cycle_duration()
+        self._first_cycle_duration_frames = None
         if not self._transport.ensure_engine_running():
             self._clear_owner_state()
             return BrowserLoopResult(
@@ -288,6 +290,9 @@ class BrowserLoopOwner:
                 reason_code="NATIVE_UNAVAILABLE",
             )
         self._transport.play()
+        # SYNC ON mid-cycle: enter at current MASTER comparison phase (not source 0).
+        if self._transport.is_sync_enabled():
+            self._arm_phase_entry_at_current_master()
         self.tick()
         return BrowserLoopResult(
             ok=True,
@@ -315,12 +320,15 @@ class BrowserLoopOwner:
 
         if self._cycle_duration_frames is None or self._cycle_duration_frames <= 0:
             self._cycle_duration_frames = self._compute_cycle_duration()
-        duration = int(self._cycle_duration_frames or 0)
-        if duration <= 0:
+        steady = int(self._cycle_duration_frames or 0)
+        if steady <= 0:
             return
+        if self._first_cycle_duration_frames is None:
+            self._first_cycle_duration_frames = steady
 
         if self._cycle_anchor_engine_frame is None:
-            if self._transport.is_sync_enabled():
+            if self._transport.is_sync_enabled() and self._pcm_start_offset <= 0:
+                # Align to comparison-cycle start only when entering at phase 0.
                 self._cycle_anchor_engine_frame = self._sync_cycle_anchor(engine_frame)
             else:
                 self._cycle_anchor_engine_frame = engine_frame
@@ -330,12 +338,13 @@ class BrowserLoopOwner:
         self._reclaim_finished(engine_frame)
 
         # Schedule current + next cycle within a small lookahead.
-        lookahead = duration
+        lookahead = steady
         while True:
-            start = int(self._cycle_anchor_engine_frame) + self._next_cycle_index * duration
+            start = self._cycle_start_engine_frame(self._next_cycle_index)
+            cycle_len = self._cycle_duration_for_index(self._next_cycle_index)
             if start > engine_frame + lookahead:
                 break
-            if start + duration <= engine_frame and self._next_cycle_index > 0:
+            if start + cycle_len <= engine_frame and self._next_cycle_index > 0:
                 self._next_cycle_index += 1
                 continue
             if self._scheduled_voice_id is not None and start > engine_frame:
@@ -348,15 +357,8 @@ class BrowserLoopOwner:
                     break
 
         # Track nominal source phase for ON→OFF continuity (extent-relative).
-        if self._cycle_anchor_engine_frame is not None and duration > 0:
-            elapsed = max(0, engine_frame - int(self._cycle_anchor_engine_frame))
-            into = elapsed % duration
-            rate = self._current_rate()
-            pcm_pos = int(round(into * rate)) + self._pcm_start_offset
-            pcm_len = int(self._pcm.shape[0])
-            if pcm_len > 0:
-                pcm_pos %= pcm_len
-            self._source_phase_frame = int(self._extent.source_start_frame) + pcm_pos
+        if self._cycle_anchor_engine_frame is not None and steady > 0:
+            self._source_phase_frame = self._estimate_source_phase(engine_frame)
 
     def on_sync_changed(self, *, enabled: bool) -> None:
         if not self.is_active or self._extent is None or self._pcm is None:
@@ -371,27 +373,18 @@ class BrowserLoopOwner:
                 self._fail_closed_audio("SYNC_NOT_SYNCABLE")
                 return
             # OFF→ON: re-anchor at current MASTER comparison phase.
-            session_frame = int(self._transport.get_session_frame())
             try:
                 engine_frame = int(self._transport.get_engine_frame())
             except Exception:
                 engine_frame = 0
-            # Prefer live native snapshot frame when tests/fakes advance it directly.
             native = self._transport.get_native_engine()
             if native is not None and hasattr(native, "snapshot"):
                 try:
                     engine_frame = int(native.snapshot().engine_frame)
                 except Exception:
                     pass
-            mapped = self._map_session_to_extent_frame(session_frame)
-            self._pcm_start_offset = max(
-                0, mapped - int(self._extent.source_start_frame)
-            )
-            self._source_phase_frame = mapped
             self._stop_loop_voices()
-            self._cycle_anchor_engine_frame = engine_frame
-            self._next_cycle_index = 0
-            self._cycle_duration_frames = self._compute_cycle_duration()
+            self._arm_phase_entry_at_current_master(engine_frame=engine_frame)
             self._reduced_capability_reason = None
             self.tick(engine_frame=engine_frame)
             return
@@ -408,6 +401,13 @@ class BrowserLoopOwner:
         self._cycle_anchor_engine_frame = engine_frame
         self._next_cycle_index = 0
         self._cycle_duration_frames = self._compute_cycle_duration()
+        # Shortened first pass until remainder ends, then full source cycles.
+        pcm_len = int(self._pcm.shape[0]) if self._pcm is not None else 0
+        remaining_pcm = max(1, pcm_len - int(self._pcm_start_offset))
+        rate = self._current_rate()
+        self._first_cycle_duration_frames = max(
+            1, int(math.ceil(remaining_pcm / max(rate, 1e-9)))
+        )
         self._reduced_capability_reason = None
         self.tick(engine_frame=engine_frame)
 
@@ -511,9 +511,82 @@ class BrowserLoopOwner:
         self._next_cycle_index = 0
         self._cycle_anchor_engine_frame = None
         self._cycle_duration_frames = None
+        self._first_cycle_duration_frames = None
         self._source_phase_frame = 0
         self._pcm_start_offset = 0
         self._reduced_capability_reason = None
+
+    def _arm_phase_entry_at_current_master(
+        self, *, engine_frame: int | None = None
+    ) -> None:
+        """Enter at current MASTER comparison phase with a shortened first cycle."""
+        assert self._extent is not None
+        session_frame = int(self._transport.get_session_frame())
+        if engine_frame is None:
+            try:
+                engine_frame = int(self._transport.get_engine_frame())
+            except Exception:
+                engine_frame = 0
+            native = self._transport.get_native_engine()
+            if native is not None and hasattr(native, "snapshot"):
+                try:
+                    engine_frame = int(native.snapshot().engine_frame)
+                except Exception:
+                    pass
+        mapped = self._map_session_to_extent_frame(session_frame)
+        self._pcm_start_offset = max(
+            0, mapped - int(self._extent.source_start_frame)
+        )
+        self._source_phase_frame = mapped
+        steady = self._compute_cycle_duration()
+        self._cycle_duration_frames = steady
+        # Remaining MASTER comparison-cycle frames until the next L-bar boundary.
+        pos = self._transport.tempo_map.frame_to_bar_beat(session_frame)
+        l_bars = int(self._extent.bar_count)
+        cycle_start_bar = (int(pos.bar) // l_bars) * l_bars
+        cycle_start_session = self._transport.tempo_map.bar_beat_to_frame(
+            MusicalPosition(bar=cycle_start_bar, beat=0)
+        )
+        into = max(0, int(session_frame) - int(cycle_start_session))
+        remaining = max(1, int(steady) - int(into))
+        self._first_cycle_duration_frames = remaining
+        self._cycle_anchor_engine_frame = int(engine_frame)
+        self._next_cycle_index = 0
+
+    def _cycle_duration_for_index(self, index: int) -> int:
+        steady = int(self._cycle_duration_frames or 0)
+        first = int(self._first_cycle_duration_frames or steady)
+        if index <= 0:
+            return max(1, first)
+        return max(1, steady)
+
+    def _cycle_start_engine_frame(self, index: int) -> int:
+        anchor = int(self._cycle_anchor_engine_frame or 0)
+        if index <= 0:
+            return anchor
+        first = self._cycle_duration_for_index(0)
+        steady = self._cycle_duration_for_index(1)
+        return anchor + first + (index - 1) * steady
+
+    def _estimate_source_phase(self, engine_frame: int) -> int:
+        assert self._extent is not None
+        assert self._pcm is not None
+        anchor = int(self._cycle_anchor_engine_frame or 0)
+        elapsed = max(0, int(engine_frame) - anchor)
+        first = self._cycle_duration_for_index(0)
+        steady = self._cycle_duration_for_index(1)
+        if elapsed < first:
+            into = elapsed
+            pcm_offset = int(self._pcm_start_offset)
+        else:
+            into = (elapsed - first) % steady
+            pcm_offset = 0
+        rate = self._current_rate()
+        pcm_pos = int(round(into * rate)) + pcm_offset
+        pcm_len = int(self._pcm.shape[0])
+        if pcm_len > 0:
+            pcm_pos %= pcm_len
+        return int(self._extent.source_start_frame) + pcm_pos
 
     def _fail_closed_audio(self, reason: str) -> None:
         self._stop_loop_voices()
@@ -636,7 +709,6 @@ class BrowserLoopOwner:
         engine = self._transport.get_native_engine()
         if engine is None or self._cycle_duration_frames is None:
             return
-        duration = int(self._cycle_duration_frames)
         if (
             self._scheduled_voice_id is None
             or self._sounding_voice_id is None
@@ -645,10 +717,7 @@ class BrowserLoopOwner:
             or len(self._active_voice_ids) < 2
         ):
             return
-        newer_start = (
-            int(self._cycle_anchor_engine_frame)
-            + max(0, self._next_cycle_index - 1) * duration
-        )
+        newer_start = self._cycle_start_engine_frame(max(0, self._next_cycle_index - 1))
         if engine_frame < newer_start + DECLICK_FRAMES:
             return
         older = self._sounding_voice_id
