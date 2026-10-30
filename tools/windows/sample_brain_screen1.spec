@@ -27,6 +27,13 @@ SCREEN1_BRAND_ASSET = (
 SCREEN1_BRAND_ASSET_DEST = (
     Path("docs") / "assets" / "portfolio" / "references" / "brand"
 )
+# Theme Core canon — frozen workbench_theme._repo_root() resolves presets under
+# _internal/docs/assets/themes. Without this, Carbon/Arctic fail closed to Blood
+# and native windowChrome (#1214) cannot inherit non-Blood presets.
+SCREEN1_THEME_PRESETS = (
+    REPO / "docs" / "assets" / "themes" / "presets.v1.json"
+)
+SCREEN1_THEME_PRESETS_DEST = Path("docs") / "assets" / "themes"
 
 datas = []
 binaries = []
@@ -37,6 +44,10 @@ hiddenimports = [
     "src.workbench_qml_runtime",
     "src.workbench_library",
     "src.native_audio",
+    "sample_brain_analysis",
+    # QML Screen-1 still imports workbench_transport_ui (Tk presentation helper).
+    "tkinter",
+    "tkinter.ttk",
     "soundfile",
     "librosa",
     "numpy",
@@ -46,11 +57,25 @@ hiddenimports = [
 
 # Collect PySide6 / shiboken runtime (QML + platforms). Broader than ideal, but
 # Screen-1 loadData still needs QtQuick/platform plugins present.
+# sample_brain_analysis is a required pure-Python dependency (bpm/matching import
+# chain). Keep it in hiddenimports only — collect_all() on it can pull conflicting
+# native binaries that break QtCore DLL load in the frozen onedir.
 for pkg in ("PySide6", "shiboken6"):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
     binaries += pkg_binaries
     hiddenimports += pkg_hidden
+try:
+    pkg_datas, pkg_binaries, pkg_hidden = collect_all(
+        "sample_brain_analysis",
+        include_py_files=True,
+    )
+    # Datas/py only — drop foreign binaries from analysis collect.
+    datas += pkg_datas
+    hiddenimports += pkg_hidden
+except Exception:
+    # Fail soft to hiddenimport string above; Analysis still traces imports.
+    pass
 
 binaries += collect_dynamic_libs("soundfile")
 
@@ -63,6 +88,12 @@ if DLL.is_file():
 if not SCREEN1_BRAND_ASSET.is_file():
     raise SystemExit(f"REQUIRED Screen-1 brand asset missing: {SCREEN1_BRAND_ASSET}")
 datas.append((str(SCREEN1_BRAND_ASSET), str(SCREEN1_BRAND_ASSET_DEST)))
+
+if not SCREEN1_THEME_PRESETS.is_file():
+    raise SystemExit(
+        f"REQUIRED Screen-1 theme presets canon missing: {SCREEN1_THEME_PRESETS}"
+    )
+datas.append((str(SCREEN1_THEME_PRESETS), str(SCREEN1_THEME_PRESETS_DEST)))
 
 a = Analysis(
     [str(ENTRY)],
@@ -80,11 +111,34 @@ a = Analysis(
         "sqlite_vec",
         "beat_this",
         "pytest",
-        "tkinter",
     ],
     noarchive=False,
     optimize=0,
 )
+
+# Drop foreign ICU DLLs pulled from conda/Miniforge via PATH during Analysis.
+# Qt6Core on this pilot must bind to Windows System32 icuuc.dll; shipping
+# conda icuuc/icudt yields: ImportError DLL load failed while importing QtCore
+# (WinError 127 / procedure not found).
+def _is_foreign_icu(entry: object) -> bool:
+    parts: list[str] = []
+    if isinstance(entry, (tuple, list)):
+        parts = [str(x) for x in entry]
+    else:
+        parts = [str(entry)]
+    blob = " ".join(parts).lower().replace("/", "\\")
+    name_hit = any(
+        Path(part).name.lower().startswith(prefix)
+        for part in parts
+        for prefix in ("icuuc", "icudt", "icuin")
+    )
+    conda_hit = "\\library\\bin\\icu" in blob or "\\conda\\" in blob or "\\miniforge\\" in blob
+    return name_hit and conda_hit
+
+
+a.binaries = [entry for entry in a.binaries if not _is_foreign_icu(entry)]
+a.datas = [entry for entry in a.datas if not _is_foreign_icu(entry)]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(

@@ -30,6 +30,7 @@ SPEC_PATH = REPO_ROOT / "tools" / "windows" / "sample_brain_screen1.spec"
 
 INTERNAL = "_internal"
 LOGO_RELATIVE = Path("docs/assets/portfolio/references/brand/sample_brain_logo_primary.png")
+THEME_PRESETS_RELATIVE = Path("docs/assets/themes/presets.v1.json")
 BACKGROUND_RELATIVE = Path(
     "docs/assets/portfolio/references/screen1_background_reference.png"
 )
@@ -181,6 +182,91 @@ def test_spec_gate_targets_the_real_required_asset() -> None:
     """A fail-closed gate stays — but only for the consumed brand asset."""
     source = _spec_source()
     assert "REQUIRED Screen-1 brand asset missing" in source
+
+
+def test_required_theme_presets_canon_is_packed_for_frozen_theme_resolve() -> None:
+    """Frozen Theme Core loads presets.v1.json via _repo_root(); pack it or Carbon/Arctic fall to Blood."""
+    source = _spec_source()
+    assert "REQUIRED Screen-1 theme presets canon missing" in source
+    entries = _spec_datas(_spec_tree())
+    presets = [e for e in entries if e[0].endswith(THEME_PRESETS_RELATIVE.name)]
+    assert len(presets) == 1, f"expected exactly one presets datas entry, got {presets}"
+    assert presets[0][1] == THEME_PRESETS_RELATIVE.parent.as_posix()
+    assert (REPO_ROOT / THEME_PRESETS_RELATIVE).is_file()
+
+
+def test_spec_collects_sample_brain_analysis_for_frozen_launch() -> None:
+    """Screen-1 imports bpm/matching via sample_brain_analysis; freeze must pack it."""
+    source = _spec_source()
+    assert '"sample_brain_analysis"' in source or "'sample_brain_analysis'" in source
+    assert "collect_all" in source
+    # collect_all loop must include the analysis package, not only a string hint.
+    assert "sample_brain_analysis" in source
+    tree = _spec_tree()
+    env = _spec_env(tree)
+    hidden = env.get("hiddenimports")
+    assert isinstance(hidden, (ast.List, ast.Tuple))
+    literals = [
+        n.value
+        for n in hidden.elts
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    ]
+    assert "sample_brain_analysis" in literals
+
+
+def test_spec_keeps_tkinter_for_transport_ui_import_chain() -> None:
+    """QML Screen-1 imports workbench_transport_ui which requires tkinter."""
+    source = _spec_source()
+    assert "tkinter" in source
+    # Must not be listed in excludes.
+    assert 'excludes=[' in source
+    excludes_block = source.split("excludes=[", 1)[1].split("]", 1)[0]
+    assert "tkinter" not in excludes_block
+
+
+def test_spec_filters_foreign_icu_binaries() -> None:
+    """Conda ICU must not ship; unrelated conda runtime files must remain."""
+    tree = _spec_tree()
+    predicate_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_is_foreign_icu"
+    )
+    predicate_module = ast.Module(
+        body=[
+            ast.ImportFrom(
+                module="pathlib",
+                names=[ast.alias(name="Path")],
+                level=0,
+            ),
+            predicate_node,
+        ],
+        type_ignores=[],
+    )
+    namespace: dict[str, object] = {}
+    exec(
+        compile(
+            ast.fix_missing_locations(predicate_module),
+            filename=str(SPEC_PATH),
+            mode="exec",
+        ),
+        namespace,
+    )
+    is_foreign_icu = namespace["_is_foreign_icu"]
+    assert callable(is_foreign_icu)
+
+    assert is_foreign_icu(
+        ("icuuc.dll", r"C:\\miniforge\\Library\\bin\\icuuc.dll", "BINARY")
+    )
+    assert not is_foreign_icu(
+        ("python312.dll", r"C:\\miniforge\\envs\\packaging\\python312.dll", "BINARY")
+    )
+    assert not is_foreign_icu(
+        ("Qt6Core.dll", r"C:\\miniforge\\envs\\packaging\\Qt6Core.dll", "BINARY")
+    )
+    assert not is_foreign_icu(
+        ("icuuc.dll", r"C:\\Windows\\System32\\icuuc.dll", "BINARY")
+    )
 
 
 def test_splash_typography_is_not_packed_without_a_runtime_consumer() -> None:
