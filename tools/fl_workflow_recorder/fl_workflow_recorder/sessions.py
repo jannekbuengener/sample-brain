@@ -124,6 +124,13 @@ class SessionManager:
             sid = row["id"]
             if sid == keep_id:
                 self.current_session_id = sid
+                # Restore persisted duration counters; do not count recorder downtime.
+                self.activity = ActivityTracker(
+                    active_ns=int(row["active_duration_ns"] or 0),
+                    listening_ns=int(row["listening_duration_ns"] or 0),
+                    idle_ns=int(row["idle_duration_ns"] or 0),
+                    last_tick_wall_ns=None,
+                )
                 continue
             last_ev = self.store.last_event_wall_ns(sid) or int(row["started_at_wall_ns"])
             # If FL is gone, or session is old without keep — recover.

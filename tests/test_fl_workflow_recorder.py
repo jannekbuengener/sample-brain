@@ -137,7 +137,8 @@ def test_incremental_ingest_partial_line_malformed_and_replay(observer_root: Obs
     store.close()
 
 
-def test_spool_rotation_after_commit(observer_root: ObserverPaths) -> None:
+def test_spool_ingest_does_not_truncate_active_file(observer_root: ObserverPaths) -> None:
+    """V1 keeps active spools append-only (no racey truncate against writers)."""
     store = WorkflowStore(observer_root.db)
     sid = str(uuid.uuid4())
     store.create_session(sid)
@@ -147,7 +148,8 @@ def test_spool_rotation_after_commit(observer_root: ObserverPaths) -> None:
         json.dumps(_evt(source="win", seq=i, etype="CLICK", props={"button": "left", "phase": "down"}, wall=i))
         for i in range(1, 6)
     ]
-    spool.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    body = "\n".join(lines) + "\n"
+    spool.write_text(body, encoding="utf-8")
     r = ing.ingest_file(
         spool,
         spool_name="windows-events.jsonl",
@@ -156,8 +158,26 @@ def test_spool_rotation_after_commit(observer_root: ObserverPaths) -> None:
         rotate_keep_bytes=0,
     )
     assert r.inserted == 5
-    assert spool.read_text(encoding="utf-8") == ""
-    assert store.get_cursor("windows-events.jsonl") == 0
+    assert spool.stat().st_size > 0
+    assert store.get_cursor("windows-events.jsonl") == spool.stat().st_size
+    store.close()
+
+
+def test_quarantine_excerpt_is_redacted(observer_root: ObserverPaths) -> None:
+    store = WorkflowStore(observer_root.db)
+    sid = str(uuid.uuid4())
+    store.create_session(sid)
+    ing = SpoolIngestor(store)
+    spool = observer_root.fl_spool
+    secret = json.dumps(
+        {"source": "win", "seq": 1, "type": "CLIPBOARD", "t_wall_ns": 1, "props": {"clipboard": "SECRET"}}
+    )
+    spool.write_text(secret + "\n", encoding="utf-8")
+    ing.ingest_file(spool, spool_name="fl-events.jsonl", session_id=sid)
+    row = store.connect().execute("SELECT raw_excerpt, reason FROM spool_quarantine").fetchone()
+    assert row is not None
+    assert "SECRET" not in row["raw_excerpt"]
+    assert "redacted=true" in row["raw_excerpt"]
     store.close()
 
 
@@ -222,10 +242,21 @@ def test_recorder_restart_continues_matching_fl_pid(observer_root: ObserverPaths
     store = WorkflowStore(observer_root.db)
     sid = str(uuid.uuid4())
     store.create_session(sid, fl_pid=99)
+    store.update_session_meta(
+        sid,
+        durations={
+            "active_duration_ns": 111,
+            "listening_duration_ns": 222,
+            "idle_duration_ns": 333,
+        },
+    )
     mgr = SessionManager(store)
     recovered = mgr.recover_stale_on_startup(fl_alive=True, fl_pid=99)
     assert recovered == []
     assert mgr.current_session_id == sid
+    assert mgr.activity.active_ns == 111
+    assert mgr.activity.listening_ns == 222
+    assert mgr.activity.idle_ns == 333
     store.close()
 
 

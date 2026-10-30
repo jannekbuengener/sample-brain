@@ -119,6 +119,57 @@ def _utc_from_wall_ns(wall_ns):
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(sec)) + (".%03dZ" % ms)
 
 
+_PATH_MARKERS = (
+    ":\\",
+    "\\\\",
+    "/Users/",
+    "/home/",
+    "%USERPROFILE%",
+    "%LOCALAPPDATA%",
+    ".flp",
+    ".wav",
+    ".mp3",
+)
+
+
+def _looks_path_like(value):
+    if not isinstance(value, str):
+        return False
+    low = value.lower()
+    for marker in _PATH_MARKERS:
+        if marker.lower() in low:
+            return True
+    return False
+
+
+def _scrub_props(props):
+    """Fail-closed path-like redaction before spool write (privacy at source)."""
+    if not props:
+        return {}
+    out = {}
+    for key, value in props.items():
+        lk = str(key).lower()
+        if lk in ("char", "character", "clipboard", "password", "sample_path", "project_path"):
+            continue
+        if isinstance(value, str) and _looks_path_like(value):
+            out[key] = "[redacted_path_like]"
+        elif isinstance(value, dict):
+            out[key] = _scrub_props(value)
+        elif isinstance(value, list):
+            cleaned = []
+            for item in value[:64]:
+                if isinstance(item, dict):
+                    cleaned.append(_scrub_props(item))
+                elif isinstance(item, str) and _looks_path_like(item):
+                    cleaned.append("[redacted_path_like]")
+                else:
+                    cleaned.append(item)
+            out[key] = cleaned
+        else:
+            out[key] = value
+    return out
+
+
 def _emit(event_type, props=None):
     global _seq
     _seq += 1
@@ -132,7 +183,7 @@ def _emit(event_type, props=None):
         "t_utc": _utc_from_wall_ns(wall_ns),
         "source": "fl",
         "type": event_type,
-        "props": props or {},
+        "props": _scrub_props(props or {}),
     }
     line = (json.dumps(evt, ensure_ascii=True, separators=(",", ":")) + "\n").encode("utf-8")
     if not _append_bytes(FL_EVENTS_PATH, line):

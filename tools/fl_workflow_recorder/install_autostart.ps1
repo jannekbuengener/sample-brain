@@ -1,4 +1,4 @@
-# #1321 - zero-touch recorder start at user logon.
+﻿# #1321 - zero-touch recorder start at user logon.
 # Prefer Scheduled Task; fall back to HKCU Run + Startup shortcut (no admin).
 
 $ErrorActionPreference = "Stop"
@@ -82,16 +82,8 @@ start "" /B "$Python" $ArgList
   Set-ItemProperty -Path $runKey -Name $TaskName -Value "`"$wrapper`""
   $mechanism = "hkcu_run"
   $detail = $wrapper
-
-  # 3) Also drop Startup shortcut as redundant fail-soft path
-  $startup = [Environment]::GetFolderPath("Startup")
-  $lnkPath = Join-Path $startup "$TaskName.lnk"
-  $w = New-Object -ComObject WScript.Shell
-  $lnk = $w.CreateShortcut($lnkPath)
-  $lnk.TargetPath = $wrapper
-  $lnk.WorkingDirectory = $ModuleDir
-  $lnk.WindowStyle = 7
-  $lnk.Save()
+  # Only one fallback mechanism — do not also create a Startup shortcut
+  # (would double-launch; recorder singleton would reject the second, but avoid it).
 }
 
 @{

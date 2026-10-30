@@ -84,7 +84,7 @@ class SpoolIngestor:
             except json.JSONDecodeError:
                 self.store.quarantine(
                     spool_name,
-                    text,
+                    _safe_quarantine_excerpt(text),
                     "malformed_json",
                     byte_offset=offset,
                 )
@@ -94,7 +94,7 @@ class SpoolIngestor:
             if event is None:
                 self.store.quarantine(
                     spool_name,
-                    text[:500],
+                    _safe_quarantine_excerpt(text),
                     "rejected_privacy_or_schema",
                     byte_offset=offset,
                 )
@@ -121,25 +121,18 @@ class SpoolIngestor:
         )
         result.bytes_advanced = max(0, new_offset - offset)
 
-        if rotate_after_commit and new_offset > rotate_keep_bytes and not result.partial_tail:
-            self._compact_spool(spool_path, spool_name, keep_from=new_offset)
+        # Active spool compaction against concurrent FL/Windows writers is unsafe
+        # (appends between size-check and truncate can be lost). V1 keeps spools
+        # append-only; disk growth is bounded by retention + optional offline compact.
+        _ = (rotate_after_commit, rotate_keep_bytes)
 
         return result
 
-    def _compact_spool(self, spool_path: Path, spool_name: str, *, keep_from: int) -> None:
-        """Drop already-committed prefix. Never delete before cursor commit."""
-        try:
-            size = spool_path.stat().st_size
-            if keep_from <= 0 or keep_from >= size:
-                if keep_from >= size and size > 0:
-                    spool_path.write_bytes(b"")
-                    self.store.set_cursor(spool_name, 0)
-                return
-            with spool_path.open("rb") as fh:
-                fh.seek(keep_from)
-                remainder = fh.read()
-            spool_path.write_bytes(remainder)
-            self.store.set_cursor(spool_name, 0)
-        except OSError:
-            # Fail-soft: leave spool as-is; cursor already committed.
-            return
+
+def _safe_quarantine_excerpt(text: str) -> str:
+    """Never persist raw rejected payloads that may contain secrets/paths."""
+    raw = text or ""
+    return (
+        "len=%d sha_prefix=%s redacted=true"
+        % (len(raw), ("%08x" % (abs(hash(raw)) & 0xFFFFFFFF)))
+    )

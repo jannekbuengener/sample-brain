@@ -24,6 +24,28 @@ from .store import WorkflowStore
 logger = logging.getLogger("fl_workflow_recorder")
 
 
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            SYNCHRONIZE = 0x00100000
+            handle = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            return False
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 class RecorderService:
     def __init__(
         self,
@@ -60,12 +82,26 @@ class RecorderService:
             ],
         )
 
-    def _write_pid(self) -> None:
+    def _acquire_singleton(self) -> bool:
+        """Return False if another recorder instance is already running."""
+        self.paths.ensure()
+        if self.paths.pid_file.exists():
+            try:
+                old = int(self.paths.pid_file.read_text(encoding="utf-8").strip() or "0")
+            except ValueError:
+                old = 0
+            if old and old != os.getpid() and _pid_is_running(old):
+                logger.error("another recorder is running pid=%s; exiting", old)
+                return False
         self.paths.pid_file.write_text(str(os.getpid()), encoding="utf-8")
+        return True
 
     def _clear_pid(self) -> None:
         try:
-            if self.paths.pid_file.exists():
+            if not self.paths.pid_file.exists():
+                return
+            cur = self.paths.pid_file.read_text(encoding="utf-8").strip()
+            if cur == str(os.getpid()):
                 self.paths.pid_file.unlink()
         except OSError:
             pass
@@ -193,7 +229,8 @@ class RecorderService:
     def run(self) -> int:
         self._setup_logging()
         self.paths.ensure()
-        self._write_pid()
+        if not self._acquire_singleton():
+            return 3
         self._store = WorkflowStore(self.paths.db)
         self._store.connect()
         self._sessions = SessionManager(self._store)
@@ -232,14 +269,6 @@ class RecorderService:
                 fl = find_fl_process()
                 fl_ver, midi_api = self._read_fl_meta()
                 prev = self._sessions.current_session_id
-                sid = self._sessions.ensure_session(
-                    fl_alive=fl.alive,
-                    fl_pid=fl.pid,
-                    fl_version=fl_ver,
-                    midi_api=midi_api,
-                )
-                if sid and sid != prev:
-                    self._emit_observer("SESSION_OPEN", {"fl_pid": fl.pid})
 
                 # Sync FG/playing hints into activity tracker.
                 if self._capture is not None:
@@ -252,6 +281,19 @@ class RecorderService:
                     age = time.time() - self.paths.fl_spool.stat().st_mtime
                     if fl.alive and age > 30 and self._last_fl_event_wall is None:
                         self._fl_script_silent = True
+
+                # Drain spools into the current session BEFORE closing on FL exit
+                # so late RECORDER_DEINIT / trailing events stay on the right session.
+                if prev and not fl.alive:
+                    self._ingest_once()
+                sid = self._sessions.ensure_session(
+                    fl_alive=fl.alive,
+                    fl_pid=fl.pid,
+                    fl_version=fl_ver,
+                    midi_api=midi_api,
+                )
+                if sid and sid != prev:
+                    self._emit_observer("SESSION_OPEN", {"fl_pid": fl.pid})
 
                 self._ingest_once()
                 self._sessions.tick(fl_alive=fl.alive)
