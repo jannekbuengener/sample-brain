@@ -670,6 +670,10 @@ def test_qml_window_level_escape_stops_live_kit_audition_from_any_focus():
         assert interaction.property("previewActive") is True
         assert len(previews) == 1
 
+        bridge.toggleLiveKitDrawer()
+        app.processEvents()
+        assert interaction.property("liveKitDrawerOpen") is True
+
         library_tree = window.findChild(QQuickItem, "libraryTree")
         assert library_tree is not None
         library_tree.forceActiveFocus()
@@ -680,6 +684,7 @@ def test_qml_window_level_escape_stops_live_kit_audition_from_any_focus():
         QTest.keyClick(window, Qt.Key_Escape)
         app.processEvents()
         assert interaction.property("previewActive") is False
+        assert interaction.property("liveKitDrawerOpen") is False
         assert screen_data.property("liveKitGroups")[1]["slots"][0]["auditioning"] is False
     finally:
         window.close()
