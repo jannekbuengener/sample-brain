@@ -78,6 +78,11 @@ def _run(args: argparse.Namespace) -> int:
     if not production_path.is_relative_to(root.resolve()):
         raise SystemExit(f"wrong worktree provenance: {production_path}")
 
+    # Synthetic evidence rows have no on-disk audio file. Supply only the source
+    # frame-count metadata needed to verify Loop-extent waveform alignment; the
+    # production path still uses audio_source_frame_info against the real owner.
+    production_qml.audio_source_frame_info = lambda _path: (1000, 48000)
+
     def row(index: int, *, owner: bool = False) -> WorkbenchRow:
         name = "owner-loop" if owner else f"row-{index:03d}"
         envelope = tuple(
@@ -217,6 +222,8 @@ def _run(args: argparse.Namespace) -> int:
         assert 0.0 < float(bridge.property("browserLoopProgress")) < 1.0
         assert bool(inline_playhead.property("visible"))
         checks["inline_grid_playhead"] = "PASS"
+        assert bool(bridge.property("browserLoopWaveformAligned"))
+        checks["inline_waveform_extent_aligned"] = "PASS"
         snapshot("01-inline-owner")
 
         adapter.preview_row(5)
