@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from bisect import bisect_right
 from dataclasses import dataclass
 from fractions import Fraction
@@ -396,12 +397,21 @@ def compute_sync_playback_rate(
     if not s_bpm or s_bpm != s_bpm:  # includes 0 and NaN
         return 1.0, "not_syncable"
 
+    # --- Invalid / non-finite MASTER BPM (#1215) ---
+    # NaN must not fall through range checks as rate=NaN with status="sync".
+    try:
+        m_bpm = float(master_bpm)
+    except (TypeError, ValueError):
+        return 1.0, "not_syncable"
+    if not math.isfinite(m_bpm) or m_bpm <= 0:
+        return 1.0, "not_syncable"
+
     # --- SYNC off → original speed ---
     if not sync_enabled:
         return 1.0, "sync"
 
     # --- SYNC on with valid source BPM ---
-    rate = master_bpm / s_bpm
+    rate = m_bpm / s_bpm
 
     # Clamp to reasonable range to avoid extreme rate jumps
     # (extreme rates are treated as not_syncable per #323 spec)

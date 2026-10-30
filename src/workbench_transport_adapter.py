@@ -28,10 +28,12 @@ DEFAULT_TEMPO_BPM = 132.0
 
 
 def _clamp_bpm(value: float) -> float:
-    """Return a positive BPM suitable for the transport control."""
+    """Return a positive finite BPM suitable for the transport control."""
     try:
         parsed = float(value)
     except (TypeError, ValueError):
+        return 120.0
+    if not math.isfinite(parsed) or parsed <= 0:
         return 120.0
     return max(parsed, 0.01)
 
