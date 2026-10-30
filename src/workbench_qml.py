@@ -949,6 +949,7 @@ class Screen1QmlInteractionAdapter:
         self._library_db_path = library_db_path
         self._pending_live_kit_row: WorkbenchRow | None = None
         self._sample_context_target: WorkbenchRow | None = None
+        self._browser_loop: Any | None = None
         self._preview_active = False
         self._auditioning_live_kit_slot: tuple[str, str] | None = None
         self._live_kit_export_status = ""
@@ -1055,6 +1056,38 @@ class Screen1QmlInteractionAdapter:
             self.open_harmonic_matches_for_row(target)
         self.close_sample_context()
         return target
+
+    def bind_browser_loop(self, browser_loop: Any) -> None:
+        """Bind the session-owned persistent Browser Loop role (#1284)."""
+        self._browser_loop = browser_loop
+
+    def request_loop_on_for_row(self, row: WorkbenchRow) -> Any:
+        """Canonical Loop ON seam for a concrete resolved ``WorkbenchRow`` (#1284)."""
+        if self._browser_loop is None:
+            raise RuntimeError("Browser Loop runtime is not bound")
+        return self._browser_loop.loop_on(row)
+
+    def request_loop_off(self) -> Any:
+        """Clear the persistent Loop role only (#1284)."""
+        if self._browser_loop is None:
+            raise RuntimeError("Browser Loop runtime is not bound")
+        return self._browser_loop.loop_off()
+
+    def request_context_loop_on(self) -> WorkbenchRow:
+        """LOOP ON for ``sample_context_target`` without re-resolving an index (#1284)."""
+        target = self._sample_context_target
+        if target is None:
+            raise ValueError("No sample context target")
+        result = self.request_loop_on_for_row(target)
+        if not getattr(result, "ok", False):
+            raise ValueError(getattr(result, "message", "LOOP ON rejected"))
+        self.close_sample_context()
+        return target
+
+    def request_context_loop_off(self) -> None:
+        """LOOP OFF via context menu; clears Loop role only (#1284)."""
+        self.request_loop_off()
+        self.close_sample_context()
 
     def _reveal_live_kit_pane(self) -> None:
         """UI disclosure only — does not mutate Live-Kit domain assignments."""

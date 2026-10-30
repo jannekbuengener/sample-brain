@@ -88,11 +88,13 @@ class TransportAwarePreview:
         *,
         pcm_load_fn: PcmLoadFn | None = None,
         on_before_shared_transport_stop: Callable[[], None] | None = None,
+        should_keep_shared_transport: Callable[[], bool] | None = None,
     ) -> None:
         self._preview = preview
         self._transport = transport
         self._pcm_load_fn = pcm_load_fn or _load_native_pcm
         self._on_before_shared_transport_stop = on_before_shared_transport_stop
+        self._should_keep_shared_transport = should_keep_shared_transport
         self._active_voice_id: int | None = None
         self._native_current_path: Path | None = None
         self._native_identity_path: str = ""
@@ -104,6 +106,12 @@ class TransportAwarePreview:
     ) -> None:
         """Bind session policy before shared transport teardown (#916)."""
         self._on_before_shared_transport_stop = callback
+
+    def set_should_keep_shared_transport(
+        self, callback: Callable[[], bool] | None
+    ) -> None:
+        """Keep shared transport alive when another role (e.g. Browser Loop) owns it (#1284)."""
+        self._should_keep_shared_transport = callback
 
     @property
     def current_path(self):
@@ -224,8 +232,19 @@ class TransportAwarePreview:
     def play_frame_region_loop(self, *args: Any, **kwargs: Any):
         return self._play_legacy("play_frame_region_loop", *args, **kwargs)
 
-    def play_row(self, row: WorkbenchRow, *, start_ms: int = 0) -> PreviewResult:
-        """Audition exactly one row through the shared native/fallback owner."""
+    def play_row(
+        self,
+        row: WorkbenchRow,
+        *,
+        start_ms: int = 0,
+        source_start_frame: int | None = None,
+    ) -> PreviewResult:
+        """Audition exactly one row through the shared native/fallback owner.
+
+        ``source_start_frame`` (optional, #1284) enters at an absolute source
+        PCM frame — used for SYNC ON Browser audition at the current MASTER
+        comparison phase. When set, it overrides ``start_ms`` for the native path.
+        """
         path = Path(row.path).resolve()
         identity_path = str(row.path)
         one_shot = _row_is_one_shot(row)
@@ -252,11 +271,22 @@ class TransportAwarePreview:
             return self.play(path, start_ms=start_ms)
 
         try:
-            pcm, channels = self._pcm_load_fn(
-                path,
-                sample_rate=self._transport.tempo_map.sample_rate,
-                start_ms=start_ms,
-            )
+            if source_start_frame is not None:
+                sample_rate = int(self._transport.tempo_map.sample_rate)
+                start_ms_from_frame = max(
+                    0, int(round(int(source_start_frame) * 1000.0 / max(1, sample_rate)))
+                )
+                pcm, channels = self._pcm_load_fn(
+                    path,
+                    sample_rate=sample_rate,
+                    start_ms=start_ms_from_frame,
+                )
+            else:
+                pcm, channels = self._pcm_load_fn(
+                    path,
+                    sample_rate=self._transport.tempo_map.sample_rate,
+                    start_ms=start_ms,
+                )
         except Exception as exc:
             return PreviewResult(ok=False, message=f"Audio konnte nicht geladen werden: {exc}")
 
@@ -317,7 +347,11 @@ class TransportAwarePreview:
                     engine.remove_voice(created_id)
                 except Exception:
                     pass
-            self._transport.stop()
+            if not (
+                self._should_keep_shared_transport is not None
+                and self._should_keep_shared_transport()
+            ):
+                self._transport.stop()
             return PreviewResult(ok=False, message=f"Wiedergabe fehlgeschlagen: {exc}")
         return PreviewResult(ok=True)
 
@@ -326,8 +360,14 @@ class TransportAwarePreview:
 
         Used for focus transfer when Rack playback owns the shared transport.
         Does not call ``WorkbenchTransportAdapter.stop()``.
+        Always clears local audition ownership even when native stop fails
+        (stale/synthetic voice ids must not block focus transfer).
         """
-        self._stop_native_voice()
+        if not self._stop_native_voice():
+            voice_id = self._active_voice_id
+            if voice_id is not None:
+                self._transport.unregister_voice(voice_id)
+            self._clear_native_audition_state()
         self._preview.stop()
 
     def stop(self) -> None:
@@ -335,11 +375,17 @@ class TransportAwarePreview:
 
         When a session policy is bound, it may stop Rack playback first so
         ``channel_rack.is_playing`` cannot remain True against a stopped
-        shared transport (#916 stop invariant).
+        shared transport (#916 stop invariant). When another role such as
+        Browser Loop (#1284) still owns the shared clock, transport stays up.
         """
         self.release_voice()
         if self._on_before_shared_transport_stop is not None:
             self._on_before_shared_transport_stop()
+        if (
+            self._should_keep_shared_transport is not None
+            and self._should_keep_shared_transport()
+        ):
+            return
         self._transport.stop()
 
     def __getattr__(self, name: str):
