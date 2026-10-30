@@ -78,6 +78,7 @@ def correlate_actions(events: list[NormalizedEvent]) -> list[CorrelatedAction]:
     fl_foreground = True
     prev_undo_pos: int | None = None
     prev_undo_count: int | None = None
+    pending_drag: NormalizedEvent | None = None
     seq = 0
 
     # Index FL edit signals for lookahead/lookback correlation.
@@ -268,6 +269,28 @@ def correlate_actions(events: list[NormalizedEvent]) -> list[CorrelatedAction]:
             continue
 
         if ev.source == "win" and ev.event_type in ("CLICK", "DRAG", "WHEEL", "KEY_CMD", "TEXT_ENTRY"):
+            # Preserve drag intervals: start is held until end (or duration_ms).
+            if ev.event_type == "DRAG" and str(ev.props.get("phase", "")).lower() == "start":
+                pending_drag = ev
+                continue
+
+            start_ns = ev.t_wall_ns
+            end_ns = ev.t_wall_ns
+            evid_extra: list[NormalizedEvent] = []
+            if ev.event_type == "DRAG":
+                phase = str(ev.props.get("phase", "")).lower()
+                if phase == "end" and pending_drag is not None:
+                    start_ns = pending_drag.t_wall_ns
+                    evid_extra.append(pending_drag)
+                    pending_drag = None
+                elif phase == "end":
+                    dur_ms = ev.props.get("duration_ms")
+                    try:
+                        if dur_ms is not None and int(dur_ms) > 0:
+                            start_ns = ev.t_wall_ns - int(dur_ms) * 1_000_000
+                    except (TypeError, ValueError):
+                        pass
+
             effective_surface = surface if fl_foreground else None
             stale = (
                 effective_surface is not None
@@ -320,14 +343,18 @@ def correlate_actions(events: list[NormalizedEvent]) -> list[CorrelatedAction]:
                 reasons.append("nearby_hint")
             if has_edit_sig:
                 reasons.append("nearby_edit_signal")
+            if end_ns > start_ns:
+                reasons.append("interval_action")
             reasons.extend(reasons_bs)
 
-            evid_ids = [ev.event_id] + [n.event_id for n in nearby]
-            evid_types = [ev.event_type] + [n.event_type for n in nearby]
+            evid_ids = [e.event_id for e in evid_extra] + [ev.event_id] + [n.event_id for n in nearby]
+            evid_types = [e.event_type for e in evid_extra] + [ev.event_type] + [
+                n.event_type for n in nearby
+            ]
             emit(
                 session_id=ev.session_id,
-                start_wall_ns=ev.t_wall_ns,
-                end_wall_ns=ev.t_wall_ns,
+                start_wall_ns=start_ns,
+                end_wall_ns=end_ns,
                 action_type=atype,
                 surface=effective_surface,
                 truth_level=truth,

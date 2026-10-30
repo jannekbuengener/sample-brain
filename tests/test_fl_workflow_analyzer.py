@@ -471,6 +471,64 @@ def test_plugin_clear_on_mixer_not_plugin_interaction() -> None:
     assert plugin_ns < 2 * NS
 
 
+def test_edit_arrangement_coalesces_playlist_visit() -> None:
+    t0 = 1800 * NS
+    events = [
+        _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "PianoRoll"}),
+        _ev(source="win", seq=1, etype="CLICK", wall=t0 + int(0.1 * NS), props={"button": "left"}),
+        _ev(source="fl", seq=2, etype="FOCUS_SURFACE", wall=t0 + 5 * NS, props={"surface": "Playlist"}),
+        _ev(source="win", seq=2, etype="CLICK", wall=t0 + 6 * NS, props={"button": "left"}),
+        _ev(source="fl", seq=3, etype="FOCUS_SURFACE", wall=t0 + 10 * NS, props={"surface": "PianoRoll"}),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + 12 * NS
+    )
+    ea = result["edit_arrangement"]
+    assert ea["edit_to_arrangement_count"] == 1
+    assert ea["arrangement_to_edit_count"] == 1
+    assert ea["short_return_count"] >= 1
+
+
+def test_drag_interval_not_swallowed_by_listening() -> None:
+    t0 = 1900 * NS
+    events = [
+        _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "Playlist"}),
+        _ev(
+            source="fl",
+            seq=2,
+            etype="TRANSPORT",
+            wall=t0 + NS,
+            props={"playing": True, "event": "PLAY"},
+        ),
+        _ev(
+            source="win",
+            seq=1,
+            etype="DRAG",
+            wall=t0 + 2 * NS,
+            props={"phase": "start", "distance": 0},
+        ),
+        _ev(
+            source="win",
+            seq=2,
+            etype="DRAG",
+            wall=t0 + 12 * NS,
+            props={"phase": "end", "distance": 50, "duration_ms": 10000},
+        ),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + 15 * NS
+    )
+    edit_ns = sum(
+        s["duration_ns"]
+        for s in result["segments"]
+        if s["activity"] in ("playlist_edit", "arrangement")
+    )
+    assert edit_ns >= 9 * NS
+    drags = [a for a in result["actions"] if a["action_type"].startswith("drag")]
+    assert drags
+    assert drags[0]["end_wall_ns"] - drags[0]["start_wall_ns"] >= 9 * NS
+
+
 def test_idle_not_erased_by_later_focus() -> None:
     t0 = 1700 * NS
     events = [

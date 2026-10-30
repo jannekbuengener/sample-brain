@@ -299,35 +299,44 @@ def edit_arrangement_evidence(segments: list[ActivitySegment], *, session_id: st
             return "edit"
         return None
 
-    seq = [(norm(s.activity), s) for s in segments]
-    seq = [(n, s) for n, s in seq if n is not None]
+    # Coalesce adjacent segments that normalize to the same SB context so
+    # arrangement focus + playlist_edit input count as one arrangement visit.
+    raw = [(norm(s.activity), s) for s in segments]
+    raw = [(n, s) for n, s in raw if n is not None]
+    seq: list[tuple[str, int, int, int]] = []  # norm, start, end, dwell
+    for n, s in raw:
+        if seq and seq[-1][0] == n:
+            prev_n, prev_start, _prev_end, prev_dwell = seq[-1]
+            seq[-1] = (prev_n, prev_start, s.end_wall_ns, prev_dwell + s.duration_ns)
+        else:
+            seq.append((n, s.start_wall_ns, s.end_wall_ns, s.duration_ns))
     ea = 0
     ae = 0
     ea_durs: list[int] = []
     ae_durs: list[int] = []
     short_returns = 0
     for i in range(len(seq) - 1):
-        a, sa = seq[i]
-        b, sb = seq[i + 1]
+        a, _a0, _a1, a_dwell = seq[i]
+        b = seq[i + 1][0]
         if a == "edit" and b == "arrangement":
             ea += 1
-            ea_durs.append(sa.duration_ns)
+            ea_durs.append(a_dwell)
         elif a == "arrangement" and b == "edit":
             ae += 1
-            ae_durs.append(sa.duration_ns)
+            ae_durs.append(a_dwell)
     # Short return: edit→arrangement→edit within backtrack window
     for i in range(len(seq) - 2):
-        a, sa = seq[i]
-        b, sb = seq[i + 1]
-        c, sc = seq[i + 2]
+        a, a_start, a_end, _ = seq[i]
+        b = seq[i + 1][0]
+        c, c_start, c_end, _ = seq[i + 2]
         if a == "edit" and b == "arrangement" and c == "edit":
-            if sc.start_wall_ns - sa.end_wall_ns <= BACKTRACK_MAX_RETURN_NS:
+            if c_start - a_end <= BACKTRACK_MAX_RETURN_NS:
                 short_returns += 1
         if a == "arrangement" and b == "edit" and c == "arrangement":
-            if sc.start_wall_ns - sa.end_wall_ns <= BACKTRACK_MAX_RETURN_NS:
+            if c_start - a_end <= BACKTRACK_MAX_RETURN_NS:
                 short_returns += 1
 
-    covered = sum(s.duration_ns for _, s in seq)
+    covered = sum(d for _, _, _, d in seq)
     total = sum(s.duration_ns for s in segments if s.activity not in _PATH_EXCLUDE) or 1
     return {
         "session_id": session_id,
