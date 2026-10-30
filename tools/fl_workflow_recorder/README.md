@@ -28,12 +28,15 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 3. In FL Studio → Options → MIDI Settings: Controller type **SB Workflow Observer** on that input (OUT paired).
-4. Register login autostart:
+4. Register login autostart (Scheduled Task when permitted; otherwise HKCU Run + Startup shortcut):
 
 ```powershell
+# Optional: pin the interpreter used at logon (recommended for worktrees without .venv)
+$env:SAMPLE_BRAIN_RECORDER_PYTHON = "<repo>\.venv\Scripts\pythonw.exe"
 powershell -ExecutionPolicy Bypass -File .\install_autostart.ps1
-Start-ScheduledTask -TaskName SampleBrainWorkflowObserver
 ```
+
+`install.ps1` also bridges the durable script into the existing `#1320` Hardware folder `SBWorkflowSignalProbe` so a live Controller binding keeps working. Until FL reloads that script, the recorder may ingest the legacy probe `fl-events.jsonl` once as a migration bridge (does not rotate the probe file).
 
 5. Status:
 

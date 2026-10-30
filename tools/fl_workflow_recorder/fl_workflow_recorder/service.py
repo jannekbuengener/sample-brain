@@ -155,6 +155,21 @@ class RecorderService:
                 rotate_keep_bytes=self.spool_rotate_bytes,
                 on_event=on_ev,
             )
+            # Migration bridge: FL may still run the in-memory #1320 probe script
+            # until Controller reselect / FL restart. Ingest legacy probe spool
+            # without rotating it (probe owns that file).
+            legacy = self.paths.legacy_probe_fl_spool
+            if legacy.exists():
+                leg = self._ingest.ingest_file(
+                    legacy,
+                    spool_name="fl-events.legacy-probe.jsonl",
+                    session_id=sid,
+                    rotate_after_commit=False,
+                    on_event=on_ev,
+                )
+                fl_res.inserted += leg.inserted
+                fl_res.duplicates += leg.duplicates
+                fl_res.quarantined += leg.quarantined
             win_res = self._ingest.ingest_file(
                 self.paths.win_spool,
                 spool_name="windows-events.jsonl",

@@ -59,6 +59,11 @@ class ObserverPaths:
     def log_file(self) -> Path:
         return self.logs_dir / "recorder.log"
 
+    @property
+    def legacy_probe_fl_spool(self) -> Path:
+        """#1320 probe spool — used only until FL reloads the durable device script."""
+        return self.root.parent / "workflow-observer-probe" / "fl-events.jsonl"
+
     def ensure(self) -> None:
         for d in (self.root, self.spool_dir, self.state_dir, self.logs_dir):
             d.mkdir(parents=True, exist_ok=True)
