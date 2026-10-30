@@ -133,7 +133,7 @@ def _is_foreign_icu(entry: object) -> bool:
         for prefix in ("icuuc", "icudt", "icuin")
     )
     conda_hit = "\\library\\bin\\icu" in blob or "\\conda\\" in blob or "\\miniforge\\" in blob
-    return name_hit or conda_hit
+    return name_hit and conda_hit
 
 
 a.binaries = [entry for entry in a.binaries if not _is_foreign_icu(entry)]

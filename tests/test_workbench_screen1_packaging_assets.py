@@ -225,10 +225,11 @@ def test_spec_keeps_tkinter_for_transport_ui_import_chain() -> None:
 
 
 def test_spec_filters_foreign_icu_binaries() -> None:
-    """Conda ICU must not ship; Qt binds Windows System32 icuuc."""
+    """Conda ICU must not ship; unrelated conda runtime files must remain."""
     source = _spec_source()
     assert "_is_foreign_icu" in source
     assert "icuuc" in source
+    assert "return name_hit and conda_hit" in source
 
 
 def test_splash_typography_is_not_packed_without_a_runtime_consumer() -> None:
