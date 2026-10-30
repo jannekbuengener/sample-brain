@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ from src.native_audio import SB_VOICE_IDLE, SB_VOICE_PLAYING, SB_VOICE_SCHEDULED
 from src.workbench_controller import WorkbenchRow
 from src.workbench_preview import PreviewResult, WorkbenchPreviewPlayer
 from src.workbench_qml import QML_SOURCE, Screen1QmlInteractionAdapter, Screen1QmlViewModel
+from src import workbench_qml as workbench_qml_mod
 from src.workbench_transport_adapter import WorkbenchTransportAdapter
 from src.workbench_transport_ui import PreviewPlaybackSnapshot, TransportAwarePreview
 
@@ -244,8 +246,15 @@ def test_qml_source_has_shared_playhead_overlay_without_per_row_timers() -> None
     assert "previewPlayingPath" in source
     assert "previewProgress" in source
     assert "waveformMotionMode" in source
-    assert "FrameAnimation" in source
-    assert "refreshPreviewPlayback" in source
+    assert source.count("FrameAnimation {") == 1
+    assert "playbackPresentationArmed" in source
+    assert "previewPlayheadArmed || window.loopPlayheadArmed" in source
+    assert "running: window.playbackPresentationArmed" in source
+    assert "onTriggered: window.interaction.refreshPlaybackProjection()" in source
+    assert "onTriggered: window.interaction.refreshPreviewPlayback()" not in source
+    # Compatibility wrapper remains on the Python bridge for external callers/tests,
+    # but the QML frame driver no longer names or routes through it.
+    assert "refreshPreviewPlayback" in inspect.getsource(workbench_qml_mod._qml_interaction_bridge)
     # No per-delegate Timer for playhead motion.
     browser = source[source.index('objectName: "browserList"') :]
     browser = browser[: browser.index('objectName: "elasticHandleAfterBrowser"')]

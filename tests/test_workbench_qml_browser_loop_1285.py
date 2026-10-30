@@ -346,3 +346,30 @@ def test_1285_inline_loop_owner_does_not_use_ordinary_hover_scale_or_luminance()
     browser = _browser_block()
     assert "!browserRow.isLoopOwner && browser.hoveredWaveformIndex === index" in browser
     assert "!browserRow.isLoopOwner && browser.hoveredWaveformIndex >= 0" in browser
+
+
+
+def test_1285_loop_playhead_uses_one_authoritative_shared_refresh_driver() -> None:
+    source = qml.QML_SOURCE
+    browser = _browser_block()
+    assert source.count("FrameAnimation {") == 1
+    assert "readonly property bool loopPlayheadArmed:" in source
+    assert "window.interaction.browserLoopActive" in source
+    assert "window.interaction.browserLoopPlaybackAvailable" in source
+    assert 'window.waveformMotionMode !== "off"' in source
+    assert "refreshPlaybackProjection()" in source
+    assert 'objectName: "browserLoopInlinePlayhead"' in browser
+    assert "window.interaction.browserLoopProgress" in browser
+    assert "visible: window.loopPlayheadArmed" in browser
+
+
+def test_1285_loop_grid_and_playhead_never_invent_phase_in_qml() -> None:
+    browser = _browser_block()
+    assert "browserLoopBarPositions" in browser
+    assert "Date.now" not in browser
+    assert "performance.now" not in browser
+    assert "NumberAnimation" not in browser
+    assert "Timer {" not in browser
+    assert "browserLoopProgress +" not in browser
+    assert "browserLoopProgress +=" not in browser
+    assert "browserLoopProgress =" not in browser

@@ -2971,11 +2971,16 @@ ApplicationWindow {
     readonly property bool previewPlayheadArmed: window.interaction.previewPlaybackPlaying
         && window.waveformMotionMode !== "off"
         && window.interaction.previewPlayingPath !== ""
+    // #1285: Loop phase remains Python/transport-owned; QML only asks for fresh projection.
+    readonly property bool loopPlayheadArmed: window.interaction.browserLoopActive
+        && window.interaction.browserLoopPlaybackAvailable
+        && window.waveformMotionMode !== "off"
+    readonly property bool playbackPresentationArmed: window.previewPlayheadArmed || window.loopPlayheadArmed
 
     FrameAnimation {
-        id: previewPlaybackDriver
-        running: window.previewPlayheadArmed
-        onTriggered: window.interaction.refreshPreviewPlayback()
+        id: playbackProjectionDriver
+        running: window.playbackPresentationArmed
+        onTriggered: window.interaction.refreshPlaybackProjection()
     }
 
     FolderDialog {
@@ -5476,7 +5481,7 @@ ApplicationWindow {
                                         height: parent.height
                                         color: theme.textPrimary
                                         opacity: 0.9
-                                        visible: window.interaction.browserLoopPlaybackAvailable
+                                        visible: window.loopPlayheadArmed
                                         x: Math.round(
                                             Math.max(0, Math.min(1, window.interaction.browserLoopProgress))
                                             * Math.max(0, parent.width - width)
