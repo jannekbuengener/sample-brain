@@ -83,8 +83,8 @@ def test_qml_context_dict_keeps_duration_and_type_on_distinct_keys():
 
 
 def _full_browser_column_header(source: str) -> str:
-    marker = source.index('text: "SAMPLE NAME"')
-    start = source.rfind("RowLayout { Layout.fillWidth: true", 0, marker)
+    marker = source.index('text: "DATEINAME"')
+    start = source.rfind("GridLayout {", 0, marker)
     end = source.index('objectName: "browserList"', marker)
     return source[start:end]
 
