@@ -11278,6 +11278,24 @@ def _qml_engine(
         show_window_on_primary_screen(app, root_window)
         # #1214: native caption inherits Appearance windowChrome.* (fail-soft).
         native_chrome = wire_theme_authority(root_window, theme_authority)
+        # Optional Exact-Head live probe (packaged acceptance): comma-separated
+        # theme names applied after show via the same selectTheme path as Display
+        # preferences. No-op unless SAMPLE_BRAIN_1214_LIVE_THEME_SEQUENCE is set.
+        _live_seq = [
+            part.strip()
+            for part in str(
+                os.environ.get("SAMPLE_BRAIN_1214_LIVE_THEME_SEQUENCE", "")
+            ).split(",")
+            if part.strip()
+        ]
+        if _live_seq:
+            from PySide6.QtCore import QTimer
+
+            for _i, _name in enumerate(_live_seq):
+                QTimer.singleShot(
+                    900 * (_i + 1),
+                    lambda n=_name: theme_authority.selectTheme(n),
+                )
     except BaseException:
         if waveform_loader is not None:
             waveform_loader.close()
