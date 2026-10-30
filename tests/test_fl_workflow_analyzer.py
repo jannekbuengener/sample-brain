@@ -91,6 +91,20 @@ def test_privacy_drops_forbidden_and_paths() -> None:
     assert "caption" not in props
 
 
+def test_privacy_unrecognized_hint_not_persisted() -> None:
+    props = safe_props({"text": "My Secret Project Label"}, event_type="HINT")
+    assert props.get("hint_present") is True
+    assert "hint_class" not in props
+    assert "secret" not in str(props).lower()
+
+
+def test_hint_class_deterministic_across_seeds() -> None:
+    from fl_workflow_analyzer.privacy import classify_hint
+
+    assert classify_hint("Paint / Select") == "paint"
+    assert classify_hint("Select / Paint") == "paint"  # ordered token precedence
+
+
 def test_golden_browse_to_playlist() -> None:
     t0 = 10 * NS
     events = [
@@ -325,6 +339,104 @@ def test_golden_low_confidence_blind_spot() -> None:
     assert clickish
     assert clickish[0]["confidence"] == "low"
     assert clickish[0]["truth_level"] in ("interpreted", "correlated")
+
+
+def test_active_gap_carry_preserves_dwell() -> None:
+    """Gaps between interactions (< idle, > merge) remain active production time."""
+    t0 = 1200 * NS
+    events = [
+        _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "Mixer"}),
+        _ev(source="win", seq=1, etype="CLICK", wall=t0 + int(0.1 * NS), props={"button": "left"}),
+        _ev(source="win", seq=2, etype="CLICK", wall=t0 + 10 * NS, props={"button": "left"}),
+        _ev(source="win", seq=3, etype="CLICK", wall=t0 + 20 * NS, props={"button": "left"}),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + 21 * NS
+    )
+    mixer_ns = sum(s["duration_ns"] for s in result["segments"] if s["activity"] == "mixer")
+    assert mixer_ns >= 19 * NS
+    assert result["coverage"]["active_ns"] >= 19 * NS
+
+
+def test_undo_requires_pos_decrease() -> None:
+    t0 = 1300 * NS
+    events = [
+        _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "Playlist"}),
+        # Init snapshot — must not count as undo
+        _ev(
+            source="fl",
+            seq=2,
+            etype="UNDO",
+            wall=t0 + int(0.1 * NS),
+            props={"undo_pos": 1, "undo_count": 1},
+        ),
+        # History growth from edit — not undo
+        _ev(
+            source="fl",
+            seq=3,
+            etype="UNDO",
+            wall=t0 + int(0.2 * NS),
+            props={"undo_pos": 2, "undo_count": 2},
+        ),
+        # Actual undo
+        _ev(
+            source="fl",
+            seq=4,
+            etype="UNDO",
+            wall=t0 + int(0.3 * NS),
+            props={"undo_pos": 1, "undo_count": 2},
+        ),
+        # Redo
+        _ev(
+            source="fl",
+            seq=5,
+            etype="UNDO",
+            wall=t0 + int(0.4 * NS),
+            props={"undo_pos": 2, "undo_count": 2},
+        ),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + NS
+    )
+    types = [a["action_type"] for a in result["actions"]]
+    assert types.count("undo") == 1
+    assert types.count("redo") == 1
+    assert result["undo"]["undo_count"] == 1
+
+
+def test_background_beats_listening_in_gaps() -> None:
+    t0 = 1400 * NS
+    events = [
+        _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "Playlist"}),
+        _ev(
+            source="fl",
+            seq=2,
+            etype="TRANSPORT",
+            wall=t0 + int(0.1 * NS),
+            props={"playing": True, "event": "PLAY"},
+        ),
+        _ev(
+            source="win",
+            seq=1,
+            etype="FG",
+            wall=t0 + NS,
+            props={"event": "FL_BACKGROUND", "fl_foreground": False},
+        ),
+        _ev(
+            source="win",
+            seq=2,
+            etype="FG",
+            wall=t0 + 60 * NS,
+            props={"event": "FL_FOREGROUND", "fl_foreground": True},
+        ),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + 61 * NS
+    )
+    bg_ns = sum(s["duration_ns"] for s in result["segments"] if s["activity"] == "background")
+    assert bg_ns >= 50 * NS
+    # Background time must not inflate listening coverage.
+    assert result["coverage"]["listening_ns"] < 10 * NS
 
 
 def test_deterministic_rerun() -> None:

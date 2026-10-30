@@ -97,22 +97,21 @@ ACTIVITY_TYPES = frozenset(
 )
 
 # Hint tokens that support edit correlation (explicit, testable).
-HINT_EDIT_TOKENS = frozenset(
-    {
-        "slice",
-        "brush",
-        "paint",
-        "cut",
-        "mute",
-        "slip",
-        "stretch",
-        "pencil",
-        "select",
-        "zoom",
-        "make unique",
-        "delete",
-        "resize",
-    }
+# Ordered tuple — first match wins (deterministic across PYTHONHASHSEED).
+HINT_EDIT_TOKENS = (
+    "make unique",
+    "slice",
+    "brush",
+    "paint",
+    "pencil",
+    "stretch",
+    "resize",
+    "delete",
+    "mute",
+    "slip",
+    "cut",
+    "select",
+    "zoom",
 )
 
 

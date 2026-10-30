@@ -76,6 +76,8 @@ def correlate_actions(events: list[NormalizedEvent]) -> list[CorrelatedAction]:
     surface_at: int | None = None
     playing = False
     fl_foreground = True
+    prev_undo_pos: int | None = None
+    prev_undo_count: int | None = None
     seq = 0
 
     # Index FL edit signals for lookahead/lookback correlation.
@@ -202,17 +204,58 @@ def correlate_actions(events: list[NormalizedEvent]) -> list[CorrelatedAction]:
             continue
 
         if ev.event_type == "UNDO":
+            # Recorder emits UNDO on any history-field change (init, edit growth,
+            # undo, redo). Only emit producer undo/redo when undo_pos moves
+            # relative to a prior observation.
+            pos_raw = ev.props.get("undo_pos")
+            count_raw = ev.props.get("undo_count")
+            try:
+                pos = int(pos_raw) if pos_raw is not None else None
+            except (TypeError, ValueError):
+                pos = None
+            try:
+                count = int(count_raw) if count_raw is not None else None
+            except (TypeError, ValueError):
+                count = None
+
+            if prev_undo_pos is None:
+                prev_undo_pos, prev_undo_count = pos, count
+                continue
+
+            action_type: str | None = None
+            reasons_u: list[str] = []
+            if pos is not None and prev_undo_pos is not None and pos < prev_undo_pos:
+                action_type = "undo"
+                reasons_u = ["undo_pos_decreased"]
+            elif (
+                pos is not None
+                and prev_undo_pos is not None
+                and pos > prev_undo_pos
+                and count is not None
+                and prev_undo_count is not None
+                and count == prev_undo_count
+            ):
+                action_type = "redo"
+                reasons_u = ["undo_pos_increased_same_count"]
+            # else: history growth / unrelated field churn — not an undo action
+
+            prev_undo_pos, prev_undo_count = (
+                pos if pos is not None else prev_undo_pos,
+                count if count is not None else prev_undo_count,
+            )
+            if action_type is None:
+                continue
             emit(
                 session_id=ev.session_id,
                 start_wall_ns=ev.t_wall_ns,
                 end_wall_ns=ev.t_wall_ns,
-                action_type="undo",
+                action_type=action_type,
                 surface=surface,
                 truth_level="measured",
                 confidence="high",
                 evidence_event_ids=[ev.event_id],
                 evidence_types=[ev.event_type],
-                reasons=["measured_undo"],
+                reasons=reasons_u,
                 props={"sb_context": _sb_context(surface), **ev.props},
             )
             continue

@@ -162,69 +162,134 @@ def build_segments(
                 state = False
         return state
 
-    # Convert each action into a provisional span; insert idle/listening between them.
-    cursor = session_start_ns
-    last_relevant_ns = session_start_ns
+    def foreground_at(t: int) -> bool:
+        # Default True until proven otherwise (matches correlate default).
+        state = True
+        for ev in events:
+            if ev.event_type != "FG":
+                continue
+            if ev.t_wall_ns > t:
+                break
+            state = bool(ev.props.get("fl_foreground")) or str(
+                ev.props.get("event", "")
+            ).upper() == "FL_FOREGROUND"
+            if str(ev.props.get("event", "")).upper() == "FL_BACKGROUND":
+                state = False
+        return state
 
     def is_relevant(a: CorrelatedAction) -> bool:
         if a.action_type.startswith("foreground"):
             return True
         if a.action_type.startswith("transport"):
             return True
-        if a.action_type in ("surface_focus", "plugin_focus", "undo"):
+        if a.action_type in ("surface_focus", "plugin_focus", "undo", "redo"):
             return True
         return _is_input_action(a.action_type)
+
+    def classify_gap(
+        gap_start: int,
+        gap_end: int,
+        *,
+        last_relevant_ns: int,
+        prev_activity: str | None,
+        prev_surface: str | None,
+        trailing: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Fill [gap_start, gap_end) with background / listening / idle / active-carry.
+
+        Intervals between interactions that are longer than SEGMENT_MERGE_GAP_NS but
+        shorter than IDLE_QUIET_NS still count as active production time (carry).
+        Background always wins over listening/idle (mirrors recorder ActivityTracker).
+        """
+        if gap_end <= gap_start:
+            return []
+        # Split gap at FG / TRANSPORT boundaries and at the idle threshold after
+        # last relevant input so active-carry does not swallow true idle.
+        cuts = {gap_start, gap_end}
+        idle_at = last_relevant_ns + IDLE_QUIET_NS
+        if gap_start < idle_at < gap_end:
+            cuts.add(idle_at)
+        for ev in events:
+            if gap_start < ev.t_wall_ns < gap_end and ev.event_type in ("FG", "TRANSPORT"):
+                cuts.add(ev.t_wall_ns)
+        points = sorted(cuts)
+        out: list[dict[str, Any]] = []
+        for a, b in zip(points, points[1:]):
+            # State immediately after `a` (include event at exactly `a`).
+            fg = foreground_at(a)
+            play = playing_at(a)
+            quiet = a >= idle_at
+            if not fg:
+                out.append(
+                    {
+                        "start": a,
+                        "end": b,
+                        "activity": "background",
+                        "actions": [],
+                        "surface": None,
+                        "reasons": ["foreground_lost"],
+                    }
+                )
+            elif play:
+                out.append(
+                    {
+                        "start": a,
+                        "end": b,
+                        "activity": "transport_listening",
+                        "actions": [],
+                        "surface": None,
+                        "reasons": [
+                            "playback_without_input_trailing"
+                            if trailing
+                            else "playback_without_input"
+                        ],
+                    }
+                )
+            elif quiet:
+                out.append(
+                    {
+                        "start": a,
+                        "end": b,
+                        "activity": "idle",
+                        "actions": [],
+                        "surface": None,
+                        "reasons": ["trailing_idle" if trailing else "no_input_no_transport"],
+                    }
+                )
+            elif prev_activity and prev_activity not in ("idle", "background"):
+                # Active carry: dwell continues in the prior production context.
+                out.append(
+                    {
+                        "start": a,
+                        "end": b,
+                        "activity": prev_activity,
+                        "actions": [],
+                        "surface": prev_surface,
+                        "reasons": ["active_gap_carry"],
+                    }
+                )
+            # else: no prior context — leave unclassified (no span)
+        return out
+
+    cursor = session_start_ns
+    last_relevant_ns = session_start_ns
+    prev_activity: str | None = None
+    prev_surface: str | None = None
 
     relevant = [a for a in actions if is_relevant(a)]
 
     for action in relevant:
         gap_start = cursor
         gap_end = action.start_wall_ns
-        if gap_end > gap_start:
-            # Classify gap.
-            mid = gap_start
-            # Check quiet relative to last relevant.
-            quiet = (gap_end - last_relevant_ns) >= IDLE_QUIET_NS if last_relevant_ns else True
-            # For short gaps between actions, attribute to previous activity via merge later;
-            # only emit idle/listening when gap is meaningful (≥ SEGMENT_MERGE_GAP or quiet).
-            play = playing_at(gap_start)
-            # Also check if play started during gap.
-            for ev in events:
-                if ev.event_type == "TRANSPORT" and gap_start <= ev.t_wall_ns < gap_end:
-                    play = bool(ev.props.get("playing")) or str(ev.props.get("event", "")).upper() == "PLAY"
-                    if str(ev.props.get("event", "")).upper() == "STOP":
-                        play = False
-            if play:
-                raw_spans.append(
-                    {
-                        "start": gap_start,
-                        "end": gap_end,
-                        "activity": "transport_listening",
-                        "actions": [],
-                        "surface": None,
-                        "reasons": ["playback_without_input"],
-                    }
-                )
-            elif quiet and (gap_end - gap_start) >= IDLE_QUIET_NS:
-                raw_spans.append(
-                    {
-                        "start": gap_start,
-                        "end": gap_end,
-                        "activity": "idle",
-                        "actions": [],
-                        "surface": None,
-                        "reasons": ["no_input_no_transport"],
-                    }
-                )
-            elif action.action_type == "foreground_leave" or (
-                relevant
-                and any(
-                    x.action_type == "foreground_leave"
-                    and gap_start <= x.start_wall_ns < gap_end
-                    for x in relevant
-                )
-            ):
-                pass  # background handled by the leave action itself
+        raw_spans.extend(
+            classify_gap(
+                gap_start,
+                gap_end,
+                last_relevant_ns=last_relevant_ns,
+                prev_activity=prev_activity,
+                prev_surface=prev_surface,
+            )
+        )
 
         act = _activity_for_action(action, playing=playing_at(action.start_wall_ns))
         if action.action_type == "foreground_leave":
@@ -240,42 +305,25 @@ def build_segments(
             }
         )
         cursor = max(cursor, action.end_wall_ns, action.start_wall_ns)
+        if act != "background":
+            prev_activity = act
+            prev_surface = action.surface or prev_surface
         if is_relevant(action) and not action.action_type.startswith("transport"):
-            last_relevant_ns = action.start_wall_ns
+            if action.action_type != "foreground_leave":
+                last_relevant_ns = action.start_wall_ns
 
-    # Trailing gap to session end.
-    if session_end_ns > cursor:
-        play = playing_at(cursor)
-        for ev in events:
-            if ev.event_type == "TRANSPORT" and cursor <= ev.t_wall_ns <= session_end_ns:
-                play = bool(ev.props.get("playing")) or str(ev.props.get("event", "")).upper() == "PLAY"
-                if str(ev.props.get("event", "")).upper() == "STOP":
-                    play = False
-        quiet = (session_end_ns - last_relevant_ns) >= IDLE_QUIET_NS
-        if play:
-            raw_spans.append(
-                {
-                    "start": cursor,
-                    "end": session_end_ns,
-                    "activity": "transport_listening",
-                    "actions": [],
-                    "surface": None,
-                    "reasons": ["playback_without_input_trailing"],
-                }
-            )
-        elif quiet:
-            raw_spans.append(
-                {
-                    "start": cursor,
-                    "end": session_end_ns,
-                    "activity": "idle",
-                    "actions": [],
-                    "surface": None,
-                    "reasons": ["trailing_idle"],
-                }
-            )
+    raw_spans.extend(
+        classify_gap(
+            cursor,
+            session_end_ns,
+            last_relevant_ns=last_relevant_ns,
+            prev_activity=prev_activity,
+            prev_surface=prev_surface,
+            trailing=True,
+        )
+    )
 
-    # Merge adjacent compatible spans.
+    # Merge adjacent compatible spans (including active-carry into prior activity).
     merged: list[dict[str, Any]] = []
     for span in raw_spans:
         if not merged:
@@ -290,9 +338,14 @@ def build_segments(
             prev["reasons"] = list(dict.fromkeys(prev["reasons"] + span["reasons"]))
             if span["surface"]:
                 prev["surface"] = span["surface"]
+        elif same and gap == 0:
+            prev["end"] = max(prev["end"], span["end"])
+            prev["actions"].extend(span["actions"])
+            prev["reasons"] = list(dict.fromkeys(prev["reasons"] + span["reasons"]))
+            if span["surface"]:
+                prev["surface"] = span["surface"]
         else:
-            # Extend previous span up to next start when gap is tiny and not idle-classified.
-            if gap > 0 and gap <= SEGMENT_MERGE_GAP_NS and prev["activity"] not in ("idle",):
+            if gap > 0 and gap <= SEGMENT_MERGE_GAP_NS and prev["activity"] not in ("idle", "background"):
                 prev["end"] = span["start"]
             merged.append(span)
 

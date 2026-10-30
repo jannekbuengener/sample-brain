@@ -66,7 +66,7 @@ def _scrub_str(value: str) -> str:
 
 
 def classify_hint(text: Any) -> str | None:
-    """Map FL hint text to a coarse token class; never store free typed text."""
+    """Map FL hint text to a coarse token class; never store free-form text."""
     if not isinstance(text, str) or not text.strip():
         return None
     low = text.strip().lower()
@@ -75,11 +75,9 @@ def classify_hint(text: Any) -> str | None:
     for tok in HINT_EDIT_TOKENS:
         if tok in low:
             return tok
-    # Keep a short non-path token for provenance; truncate aggressively.
-    cleaned = _scrub_str(text.strip())
-    if cleaned == "[redacted_path_like]":
-        return None
-    return cleaned[:40].lower()
+    # Unrecognized hints: presence only — never persist arbitrary FL hint strings
+    # (may contain project labels / private context).
+    return None
 
 
 def safe_props(raw: dict | None, *, event_type: str | None = None) -> dict:
@@ -92,12 +90,13 @@ def safe_props(raw: dict | None, *, event_type: str | None = None) -> dict:
         if lk in _FORBIDDEN_KEYS:
             continue
         if lk == "text" and event_type == "HINT":
-            hc = classify_hint(value)
             out["hint_present"] = True
+            hc = classify_hint(value)
             if hc:
                 out["hint_class"] = hc
             continue
         if lk == "hint" and event_type == "UNDO":
+            out["hint_present"] = True
             hc = classify_hint(value)
             if hc:
                 out["hint_class"] = hc
