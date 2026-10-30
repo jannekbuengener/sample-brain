@@ -106,6 +106,33 @@ class QmlBrowserRow:
 
 
 @dataclass(frozen=True)
+class BrowserLoopProjectionSnapshot:
+    """Read-only projection of the Python-owned persistent Browser Loop (#1285)."""
+
+    active: bool
+    owner_path: str
+    owner_name: str
+    progress: float
+    bar_count: int
+    bar_positions: tuple[float, ...]
+    reduced_capability_reason: str
+    playback_available: bool
+
+    @classmethod
+    def idle(cls) -> "BrowserLoopProjectionSnapshot":
+        return cls(
+            active=False,
+            owner_path="",
+            owner_name="",
+            progress=0.0,
+            bar_count=0,
+            bar_positions=(),
+            reduced_capability_reason="",
+            playback_available=False,
+        )
+
+
+@dataclass(frozen=True)
 class QmlHarmonyRow:
     """Pure renderer projection of a controller-owned harmony suggestion."""
 
@@ -1061,6 +1088,51 @@ class Screen1QmlInteractionAdapter:
     def bind_browser_loop(self, browser_loop: Any) -> None:
         """Bind the session-owned persistent Browser Loop role (#1284)."""
         self._browser_loop = browser_loop
+
+    def browser_loop_projection_snapshot(self) -> BrowserLoopProjectionSnapshot:
+        """Derive immutable renderer telemetry from the authoritative Loop owner."""
+        owner = self._browser_loop
+        if owner is None:
+            return BrowserLoopProjectionSnapshot.idle()
+        row = getattr(owner, "owner_row", None)
+        extent = getattr(owner, "extent", None)
+        if row is None or extent is None:
+            return BrowserLoopProjectionSnapshot.idle()
+
+        start = int(getattr(extent, "source_start_frame", 0))
+        end = int(getattr(extent, "source_end_frame_exclusive", start))
+        span = max(0, end - start)
+        downbeats = tuple(int(frame) for frame in getattr(extent, "downbeat_frames", ()) or ())
+        if span > 0:
+            bar_positions = tuple(
+                min(1.0, max(0.0, (frame - start) / float(span))) for frame in downbeats
+            )
+        else:
+            bar_positions = ()
+
+        phase = owner.current_source_phase_frame()
+        if phase is None or span <= 0:
+            progress = 0.0
+        else:
+            raw_progress = (int(phase) - start) / float(span)
+            progress = min(math.nextafter(1.0, 0.0), max(0.0, raw_progress))
+
+        reason = str(getattr(owner, "reduced_capability_reason", None) or "")
+        active = bool(getattr(owner, "is_active", True))
+        return BrowserLoopProjectionSnapshot(
+            active=active,
+            owner_path=str(row.path),
+            owner_name=str(row.display_name),
+            progress=float(progress),
+            bar_count=int(getattr(extent, "bar_count", 0) or 0),
+            bar_positions=bar_positions,
+            reduced_capability_reason=reason,
+            playback_available=bool(active and not reason),
+        )
+
+    def refresh_browser_loop_projection(self) -> BrowserLoopProjectionSnapshot:
+        """Re-read authoritative Loop telemetry for presentation."""
+        return self.browser_loop_projection_snapshot()
 
     def set_on_browser_loop_started(self, callback: Callable[[], object] | None) -> None:
         """Optional hook to start the recurring Loop scheduler timer (#1284)."""
@@ -7049,6 +7121,7 @@ def _qml_interaction_bridge(
         def __init__(self) -> None:
             super().__init__()
             adapter._on_sample_context_closed = self._emit_sample_context_closed
+            self._browser_loop_snapshot = adapter.browser_loop_projection_snapshot()
             # C2c1 review F3: observe tempo-map replacement from the layout side.
             self._tempo_map = tempo_map_provider() if tempo_map_provider is not None else None
 
@@ -7057,6 +7130,7 @@ def _qml_interaction_bridge(
 
         def _refresh(self) -> None:
             adapter.sync_visible_state_labels()
+            self._browser_loop_snapshot = adapter.refresh_browser_loop_projection()
             if on_state_changed is not None:
                 on_state_changed()
             if tempo_map_provider is not None:
@@ -7165,6 +7239,45 @@ def _qml_interaction_bridge(
         def previewActive(self) -> bool:
             return adapter.preview_active
 
+        @Property(bool, notify=state_changed)
+        def browserLoopActive(self) -> bool:
+            return bool(self._browser_loop_snapshot.active)
+
+        @Property(str, notify=state_changed)
+        def browserLoopOwnerPath(self) -> str:
+            return self._browser_loop_snapshot.owner_path
+
+        @Property(str, notify=state_changed)
+        def browserLoopOwnerName(self) -> str:
+            return self._browser_loop_snapshot.owner_name
+
+        @Property(float, notify=state_changed)
+        def browserLoopProgress(self) -> float:
+            return float(self._browser_loop_snapshot.progress)
+
+        @Property(int, notify=state_changed)
+        def browserLoopBarCount(self) -> int:
+            return int(self._browser_loop_snapshot.bar_count)
+
+        @Property(list, notify=state_changed)
+        def browserLoopBarPositions(self) -> list[float]:
+            return list(self._browser_loop_snapshot.bar_positions)
+
+        @Property(str, notify=state_changed)
+        def browserLoopReducedCapabilityReason(self) -> str:
+            return self._browser_loop_snapshot.reduced_capability_reason
+
+        @Property(bool, notify=state_changed)
+        def browserLoopPlaybackAvailable(self) -> bool:
+            return bool(self._browser_loop_snapshot.playback_available)
+
+        @Property(bool, notify=state_changed)
+        def contextTargetIsLoopOwner(self) -> bool:
+            target = adapter.sample_context_target
+            if target is None or not self._browser_loop_snapshot.active:
+                return False
+            return str(target.path) == self._browser_loop_snapshot.owner_path
+
         @Property(str, notify=state_changed)
         def previewPlayingPath(self) -> str:
             snap = adapter.preview_playback_snapshot()
@@ -7239,9 +7352,14 @@ def _qml_interaction_bridge(
             self._refresh()
 
         @Slot()
-        def refreshPreviewPlayback(self) -> None:
+        def refreshPlaybackProjection(self) -> None:
             adapter.refresh_preview_playback()
+            self._browser_loop_snapshot = adapter.refresh_browser_loop_projection()
             self.state_changed.emit()
+
+        @Slot()
+        def refreshPreviewPlayback(self) -> None:
+            self.refreshPlaybackProjection()
 
         @Property(str, notify=state_changed)
         def liveKitExportStatus(self) -> str:
