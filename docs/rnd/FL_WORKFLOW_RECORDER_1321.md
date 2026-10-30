@@ -12,6 +12,7 @@ Dumb, robust, local, deterministic raw recorder.
 - Collects and persists proven FL + Windows signals.
 - Owns session lifecycle, spool ingest, crash recovery, retention, health.
 - Does **not** classify producer flows, hot paths, bottlenecks, Edit↔Arrangement, ML, embeddings, AI, or reports (#1322 / #1323).
+- Reconstruction lives in `tools/fl_workflow_analyzer/` ([#1322](https://github.com/jannekbuengener/sample-brain/issues/1322)).
 
 ## Architecture
 

@@ -2,9 +2,10 @@
 
 Durable dual-plane recorder for parent **#1319**. Evolves the #1320 probe into a long-lived local sidecar.
 
-**Not** Sample Brain core product runtime. **Not** ADR-0006 measurement. **Not** #1322 analyzer.
+**Not** Sample Brain core product runtime. **Not** ADR-0006 measurement. **Not** workflow interpretation (see #1322 analyzer).
 
-Contract: [`docs/rnd/FL_WORKFLOW_RECORDER_1321.md`](../../docs/rnd/FL_WORKFLOW_RECORDER_1321.md)
+Contract: [`docs/rnd/FL_WORKFLOW_RECORDER_1321.md`](../../docs/rnd/FL_WORKFLOW_RECORDER_1321.md)  
+Reconstruction (separate package): [`tools/fl_workflow_analyzer/`](../fl_workflow_analyzer/)
 
 ## Layout
 
