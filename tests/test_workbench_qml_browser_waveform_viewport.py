@@ -32,29 +32,32 @@ def _snippet(source: str, marker: str, span: int) -> str:
 
 def _browser_list_block(source: str) -> str:
     # Through the closing of the Browser ListView, before Harmonic pane.
-    return _snippet(source, BROWSER_LIST_MARKER, 4500)
+    start = source.index(BROWSER_LIST_MARKER)
+    end = source.index('objectName: "elasticHandleAfterBrowser"', start)
+    return source[start:end]
 
 
 def _harmonic_list_block(source: str) -> str:
     return _snippet(source, HARMONIC_LIST_MARKER, 2500)
 
 
-def test_browser_listview_requests_waveforms_from_visible_viewport_like_harmony():
+def test_browser_listview_requests_waveforms_from_actual_visible_geometry():
     browser = _browser_list_block(QML_SOURCE)
     harmonic = _harmonic_list_block(QML_SOURCE)
 
     assert "onContentYChanged" in browser
     assert "onHeightChanged" in browser
+    assert "onContentHeightChanged" in browser
     assert "requestWaveforms(" in browser
-    assert "Math.floor(contentY / rowHeight)" in browser or (
-        "Math.floor(contentY / browser.rowHeight)" in browser
-    ) or ("Math.floor(contentY / window.densityRowHeight)" in browser)
-    assert "Math.ceil(height / rowHeight)" in browser or (
-        "Math.ceil(height / browser.rowHeight)" in browser
-    ) or ("Math.ceil(height / window.densityRowHeight)" in browser)
-    assert f"+ {PREFETCH_MARGIN}" in browser or f"+{PREFETCH_MARGIN}" in browser
+    assert "indexAt(" in browser
+    assert "waveformFirstVisibleIndex" in browser
+    assert "waveformLastVisibleIndex" in browser
+    assert "Math.floor(contentY / rowHeight)" not in browser
+    assert "Math.ceil(height / rowHeight)" not in browser
+    assert f"waveformPrefetchMargin: {PREFETCH_MARGIN}" in browser
 
-    # Harmonic remains the reference pattern.
+    # Harmonic remains virtualized; Browser now needs geometry-aware discovery
+    # because #1285 introduces one variable-height inline owner row.
     assert "requestHarmonyWaveforms(" in harmonic
     assert "onContentYChanged" in harmonic
     assert "onHeightChanged" in harmonic
@@ -172,9 +175,9 @@ def test_compact_viewport_requests_full_visible_browser_waveform_range(monkeypat
         content_y = float(browser.property("contentY") or 0.0)
         assert height > row_height * 10
 
-        expected_start, expected_count = _expected_range(
-            content_y=content_y, height=height, row_height=row_height
-        )
+        expected_start = int(browser.property("waveformFirstVisibleIndex"))
+        expected_last = int(browser.property("waveformLastVisibleIndex"))
+        expected_count = min(len(blank_rows), expected_last + 1 + PREFETCH_MARGIN) - expected_start
         assert expected_count > 20, "compact viewport must exceed legacy 0..20 seed"
 
         assert requested, "Browser viewport must request waveforms after layout"
@@ -251,9 +254,9 @@ def test_browser_scroll_and_resize_update_waveform_request_range(monkeypatch):
         _settle_qml_frame(app)
         height = float(browser.property("height"))
         content_y = float(browser.property("contentY"))
-        scroll_start, scroll_count = _expected_range(
-            content_y=content_y, height=height, row_height=row_height
-        )
+        scroll_start = int(browser.property("waveformFirstVisibleIndex"))
+        scroll_last = int(browser.property("waveformLastVisibleIndex"))
+        scroll_count = min(60, scroll_last + 1 + PREFETCH_MARGIN) - scroll_start
         assert requested[-1] == (scroll_start, scroll_count)
         assert scroll_start >= 10
 
@@ -264,9 +267,9 @@ def test_browser_scroll_and_resize_update_waveform_request_range(monkeypatch):
         new_height = float(browser.property("height"))
         assert new_height < original_height
         content_y = float(browser.property("contentY"))
-        resize_start, resize_count = _expected_range(
-            content_y=content_y, height=new_height, row_height=row_height
-        )
+        resize_start = int(browser.property("waveformFirstVisibleIndex"))
+        resize_last = int(browser.property("waveformLastVisibleIndex"))
+        resize_count = min(60, resize_last + 1 + PREFETCH_MARGIN) - resize_start
         assert requested[-1] == (resize_start, resize_count)
         assert resize_count < scroll_count
     finally:
@@ -350,6 +353,92 @@ def test_browser_drain_rerequests_visible_range_under_bounded_pending(monkeypatc
         )
         assert ready == visible_end - start
         assert loader._max_pending == 14
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
+def test_variable_height_loop_owner_uses_actual_visible_geometry_not_fixed_row_math(monkeypatch):
+    from types import SimpleNamespace
+
+    from PySide6.QtQuick import QQuickItem
+
+    from src.browser_loop_playback import BrowserLoopExtent
+    from src.workbench_harmony import HarmonicMatchLibraryController
+    from src.workbench_qml_spike import (
+        Screen1QmlInteractionAdapter,
+        _qml_engine,
+        _settle_qml_frame,
+        build_qml_view_model_from_fixture,
+    )
+    from src.workbench_visual_acceptance import build_screen1_visual_fixture_v1
+
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
+    blank_rows = _blank_qml_rows(60)
+    view_model.browser_rows = blank_rows
+    owner = blank_rows[2].source_row
+    loop = SimpleNamespace(
+        owner_row=owner,
+        extent=BrowserLoopExtent(100, 700, 2, (100, 400, 700)),
+        is_active=True,
+        reduced_capability_reason=None,
+        current_source_phase_frame=lambda: 250,
+    )
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=HarmonicMatchLibraryController(),
+    )
+    adapter.bind_browser_loop(loop)
+
+    requested: list[tuple[int, int]] = []
+    original_bridge = workbench_qml_mod._qml_interaction_bridge
+
+    def wrapped_bridge(*args, **kwargs):
+        on_waveform_request = kwargs.get("on_waveform_request")
+
+        def tracked(start: int, count: int) -> None:
+            requested.append((start, count))
+            if on_waveform_request is not None:
+                on_waveform_request(start, count)
+
+        kwargs = dict(kwargs)
+        kwargs["on_waveform_request"] = tracked
+        return original_bridge(*args, **kwargs)
+
+    monkeypatch.setattr(workbench_qml_mod, "_qml_interaction_bridge", wrapped_bridge)
+
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.show()
+    _settle_qml_frame(app)
+    try:
+        browser = window.findChild(QQuickItem, "browserList")
+        assert browser is not None
+        normal_height = int(window.property("densityRowHeight"))
+        assert int(browser.property("loopOwnerRowHeight")) > normal_height * 2
+
+        browser.setProperty("contentY", 180.0)
+        app.processEvents()
+        _settle_qml_frame(app)
+
+        content_y = float(browser.property("contentY"))
+        first = int(browser.property("waveformFirstVisibleIndex"))
+        last = int(browser.property("waveformLastVisibleIndex"))
+        assert first >= 0 and last >= first
+        assert first != int(math.floor(content_y / normal_height))
+
+        expected_count = min(60, last + 1 + PREFETCH_MARGIN) - first
+        assert requested[-1] == (first, expected_count)
     finally:
         window.close()
         app.processEvents()

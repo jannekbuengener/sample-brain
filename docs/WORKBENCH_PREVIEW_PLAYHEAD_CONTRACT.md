@@ -55,6 +55,17 @@ Rules:
   ([`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md);
   canonical `on` \| `reduced` \| `off`). Motion Off disables playhead and the
   presentation driver for this feature.
+- #1285 extends the same single global `FrameAnimation` presentation driver to
+  the persistent Browser Loop. The driver calls `refreshPlaybackProjection()`
+  and runs only while authoritative preview or Loop playhead telemetry needs
+  refresh and motion is not `off`. There is no second Loop timer/animation.
+- Browser Loop grid lines are static normalized coordinates from the Python-owned
+  `BrowserLoopProjectionSnapshot.bar_positions`; Loop playhead x reads only
+  `browserLoopProgress`. QML never increments phase, derives BPM time, or owns
+  transport state.
+- `reduced` keeps the authoritative phase projection legible without requiring
+  transition animation. `off` stops frame-refresh work and hides moving preview
+  and Loop playheads; audio/session truth is unchanged.
 - Selection color updates must `requestPaint()` on selection change independently of playback.
 
 ## Non-scope

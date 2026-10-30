@@ -69,6 +69,7 @@ request_loop_on_for_row(row: WorkbenchRow) -> BrowserLoopResult
 request_loop_off() -> BrowserLoopResult
 request_context_loop_on() -> WorkbenchRow
 request_context_loop_off() -> None
+request_context_loop_toggle() -> BrowserLoopResult
 ```
 
 Rules:
@@ -88,11 +89,18 @@ openSampleContext(index)
 closeSampleContext()
 contextAddToKit()
 contextHarmonicMatches()
+contextLoopToggle() -> bool
 ```
 
 Bridge slots forward intents to the adapter. Do not expose a second QML-owned
 copy of the domain `WorkbenchRow`. Presentation-only properties may exist when
 needed (for example open/focus flags), but target identity remains Python-owned.
+
+`contextLoopToggle()` compares the stable Python target against the Python-owned
+Loop projection. It dispatches `LOOP OFF` only when that target is the current
+owner; otherwise it attempts `LOOP ON` for that target. A rejected replacement
+keeps the prior owner and the Popup target intact and exposes the authoritative
+failure message through `browserLoopContextStatus`; QML must not fake a new owner.
 
 ## Add to Kit
 
@@ -276,7 +284,7 @@ Frozen presentation behaviour (not a mandate for native `MenuItem` types):
 
 - wine-red semantic surface via Theme Authority only
 - no HEX literals in new context-menu chrome
-- compact, lightly rounded, two actions, fine divider
+- compact, lightly rounded, three actions, fine dividers
 - focus-visible state
 - keyboard navigation
 - Escape close

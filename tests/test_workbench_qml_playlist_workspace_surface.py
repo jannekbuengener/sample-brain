@@ -66,8 +66,8 @@ def test_browser_pane_chrome_keeps_panel_family_when_viewport_is_workspace() -> 
 
 def test_selected_row_still_uses_selection_surface() -> None:
     """Existing red selected-row presentation must remain exact."""
-    delegate_idx = QML_SOURCE.index("delegate: Rectangle { id: browserRow;")
-    delegate = QML_SOURCE[delegate_idx : delegate_idx + 500]
+    delegate_idx = QML_SOURCE.index("id: browserRow")
+    delegate = QML_SOURCE[delegate_idx : delegate_idx + 900]
     assert "theme.selectionSurface" in delegate
     assert "theme.selectionBorder" in delegate
     assert (
@@ -78,8 +78,8 @@ def test_selected_row_still_uses_selection_surface() -> None:
 
 def test_normal_rows_do_not_opaque_cover_playlist_workspace_surface() -> None:
     """Normal rows stay visually uniform: no opaque panel zebra over surfaceRoot."""
-    delegate_idx = QML_SOURCE.index("delegate: Rectangle { id: browserRow;")
-    delegate = QML_SOURCE[delegate_idx : delegate_idx + 500]
+    delegate_idx = QML_SOURCE.index("id: browserRow")
+    delegate = QML_SOURCE[delegate_idx : delegate_idx + 900]
     # selection > transparent (#1281: hover is waveform-only, not a row card).
     assert (
         'color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface '
