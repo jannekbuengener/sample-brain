@@ -6138,7 +6138,10 @@ ApplicationWindow {
                             }
                         }
                         // #1281: short dark edge immersion on sample viewport only (not search/header).
+                        // Scroll-state aware: first/default view stays fully readable; fade only when
+                        // content overflows and the viewport is actually scrolled toward that edge.
                         // Stacked surfaceRoot bands approximate the MagicPath edge mask (no shader path).
+                        // Density/row height must remain the owner-approved compact default.
                         Item {
                             id: browserEdgeImmersionTop
                             objectName: "browserEdgeImmersionTop"
@@ -6148,6 +6151,12 @@ ApplicationWindow {
                             height: 32
                             z: 20
                             enabled: false
+                            // First/default viewport (atYBeginning) stays fully readable.
+                            readonly property bool contentOverflows: browser.contentHeight > browser.height + 0.5
+                            readonly property bool scrolledAwayFromTop: !browser.atYBeginning
+                            opacity: (contentOverflows && scrolledAwayFromTop) ? 1.0 : 0.0
+                            visible: opacity > 0.01
+                            Behavior on opacity { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
                             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 10; color: theme.surfaceRoot; opacity: 0.92 }
                             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.topMargin: 10; height: 10; color: theme.surfaceRoot; opacity: 0.55 }
                             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.topMargin: 20; height: 12; color: theme.surfaceRoot; opacity: 0.22 }
@@ -6161,6 +6170,13 @@ ApplicationWindow {
                             height: 32
                             z: 20
                             enabled: false
+                            // Never fog the initial first view; only after real scroll, and not at end.
+                            readonly property bool contentOverflows: browser.contentHeight > browser.height + 0.5
+                            readonly property bool scrolledAwayFromTop: !browser.atYBeginning
+                            readonly property bool moreContentBelow: !browser.atYEnd
+                            opacity: (contentOverflows && scrolledAwayFromTop && moreContentBelow) ? 1.0 : 0.0
+                            visible: opacity > 0.01
+                            Behavior on opacity { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
                             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 20; height: 12; color: theme.surfaceRoot; opacity: 0.22 }
                             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 10; height: 10; color: theme.surfaceRoot; opacity: 0.55 }
                             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 10; color: theme.surfaceRoot; opacity: 0.92 }
