@@ -1,10 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import fields
 
 import pytest
 
-from src.browser_loop_playback import BrowserLoopExtent
+from src.browser_loop_playback import BrowserLoopExtent, BrowserLoopResult
 from src.workbench_controller import WorkbenchRow
 from src import workbench_qml as qml
 
@@ -170,3 +170,139 @@ def test_1285_refresh_playback_projection_emits_one_state_change() -> None:
 
     assert len(emissions) == 1
     assert bridge.property("browserLoopProgress") == pytest.approx(0.25)
+
+
+class _ToggleLoopStub(_LoopStub):
+    def __init__(
+        self,
+        *,
+        row: WorkbenchRow | None = None,
+        reject_path: str | None = None,
+    ) -> None:
+        extent = BrowserLoopExtent(100, 700, 1, (100, 700)) if row is not None else None
+        super().__init__(row=row, extent=extent, phase=250 if row is not None else None)
+        self.reject_path = reject_path
+        self.loop_on_calls: list[WorkbenchRow] = []
+        self.loop_off_calls = 0
+
+    def loop_on(self, row: WorkbenchRow) -> BrowserLoopResult:
+        self.loop_on_calls.append(row)
+        if self.reject_path is not None and str(row.path) == self.reject_path:
+            return BrowserLoopResult(
+                ok=False,
+                message="LOOP unavailable: synthetic rejection.",
+                reason_code="SYNTHETIC_REJECT",
+            )
+        self.owner_row = row
+        self.extent = BrowserLoopExtent(100, 700, 1, (100, 700))
+        self._phase = 100
+        self.reduced_capability_reason = None
+        return BrowserLoopResult(ok=True, owner_path=str(row.path), bar_count=1)
+
+    def loop_off(self) -> BrowserLoopResult:
+        self.loop_off_calls += 1
+        self.owner_row = None
+        self.extent = None
+        self._phase = None
+        self.reduced_capability_reason = None
+        return BrowserLoopResult(ok=True, message="LOOP OFF")
+
+
+def _context_view_model() -> tuple[qml.Screen1QmlViewModel, WorkbenchRow, WorkbenchRow]:
+    row_a = _row("Loop A", "C:/synthetic/loop-a.wav")
+    row_b = _row("Loop B", "C:/synthetic/loop-b.wav")
+    vm = _view_model()
+    vm.set_browser_state(
+        rows=(row_a, row_b),
+        selected_index=0,
+        browser_context="test",
+        error=None,
+    )
+    return vm, row_a, row_b
+
+
+def test_1285_context_loop_toggle_turns_on_target_b_without_selection_or_preview_mutation() -> None:
+    vm, _row_a, row_b = _context_view_model()
+    previews: list[WorkbenchRow] = []
+    loop = _ToggleLoopStub()
+    adapter = qml.Screen1QmlInteractionAdapter(
+        view_model=vm,
+        on_preview_requested=lambda row, **_kwargs: previews.append(row),
+    )
+    adapter.bind_browser_loop(loop)
+    adapter._preview_active = True
+
+    adapter.open_sample_context(1)
+    result = adapter.request_context_loop_toggle()
+
+    assert result.ok is True
+    assert loop.loop_on_calls == [row_b]
+    assert loop.owner_row is row_b
+    assert vm.selected_browser_index == 0
+    assert previews == []
+    assert adapter.preview_active is True
+    assert adapter.sample_context_target is None
+    assert adapter.browser_loop_context_status == ""
+
+
+def test_1285_context_loop_toggle_turns_off_only_when_target_is_current_owner() -> None:
+    vm, _row_a, row_b = _context_view_model()
+    loop = _ToggleLoopStub(row=row_b)
+    adapter = qml.Screen1QmlInteractionAdapter(view_model=vm)
+    adapter.bind_browser_loop(loop)
+
+    adapter.open_sample_context(1)
+    result = adapter.request_context_loop_toggle()
+
+    assert result.ok is True
+    assert loop.loop_off_calls == 1
+    assert loop.loop_on_calls == []
+    assert loop.owner_row is None
+    assert vm.selected_browser_index == 0
+    assert adapter.sample_context_target is None
+
+
+def test_1285_context_loop_toggle_rejection_preserves_old_owner_and_target_for_status() -> None:
+    vm, row_a, row_b = _context_view_model()
+    loop = _ToggleLoopStub(row=row_a, reject_path=str(row_b.path))
+    adapter = qml.Screen1QmlInteractionAdapter(view_model=vm)
+    adapter.bind_browser_loop(loop)
+
+    adapter.open_sample_context(1)
+    result = adapter.request_context_loop_toggle()
+
+    assert result.ok is False
+    assert loop.loop_on_calls == [row_b]
+    assert loop.owner_row is row_a
+    assert adapter.sample_context_target is row_b
+    assert adapter.browser_loop_context_status == result.message
+    assert adapter.browser_loop_projection_snapshot().owner_path == str(row_a.path)
+
+
+def test_1285_context_loop_toggle_without_target_is_fail_closed_and_dispatches_nothing() -> None:
+    vm, row_a, _row_b = _context_view_model()
+    loop = _ToggleLoopStub(row=row_a)
+    adapter = qml.Screen1QmlInteractionAdapter(view_model=vm)
+    adapter.bind_browser_loop(loop)
+
+    result = adapter.request_context_loop_toggle()
+
+    assert result.ok is False
+    assert result.reason_code == "NO_CONTEXT_TARGET"
+    assert loop.loop_on_calls == []
+    assert loop.loop_off_calls == 0
+    assert loop.owner_row is row_a
+
+
+def test_1285_bridge_context_loop_toggle_returns_success_and_projects_status() -> None:
+    pytest.importorskip("PySide6")
+    vm, _row_a, row_b = _context_view_model()
+    loop = _ToggleLoopStub()
+    adapter = qml.Screen1QmlInteractionAdapter(view_model=vm)
+    adapter.bind_browser_loop(loop)
+    adapter.open_sample_context(1)
+    bridge = qml._qml_interaction_bridge(adapter)
+
+    assert bridge.contextLoopToggle() is True
+    assert loop.owner_row is row_b
+    assert bridge.property("browserLoopContextStatus") == ""

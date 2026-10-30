@@ -977,6 +977,7 @@ class Screen1QmlInteractionAdapter:
         self._pending_live_kit_row: WorkbenchRow | None = None
         self._sample_context_target: WorkbenchRow | None = None
         self._browser_loop: Any | None = None
+        self._browser_loop_context_status = ""
         self._on_browser_loop_started: Callable[[], object] | None = None
         self._preview_active = False
         self._auditioning_live_kit_slot: tuple[str, str] | None = None
@@ -1030,18 +1031,24 @@ class Screen1QmlInteractionAdapter:
     def sample_context_target(self) -> WorkbenchRow | None:
         return self._sample_context_target
 
+    @property
+    def browser_loop_context_status(self) -> str:
+        return self._browser_loop_context_status
+
     def open_sample_context(self, index: int) -> WorkbenchRow:
         """Resolve visible row index once into a stable context target (#839)."""
         if not 0 <= index < len(self.view_model.browser_rows):
             raise IndexError("Browser-Zeilenindex außerhalb des sichtbaren Modells.")
         row = self.view_model.browser_rows[index].source_row
         self._sample_context_target = row
+        self._browser_loop_context_status = ""
         return row
 
     def close_sample_context(self) -> None:
         """Clear session-transient sample context target (#839)."""
         had_target = self._sample_context_target is not None
         self._sample_context_target = None
+        self._browser_loop_context_status = ""
         if had_target and self._on_sample_context_closed is not None:
             self._on_sample_context_closed()
 
@@ -1168,6 +1175,36 @@ class Screen1QmlInteractionAdapter:
         """LOOP OFF via context menu; clears Loop role only (#1284)."""
         self.request_loop_off()
         self.close_sample_context()
+
+    def request_context_loop_toggle(self) -> Any:
+        """Toggle Loop for the stable context target without consulting QML identity."""
+        from .browser_loop_playback import BrowserLoopResult
+
+        target = self._sample_context_target
+        if target is None:
+            result = BrowserLoopResult(
+                ok=False,
+                message="LOOP unavailable: no sample context target.",
+                reason_code="NO_CONTEXT_TARGET",
+            )
+            self._browser_loop_context_status = result.message
+            return result
+
+        snapshot = self.browser_loop_projection_snapshot()
+        if snapshot.active and snapshot.owner_path == str(target.path):
+            result = self.request_loop_off()
+        else:
+            result = self.request_loop_on_for_row(target)
+
+        if getattr(result, "ok", False):
+            self._browser_loop_context_status = ""
+            self.close_sample_context()
+        else:
+            self._browser_loop_context_status = str(
+                getattr(result, "message", "")
+                or getattr(result, "reason_code", "LOOP unavailable")
+            )
+        return result
 
     def _reveal_live_kit_pane(self) -> None:
         """UI disclosure only — does not mutate Live-Kit domain assignments."""
@@ -4693,10 +4730,12 @@ ApplicationWindow {
                 function openSampleContextMenu(index, localX, localY) {
                     window.interaction.openSampleContext(index)
                     sampleContextMenu.focusedAction = 0
-                    sampleContextMenu.x = Math.max(8, Math.min(localX, Math.max(8, width - 220)))
-                    sampleContextMenu.y = Math.max(8, Math.min(localY, Math.max(8, height - 96)))
+                    var menuWidth = Math.max(1, sampleContextMenu.width)
+                    var menuHeight = Math.max(1, sampleContextMenu.implicitHeight)
+                    sampleContextMenu.x = Math.max(8, Math.min(localX, Math.max(8, width - menuWidth - 8)))
+                    sampleContextMenu.y = Math.max(8, Math.min(localY, Math.max(8, height - menuHeight - 8)))
                     sampleContextMenu.open()
-                    sampleContextMenu.forceActiveFocus()
+                    contextMenuContent.forceActiveFocus()
                 }
                 Popup {
                     id: sampleContextMenu
@@ -4704,8 +4743,10 @@ ApplicationWindow {
                     // Theme: theme.selectionSurface / theme.textPrimary / theme.focusRing
                     property string actionAddLabel: "Add to Kit"
                     property string actionHarmonicLabel: "Harmonic Matches"
+                    property string actionLoopLabel: window.interaction.contextTargetIsLoopOwner ? "LOOP OFF" : "LOOP ON"
                     width: 208
                     padding: 6
+                    implicitHeight: contextMenuContent.implicitHeight + 2 * padding
                     modal: false
                     focus: true
                     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -4717,20 +4758,22 @@ ApplicationWindow {
                         radius: 6
                     }
                     function contextActionHintId(actionIndex) {
-                        return actionIndex === 0
-                            ? "browser.context.add_to_kit"
-                            : "browser.context.harmonic_matches"
+                        if (actionIndex === 0)
+                            return "browser.context.add_to_kit"
+                        if (actionIndex === 1)
+                            return "browser.context.harmonic_matches"
+                        return "browser.context.loop"
                     }
                     function syncContextActionFocusHint() {
-                        if (!visible) {
-                            contextHintState.clearFocus("browser.context.add_to_kit")
-                            contextHintState.clearFocus("browser.context.harmonic_matches")
-                            return
-                        }
-                        var active = contextActionHintId(focusedAction)
-                        var other = contextActionHintId(focusedAction === 0 ? 1 : 0)
-                        contextHintState.clearFocus(other)
-                        contextHintState.reportFocus(active)
+                        var hintIds = [
+                            "browser.context.add_to_kit",
+                            "browser.context.harmonic_matches",
+                            "browser.context.loop"
+                        ]
+                        for (var hintIndex = 0; hintIndex < hintIds.length; hintIndex++)
+                            contextHintState.clearFocus(hintIds[hintIndex])
+                        if (visible)
+                            contextHintState.reportFocus(contextActionHintId(focusedAction))
                     }
                     onOpened: syncContextActionFocusHint()
                     onFocusedActionChanged: syncContextActionFocusHint()
@@ -4738,8 +4781,10 @@ ApplicationWindow {
                         window.interaction.closeSampleContext()
                         contextHintState.clearHover("browser.context.add_to_kit")
                         contextHintState.clearHover("browser.context.harmonic_matches")
+                        contextHintState.clearHover("browser.context.loop")
                         contextHintState.clearFocus("browser.context.add_to_kit")
                         contextHintState.clearFocus("browser.context.harmonic_matches")
+                        contextHintState.clearFocus("browser.context.loop")
                         browser.forceActiveFocus()
                     }
                     Connections {
@@ -4750,15 +4795,36 @@ ApplicationWindow {
                         }
                     }
                     function activateFocused() {
-                        if (focusedAction === 0)
+                        if (focusedAction === 0) {
                             window.interaction.contextAddToKit()
-                        else
+                            return
+                        }
+                        if (focusedAction === 1) {
                             window.interaction.contextHarmonicMatches()
-                        close()
+                            return
+                        }
+                        window.interaction.contextLoopToggle()
                     }
                     Column {
+                        id: contextMenuContent
                         width: parent.width
                         spacing: 2
+                        focus: true
+                        Keys.onPressed: function(event) {
+                            if (event.key === Qt.Key_Down) {
+                                sampleContextMenu.focusedAction = Math.min(2, sampleContextMenu.focusedAction + 1)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Up) {
+                                sampleContextMenu.focusedAction = Math.max(0, sampleContextMenu.focusedAction - 1)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                                sampleContextMenu.activateFocused()
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Escape) {
+                                sampleContextMenu.close()
+                                event.accepted = true
+                            }
+                        }
                         Rectangle {
                             id: contextAddToKitItem
                             width: parent.width
@@ -4847,20 +4913,68 @@ ApplicationWindow {
                                 onExited: contextHintState.clearHover("browser.context.harmonic_matches")
                             }
                         }
-                    }
-                    Keys.onPressed: function(event) {
-                        if (event.key === Qt.Key_Down) {
-                            focusedAction = Math.min(1, focusedAction + 1)
-                            event.accepted = true
-                        } else if (event.key === Qt.Key_Up) {
-                            focusedAction = Math.max(0, focusedAction - 1)
-                            event.accepted = true
-                        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                            activateFocused()
-                            event.accepted = true
-                        } else if (event.key === Qt.Key_Escape) {
-                            close()
-                            event.accepted = true
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            color: theme.dividerDefault
+                            opacity: 0.7
+                            Accessible.ignored: true
+                        }
+                        Rectangle {
+                            id: contextLoopItem
+                            objectName: "contextLoopItem"
+                            width: parent.width
+                            height: 32
+                            radius: 4
+                            color: sampleContextMenu.focusedAction === 2 || contextLoopHover.containsMouse ? theme.surfaceElevated : "transparent"
+                            border.width: sampleContextMenu.focusedAction === 2 ? 1 : 0
+                            border.color: theme.focusRing
+                            Accessible.role: Accessible.Button
+                            Accessible.name: sampleContextMenu.actionLoopLabel
+                            Accessible.onPressAction: {
+                                sampleContextMenu.focusedAction = 2
+                                sampleContextMenu.activateFocused()
+                            }
+                            Label {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                text: sampleContextMenu.actionLoopLabel
+                                color: theme.textPrimary
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: window.textBody
+                                Accessible.ignored: true
+                            }
+                            MouseArea {
+                                id: contextLoopHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    sampleContextMenu.focusedAction = 2
+                                    sampleContextMenu.activateFocused()
+                                }
+                                onEntered: {
+                                    sampleContextMenu.focusedAction = 2
+                                    contextHintState.reportHover("browser.context.loop")
+                                }
+                                onExited: contextHintState.clearHover("browser.context.loop")
+                            }
+                        }
+                        Label {
+                            id: contextLoopStatus
+                            objectName: "contextLoopStatus"
+                            width: parent.width
+                            visible: window.interaction.browserLoopContextStatus.length > 0
+                            height: visible ? implicitHeight : 0
+                            text: window.interaction.browserLoopContextStatus
+                            color: theme.statusError
+                            font.pixelSize: window.textCaption
+                            wrapMode: Text.Wrap
+                            leftPadding: 10
+                            rightPadding: 10
+                            topPadding: 5
+                            bottomPadding: 5
+                            Accessible.name: text
                         }
                     }
                 }
@@ -7279,6 +7393,10 @@ def _qml_interaction_bridge(
             return str(target.path) == self._browser_loop_snapshot.owner_path
 
         @Property(str, notify=state_changed)
+        def browserLoopContextStatus(self) -> str:
+            return adapter.browser_loop_context_status
+
+        @Property(str, notify=state_changed)
         def previewPlayingPath(self) -> str:
             snap = adapter.preview_playback_snapshot()
             return str(getattr(snap, "sample_path", "") or "")
@@ -7436,6 +7554,13 @@ def _qml_interaction_bridge(
                 return
             adapter.request_context_harmonic_matches()
             self._refresh()
+
+        @Slot(result=bool)
+        def contextLoopToggle(self) -> bool:
+            result = adapter.request_context_loop_toggle()
+            self._browser_loop_snapshot = adapter.refresh_browser_loop_projection()
+            self.state_changed.emit()
+            return bool(getattr(result, "ok", False))
 
         @Slot(int)
         def toggleFavorite(self, index: int) -> None:
