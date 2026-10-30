@@ -529,7 +529,87 @@ def test_drag_interval_not_swallowed_by_listening() -> None:
     assert drags[0]["end_wall_ns"] - drags[0]["start_wall_ns"] >= 9 * NS
 
 
+def test_drag_with_click_up_before_drag_end_keeps_edit_interval() -> None:
+    """Recorder emits CLICK(up) before DRAG(end); edit interval must still win."""
+    t0 = 1950 * NS
+    events = [
+        _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "Playlist"}),
+        _ev(
+            source="fl",
+            seq=2,
+            etype="TRANSPORT",
+            wall=t0 + NS,
+            props={"playing": True, "event": "PLAY"},
+        ),
+        _ev(
+            source="win",
+            seq=1,
+            etype="DRAG",
+            wall=t0 + 2 * NS,
+            props={"phase": "start", "distance": 0},
+        ),
+        # Emission order: click-up arrives before drag-end (real windows_capture).
+        _ev(
+            source="win",
+            seq=2,
+            etype="CLICK",
+            wall=t0 + 12 * NS,
+            props={"button": "left", "phase": "up"},
+        ),
+        _ev(
+            source="win",
+            seq=3,
+            etype="DRAG",
+            wall=t0 + 12 * NS + 1000,
+            props={"phase": "end", "distance": 50, "duration_ms": 10000},
+        ),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + 15 * NS
+    )
+    edit_ns = sum(
+        s["duration_ns"]
+        for s in result["segments"]
+        if s["activity"] in ("playlist_edit", "arrangement")
+    )
+    listen_ns = sum(
+        s["duration_ns"] for s in result["segments"] if s["activity"] == "transport_listening"
+    )
+    assert edit_ns >= 9 * NS
+    assert listen_ns < 5 * NS
+
+
+def test_dirty_before_stop_suppresses_post_transport_idle() -> None:
+    """FL dirty during playback must keep post-STOP time non-idle until quiet elapses."""
+    t0 = 2000 * NS
+    events = [
+        _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "Mixer"}),
+        _ev(
+            source="fl",
+            seq=2,
+            etype="TRANSPORT",
+            wall=t0 + 100 * NS,
+            props={"playing": True, "event": "PLAY"},
+        ),
+        _ev(source="fl", seq=3, etype="DIRTY_MIXER", wall=t0 + 110 * NS, props={"items": [1]}),
+        _ev(
+            source="fl",
+            seq=4,
+            etype="TRANSPORT",
+            wall=t0 + 150 * NS,
+            props={"playing": False, "event": "STOP"},
+        ),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + 200 * NS
+    )
+    idle_ns = sum(s["duration_ns"] for s in result["segments"] if s["activity"] == "idle")
+    # Dirty at 110s → idle only after 230s; session ends at 200s → no idle.
+    assert idle_ns == 0
+
+
 def test_idle_not_erased_by_later_focus() -> None:
+
     t0 = 1700 * NS
     events = [
         _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "Mixer"}),

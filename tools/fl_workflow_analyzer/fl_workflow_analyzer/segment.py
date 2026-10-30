@@ -222,17 +222,18 @@ def build_segments(
             return []
 
         def effective_last_relevant(t: int) -> int:
+            # Include FL activity from earlier gaps — a DIRTY/HINT before a
+            # transport boundary must still suppress idle after STOP.
             last = last_relevant_ns
             for tw in fl_activity_times:
                 if tw > t:
                     break
-                if tw >= gap_start:
-                    last = max(last, tw)
+                last = max(last, tw)
             return last
 
         cuts = {gap_start, gap_end}
-        # Idle threshold from activity known at gap_start (before mid-gap FL events).
-        idle_at0 = last_relevant_ns + IDLE_QUIET_NS
+        # Idle threshold from activity known at gap_start (actions + prior FL).
+        idle_at0 = effective_last_relevant(gap_start) + IDLE_QUIET_NS
         if gap_start < idle_at0 < gap_end:
             cuts.add(idle_at0)
         for tw in fl_activity_times:
@@ -315,20 +316,27 @@ def build_segments(
         e.t_wall_ns for e in events if e.event_type in _FL_ACTIVITY_EVENT_TYPES
     )
 
-    relevant = [a for a in actions if is_relevant(a)]
+    # Sort by start so backdated interval actions (DRAG start→end) are placed
+    # before later point events that the recorder emitted first (CLICK up before
+    # DRAG end). Otherwise gap-fill marks the drag window as listening.
+    relevant = sorted(
+        (a for a in actions if is_relevant(a)),
+        key=lambda a: (a.start_wall_ns, a.end_wall_ns, a.action_id),
+    )
 
     for action in relevant:
         gap_start = cursor
         gap_end = action.start_wall_ns
-        raw_spans.extend(
-            classify_gap(
-                gap_start,
-                gap_end,
-                last_relevant_ns=last_relevant_ns,
-                prev_activity=prev_activity,
-                prev_surface=prev_surface,
+        if gap_end > gap_start:
+            raw_spans.extend(
+                classify_gap(
+                    gap_start,
+                    gap_end,
+                    last_relevant_ns=last_relevant_ns,
+                    prev_activity=prev_activity,
+                    prev_surface=prev_surface,
+                )
             )
-        )
 
         act = _activity_for_action(action, playing=playing_at(action.start_wall_ns))
         if action.action_type == "foreground_leave":
@@ -349,7 +357,9 @@ def build_segments(
             prev_surface = action.surface or prev_surface
         if is_relevant(action) and not action.action_type.startswith("transport"):
             if action.action_type != "foreground_leave":
-                last_relevant_ns = max(last_relevant_ns, action.start_wall_ns)
+                last_relevant_ns = max(
+                    last_relevant_ns, action.start_wall_ns, action.end_wall_ns
+                )
 
     raw_spans.extend(
         classify_gap(
