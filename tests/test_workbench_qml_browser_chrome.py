@@ -29,7 +29,7 @@ BROWSER_ROW_DELEGATE_SPAN = (
     - QML_SOURCE.index(BROWSER_ROW_DELEGATE_MARKER)
 )
 SEARCH_MARKER = 'objectName: "browserSearch"'
-COLUMN_HEADER_MARKER = 'text: "SAMPLE NAME"'
+COLUMN_HEADER_MARKER = 'text: "DATEINAME"'
 
 # Shared density + browser column spec. Used by header AND / OR both list delegates.
 _SHARED_DENSITY_ROLES = (
@@ -76,16 +76,16 @@ def _int_property(source: str, name: str) -> int:
 
 def _column_header_layout(source: str) -> str:
     marker = source.index(COLUMN_HEADER_MARKER)
-    start = source.rfind("RowLayout { Layout.fillWidth: true", 0, marker)
-    assert start != -1, "Spalten-Header-RowLayout fehlt"
+    start = source.rfind("GridLayout {", 0, marker)
+    assert start != -1, "Spalten-Header-GridLayout fehlt"
     return source[start:marker]
 
 
 def _full_browser_column_header(source: str) -> str:
-    """Header RowLayout through the end of the column header (before ListView)."""
+    """Header GridLayout through the end of the column header (before ListView)."""
     marker = source.index(COLUMN_HEADER_MARKER)
-    start = source.rfind("RowLayout { Layout.fillWidth: true", 0, marker)
-    assert start != -1, "Spalten-Header-RowLayout fehlt"
+    start = source.rfind("GridLayout {", 0, marker)
+    assert start != -1, "Spalten-Header-GridLayout fehlt"
     end = source.index('objectName: "browserList"', marker)
     return source[start:end]
 
@@ -132,7 +132,7 @@ def test_browser_column_spec_is_shared_between_header_and_rows():
     header = _column_header_layout(QML_SOURCE)
     assert "anchors.leftMargin: window.densityHorizontalInset" in header
     assert "anchors.rightMargin: window.densityHorizontalInset" in header
-    assert "spacing: window.densityRowSpacing" in header
+    assert "columnSpacing: window.densityRowSpacing" in header
 
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
     for magic in ("anchors.leftMargin: 12", "anchors.rightMargin: 12", "Layout.preferredWidth: 180"):
@@ -265,18 +265,15 @@ def _ordered_marker_positions(source: str, markers: tuple[str, ...]) -> list[int
 
 
 def test_browser_default_column_order_matches_767_contract():
-    """Waveform → Sample Name → BPM → Favorite → Key → Length."""
+    """#1292 keeps #767 scan order as the runtime default while making it reorderable."""
+    expected = '["waveform", "filename", "bpm", "favorite", "key", "length", "type"]'
+    assert f"property var browserColumnOrder: {expected}" in QML_SOURCE
     header = _full_browser_column_header(QML_SOURCE)
-    # Header uses width placeholders then labels; verify label order + waveform slot first.
-    assert header.index("effectiveBrowserWaveformWidth") < header.index('text: "SAMPLE NAME"')
-    assert header.index('text: "SAMPLE NAME"') < header.index('text: "BPM"')
-    assert header.index('text: "BPM"') < header.index('text: "FAV"')
-    assert header.index('text: "FAV"') < header.index('text: "KEY"')
-    assert header.index('text: "KEY"') < header.index('text: "LENGTH"')
-
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
-    positions = _ordered_marker_positions(delegate, _BROWSER_ROW_ORDER_MARKERS)
-    assert positions == sorted(positions)
+    for role in ("waveform", "filename", "bpm", "favorite", "key", "length", "type"):
+        token = f'Layout.column: browserPane.visibleBrowserColumnIndex("{role}")'
+        assert token in header
+        assert token in delegate
 
 
 def test_browser_favorite_column_is_present_and_not_a_rating():
@@ -297,7 +294,9 @@ def test_browser_favorite_column_is_present_and_not_a_rating():
 def test_browser_sample_name_is_flexible_and_meta_columns_align():
     header = _full_browser_column_header(QML_SOURCE)
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
-    assert 'text: "SAMPLE NAME"; color: theme.textSecondary; Layout.fillWidth: true' in header
+    assert 'text: "DATEINAME"; color: theme.textSecondary' in header
+    assert 'Layout.column: browserPane.visibleBrowserColumnIndex("filename")' in header
+    assert "Layout.fillWidth: true" in header
     assert "text: modelData.name; color: theme.textPrimary" in delegate
     assert "Layout.fillWidth: true" in delegate
     for role in (
@@ -427,14 +426,12 @@ def _browser_delegate_full(source: str) -> str:
 
 
 def _browser_header_block(source: str) -> str:
-    """Header label row through ListView start (column header chrome only)."""
-    # The Browser header RowLayout that carries SAMPLE NAME / BPM / … labels.
-    marker = 'Label { text: "SAMPLE NAME"'
+    """Header GridLayout through ListView start (column header chrome only)."""
+    marker = 'id: browserColumnHeaderRow'
     start = source.index(marker)
-    # Walk backward to the enclosing RowLayout opening for this header strip.
-    row_start = source.rfind("RowLayout", 0, start)
+    grid_start = source.rfind("GridLayout", 0, start)
     end = source.index('objectName: "browserList"', start)
-    return source[row_start:end]
+    return source[grid_start:end]
 
 
 def _header_resize_window(source: str, object_name: str, span: int = 1400) -> str:
@@ -467,7 +464,7 @@ def test_browser_rows_have_no_column_resize_mouse_areas():
 
 
 def test_browser_column_resize_lives_in_header_overlays():
-    """#1211: six header-owned resize overlays; not RowLayout width consumers."""
+    """#1211/#1292: six header-owned resize overlays; not GridLayout width consumers."""
     header = _browser_header_block(QML_SOURCE)
     for name in _HEADER_RESIZE_OBJECTNAMES:
         assert name in header, f"missing header resize surface {name}"
