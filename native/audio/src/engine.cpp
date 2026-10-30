@@ -292,15 +292,21 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
         }
     }
 
-    // Configure device
-    ma_device_config dev_config = ma_device_config_init(ma_device_type_duplex);
+    // Configure device. Playback-only when no capture channels are requested so
+    // Browser audition does not open a WASAPI duplex/capture path that can
+    // interfere with other Windows audio sessions (#1209 / #1220).
+    const ma_device_type device_type =
+        (config->input_channels > 0) ? ma_device_type_duplex : ma_device_type_playback;
+    ma_device_config dev_config = ma_device_config_init(device_type);
     dev_config.sampleRate = config->sample_rate;
     dev_config.periodSizeInFrames = config->buffer_frames;
     dev_config.periods = 3;  // Triple buffering for safety
     dev_config.playback.format = ma_format_f32;
     dev_config.playback.channels = config->output_channels;
-    dev_config.capture.format = ma_format_f32;
-    dev_config.capture.channels = config->input_channels;
+    if (config->input_channels > 0) {
+        dev_config.capture.format = ma_format_f32;
+        dev_config.capture.channels = config->input_channels;
+    }
     dev_config.dataCallback = ma_data_callback;
     dev_config.pUserData = engine;
     dev_config.notificationCallback = ma_on_notification;
@@ -308,8 +314,10 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     // Apply output device ID if provided
     if (config->output_device) dev_config.playback.pDeviceID = &output_device_id;
 
-    // Apply input device ID if provided
-    if (config->input_device) dev_config.capture.pDeviceID = &input_device_id;
+    // Apply input device ID if provided (duplex / capture only)
+    if (config->input_channels > 0 && config->input_device) {
+        dev_config.capture.pDeviceID = &input_device_id;
+    }
 
     ma_res = ma_device_init(&engine->context, &dev_config, &engine->device);
     if (ma_res != MA_SUCCESS) {

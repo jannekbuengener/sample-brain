@@ -448,7 +448,8 @@ class EngineConfig:
     sample_rate: int = 48000
     buffer_frames: int = 512
     output_channels: int = 2
-    input_channels: int = 2
+    # Default playback-only. Callers that need capture/recording must opt in.
+    input_channels: int = 0
     output_device: Optional[str] = None
     input_device: Optional[str] = None
 
