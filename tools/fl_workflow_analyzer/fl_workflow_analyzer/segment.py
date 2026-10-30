@@ -214,15 +214,33 @@ def build_segments(
         Intervals between interactions that are longer than SEGMENT_MERGE_GAP_NS but
         shorter than IDLE_QUIET_NS still count as active production time (carry).
         Background always wins over listening/idle (mirrors recorder ActivityTracker).
+
+        FL activity timestamps inside the gap are cut points that refresh the idle
+        deadline *at that instant* — they must not retroactively erase earlier idle.
         """
         if gap_end <= gap_start:
             return []
-        # Split gap at FG / TRANSPORT boundaries and at the idle threshold after
-        # last relevant input so active-carry does not swallow true idle.
+
+        def effective_last_relevant(t: int) -> int:
+            last = last_relevant_ns
+            for tw in fl_activity_times:
+                if tw > t:
+                    break
+                if tw >= gap_start:
+                    last = max(last, tw)
+            return last
+
         cuts = {gap_start, gap_end}
-        idle_at = last_relevant_ns + IDLE_QUIET_NS
-        if gap_start < idle_at < gap_end:
-            cuts.add(idle_at)
+        # Idle threshold from activity known at gap_start (before mid-gap FL events).
+        idle_at0 = last_relevant_ns + IDLE_QUIET_NS
+        if gap_start < idle_at0 < gap_end:
+            cuts.add(idle_at0)
+        for tw in fl_activity_times:
+            if gap_start < tw < gap_end:
+                cuts.add(tw)
+                idle_after = tw + IDLE_QUIET_NS
+                if gap_start < idle_after < gap_end:
+                    cuts.add(idle_after)
         for ev in events:
             if gap_start < ev.t_wall_ns < gap_end and ev.event_type in ("FG", "TRANSPORT"):
                 cuts.add(ev.t_wall_ns)
@@ -232,7 +250,7 @@ def build_segments(
             # State immediately after `a` (include event at exactly `a`).
             fg = foreground_at(a)
             play = playing_at(a)
-            quiet = a >= idle_at
+            quiet = a >= effective_last_relevant(a) + IDLE_QUIET_NS
             if not fg:
                 out.append(
                     {
@@ -290,24 +308,16 @@ def build_segments(
     prev_activity: str | None = None
     prev_surface: str | None = None
 
-    # FL semantic activity (even without Windows input) resets the idle clock,
-    # matching the recorder idle contract: idle requires no relevant FL state change.
+    # FL semantic activity (even without Windows input) participates in idle
+    # classification as mid-gap cut points — never bump the clock before classifying
+    # an elapsed interval (avoids retroactive idle erasure).
     fl_activity_times = sorted(
         e.t_wall_ns for e in events if e.event_type in _FL_ACTIVITY_EVENT_TYPES
     )
 
-    def bump_relevant_through(t: int) -> None:
-        nonlocal last_relevant_ns
-        for tw in fl_activity_times:
-            if tw > t:
-                break
-            if tw >= last_relevant_ns:
-                last_relevant_ns = tw
-
     relevant = [a for a in actions if is_relevant(a)]
 
     for action in relevant:
-        bump_relevant_through(action.start_wall_ns)
         gap_start = cursor
         gap_end = action.start_wall_ns
         raw_spans.extend(
@@ -339,9 +349,8 @@ def build_segments(
             prev_surface = action.surface or prev_surface
         if is_relevant(action) and not action.action_type.startswith("transport"):
             if action.action_type != "foreground_leave":
-                last_relevant_ns = action.start_wall_ns
+                last_relevant_ns = max(last_relevant_ns, action.start_wall_ns)
 
-    bump_relevant_through(session_end_ns)
     raw_spans.extend(
         classify_gap(
             cursor,

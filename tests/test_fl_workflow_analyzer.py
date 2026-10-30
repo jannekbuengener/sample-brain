@@ -471,6 +471,26 @@ def test_plugin_clear_on_mixer_not_plugin_interaction() -> None:
     assert plugin_ns < 2 * NS
 
 
+def test_idle_not_erased_by_later_focus() -> None:
+    t0 = 1700 * NS
+    events = [
+        _ev(source="fl", seq=1, etype="FOCUS_SURFACE", wall=t0, props={"surface": "Mixer"}),
+        _ev(
+            source="fl",
+            seq=2,
+            etype="FOCUS_SURFACE",
+            wall=t0 + 300 * NS,
+            props={"surface": "Playlist"},
+        ),
+    ]
+    result = analyze_events_in_memory(
+        events, session_start_ns=t0, session_end_ns=t0 + 310 * NS
+    )
+    idle_ns = sum(s["duration_ns"] for s in result["segments"] if s["activity"] == "idle")
+    # Quiet from ~120s after mixer focus until playlist focus at 300s.
+    assert idle_ns >= 150 * NS
+
+
 def test_fl_dirty_resets_idle_deadline() -> None:
     t0 = 1600 * NS
     events = [
