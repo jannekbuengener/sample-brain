@@ -5044,6 +5044,35 @@ ApplicationWindow {
                 readonly property int browserTypeColumnMin: 48
                 readonly property int browserTypeColumnMax: 88
                 readonly property int browserColumnHandlePadding: 6
+                readonly property int browserColumnReorderThreshold: 8
+                // #1292 runtime-only presentation order. Logical identities own widths;
+                // visual index never becomes width or product-state authority.
+                property var browserColumnOrder: ["waveform", "filename", "bpm", "favorite", "key", "length", "type"]
+                readonly property int browserVisibleColumnCount: browserNarrowColumns ? browserColumnOrder.length - 1 : browserColumnOrder.length
+                function visibleBrowserColumnIndex(role) {
+                    var visibleIndex = 0
+                    for (var orderIndex = 0; orderIndex < browserColumnOrder.length; orderIndex++) {
+                        var currentRole = browserColumnOrder[orderIndex]
+                        if (browserNarrowColumns && currentRole === "type")
+                            continue
+                        if (currentRole === role)
+                            return visibleIndex
+                        visibleIndex += 1
+                    }
+                    return -1
+                }
+                function moveBrowserColumn(role, targetRole, after) {
+                    if (role === targetRole)
+                        return
+                    var order = browserColumnOrder.slice(0)
+                    var fromIndex = order.indexOf(role)
+                    if (fromIndex < 0 || order.indexOf(targetRole) < 0)
+                        return
+                    order.splice(fromIndex, 1)
+                    var targetIndex = order.indexOf(targetRole)
+                    order.splice(targetIndex + (after ? 1 : 0), 0, role)
+                    browserColumnOrder = order
+                }
                 property int waveformUserWidth: -1
                 property int bpmUserWidth: -1
                 property int favoriteUserWidth: -1
@@ -5159,46 +5188,121 @@ ApplicationWindow {
                         id: browserColumnHeaderHost
                         Layout.fillWidth: true
                         Layout.preferredHeight: browserColumnHeaderRow.implicitHeight
-                        // #846: RowLayout owns shared column widths; resize surfaces are
-                        // edge children of each header cell (valid Qt anchors; not new
-                        // RowLayout columns / preferredWidth consumers).
-                        RowLayout {
+                        property string activeReorderRole: ""
+                        property real reorderPressSceneX: 0
+                        property bool reorderThresholdPassed: false
+                        function _headerItemForRole(role) {
+                            if (role === "waveform") return browserHeaderWaveform
+                            if (role === "filename") return browserHeaderFilename
+                            if (role === "bpm") return browserHeaderBpm
+                            if (role === "favorite") return browserHeaderFavorite
+                            if (role === "key") return browserHeaderKey
+                            if (role === "length") return browserHeaderLength
+                            if (role === "type") return browserHeaderType
+                            return null
+                        }
+                        function _visibleHeaderRoles() {
+                            var roles = []
+                            for (var i = 0; i < browserPane.browserColumnOrder.length; i++) {
+                                var role = browserPane.browserColumnOrder[i]
+                                if (browserPane.browserNarrowColumns && role === "type")
+                                    continue
+                                roles.push(role)
+                            }
+                            return roles
+                        }
+                        function beginColumnReorder(role, sceneX) {
+                            activeReorderRole = role
+                            reorderPressSceneX = sceneX
+                            reorderThresholdPassed = false
+                        }
+                        function updateColumnReorder(role, sceneX) {
+                            if (activeReorderRole !== role)
+                                return
+                            if (!reorderThresholdPassed) {
+                                if (Math.abs(sceneX - reorderPressSceneX) < browserPane.browserColumnReorderThreshold)
+                                    return
+                                reorderThresholdPassed = true
+                            }
+                            var roles = _visibleHeaderRoles()
+                            var targetRole = role
+                            var after = false
+                            for (var i = 0; i < roles.length; i++) {
+                                var candidate = roles[i]
+                                if (candidate === role)
+                                    continue
+                                var item = _headerItemForRole(candidate)
+                                if (item === null || !item.visible)
+                                    continue
+                                var center = item.mapToItem(null, item.width / 2, 0).x
+                                if (sceneX < center) {
+                                    targetRole = candidate
+                                    after = false
+                                    break
+                                }
+                                targetRole = candidate
+                                after = true
+                            }
+                            browserPane.moveBrowserColumn(role, targetRole, after)
+                        }
+                        function endColumnReorder(role) {
+                            if (activeReorderRole !== role)
+                                return
+                            activeReorderRole = ""
+                            reorderThresholdPassed = false
+                        }
+                        // #846/#1292: one shared GridLayout projects canonical logical
+                        // column order; resize surfaces remain header-cell edge children.
+                        GridLayout {
                             id: browserColumnHeaderRow
+                            columns: browserPane.browserVisibleColumnCount
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
                             anchors.leftMargin: window.densityHorizontalInset
                             anchors.rightMargin: window.densityHorizontalInset
-                            spacing: window.densityRowSpacing
+                            columnSpacing: window.densityRowSpacing
+                            rowSpacing: 0
                             Item {
                                 id: browserHeaderWaveform
+                                objectName: "browserColumnHeader_waveform"
+                                Layout.column: browserPane.visibleBrowserColumnIndex("waveform")
                                 Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth
                                 Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth
                                 Layout.fillHeight: true
+                                Label { anchors.fill: parent; text: "WAVEFORM"; color: theme.textSecondary; font.pixelSize: window.textCaption; font.bold: true; verticalAlignment: Text.AlignVCenter; z: 1 }
                                 // #846 ephemeral overlay: MouseArea root keeps resizeColumn +
                                 // theme tokens inside frozen assertion windows.
+                                MouseArea { id: browserColumnReorderWaveform; objectName: "browserColumnReorder_waveform"; property string columnRole: "waveform"; z: 4; anchors.fill: parent; anchors.rightMargin: browserPane.browserColumnHandlePadding + 2; preventStealing: true; cursorShape: Qt.OpenHandCursor; onPressed: function(m) { var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.beginColumnReorder(columnRole, g); m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.updateColumnReorder(columnRole, g) }; onReleased: browserColumnHeaderHost.endColumnReorder(columnRole); onCanceled: browserColumnHeaderHost.endColumnReorder(columnRole) }
                                 MouseArea { id: browserColumnResizeWaveform; objectName: "browserColumnResize_waveform"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize waveform"; onEntered: contextHintState.reportHover("browser.resize.waveform"); onExited: contextHintState.clearHover("browser.resize.waveform"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.waveform") : contextHintState.clearFocus("browser.resize.waveform"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("waveform", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
-                            Label { text: "SAMPLE NAME"; color: theme.textSecondary; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true }
+                            Label { id: browserHeaderFilename; objectName: "browserColumnHeader_filename"; text: "DATEINAME"; color: theme.textSecondary; Layout.column: browserPane.visibleBrowserColumnIndex("filename"); Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true
+                                MouseArea { id: browserColumnReorderFilename; objectName: "browserColumnReorder_filename"; property string columnRole: "filename"; z: 4; anchors.fill: parent; anchors.rightMargin: 0; preventStealing: true; cursorShape: Qt.OpenHandCursor; onPressed: function(m) { var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.beginColumnReorder(columnRole, g); m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.updateColumnReorder(columnRole, g) }; onReleased: browserColumnHeaderHost.endColumnReorder(columnRole); onCanceled: browserColumnHeaderHost.endColumnReorder(columnRole) }
+                            }
                             Label {
                                 id: browserHeaderBpm
                                 objectName: "browserColumnHeader_bpm"
                                 text: "BPM"
                                 color: theme.textSecondary
+                                Layout.column: browserPane.visibleBrowserColumnIndex("bpm")
                                 Layout.preferredWidth: browserPane.effectiveBrowserBpmColumnWidth
                                 horizontalAlignment: Text.AlignRight
                                 font.pixelSize: window.textCaption
                                 font.bold: true
+                                MouseArea { id: browserColumnReorderBpm; objectName: "browserColumnReorder_bpm"; property string columnRole: "bpm"; z: 4; anchors.fill: parent; anchors.rightMargin: browserPane.browserColumnHandlePadding + 2; preventStealing: true; cursorShape: Qt.OpenHandCursor; onPressed: function(m) { var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.beginColumnReorder(columnRole, g); m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.updateColumnReorder(columnRole, g) }; onReleased: browserColumnHeaderHost.endColumnReorder(columnRole); onCanceled: browserColumnHeaderHost.endColumnReorder(columnRole) }
                                 MouseArea { id: browserColumnResizeBpm; objectName: "browserColumnResize_bpm"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize BPM"; onEntered: contextHintState.reportHover("browser.resize.bpm"); onExited: contextHintState.clearHover("browser.resize.bpm"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.bpm") : contextHintState.clearFocus("browser.resize.bpm"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("bpm", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                             Label {
                                 id: browserHeaderFavorite
+                                objectName: "browserColumnHeader_favorite"
                                 text: "FAV"
                                 color: theme.textSecondary
+                                Layout.column: browserPane.visibleBrowserColumnIndex("favorite")
                                 Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth
                                 horizontalAlignment: Text.AlignHCenter
                                 font.pixelSize: window.textCaption
                                 font.bold: true
+                                MouseArea { id: browserColumnReorderFavorite; objectName: "browserColumnReorder_favorite"; property string columnRole: "favorite"; z: 4; anchors.fill: parent; anchors.rightMargin: browserPane.browserColumnHandlePadding + 2; preventStealing: true; cursorShape: Qt.OpenHandCursor; onPressed: function(m) { var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.beginColumnReorder(columnRole, g); m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.updateColumnReorder(columnRole, g) }; onReleased: browserColumnHeaderHost.endColumnReorder(columnRole); onCanceled: browserColumnHeaderHost.endColumnReorder(columnRole) }
                                 MouseArea { id: browserColumnResizeFavorite; objectName: "browserColumnResize_favorite"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize favorite"; onEntered: contextHintState.reportHover("browser.resize.favorite"); onExited: contextHintState.clearHover("browser.resize.favorite"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.favorite") : contextHintState.clearFocus("browser.resize.favorite"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("favorite", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                             Label {
@@ -5206,10 +5310,12 @@ ApplicationWindow {
                                 objectName: "browserColumnHeader_key"
                                 text: "KEY"
                                 color: theme.textSecondary
+                                Layout.column: browserPane.visibleBrowserColumnIndex("key")
                                 Layout.preferredWidth: browserPane.effectiveBrowserKeyColumnWidth
                                 horizontalAlignment: Text.AlignRight
                                 font.pixelSize: window.textCaption
                                 font.bold: true
+                                MouseArea { id: browserColumnReorderKey; objectName: "browserColumnReorder_key"; property string columnRole: "key"; z: 4; anchors.fill: parent; anchors.rightMargin: browserPane.browserColumnHandlePadding + 2; preventStealing: true; cursorShape: Qt.OpenHandCursor; onPressed: function(m) { var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.beginColumnReorder(columnRole, g); m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.updateColumnReorder(columnRole, g) }; onReleased: browserColumnHeaderHost.endColumnReorder(columnRole); onCanceled: browserColumnHeaderHost.endColumnReorder(columnRole) }
                                 MouseArea { id: browserColumnResizeKey; objectName: "browserColumnResize_key"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize key"; onEntered: contextHintState.reportHover("browser.resize.key"); onExited: contextHintState.clearHover("browser.resize.key"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.key") : contextHintState.clearFocus("browser.resize.key"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("key", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                             Label {
@@ -5217,10 +5323,12 @@ ApplicationWindow {
                                 objectName: "browserColumnHeader_length"
                                 text: "LENGTH"
                                 color: theme.textSecondary
+                                Layout.column: browserPane.visibleBrowserColumnIndex("length")
                                 Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth
                                 horizontalAlignment: Text.AlignRight
                                 font.pixelSize: window.textCaption
                                 font.bold: true
+                                MouseArea { id: browserColumnReorderLength; objectName: "browserColumnReorder_length"; property string columnRole: "length"; z: 4; anchors.fill: parent; anchors.rightMargin: browserPane.browserColumnHandlePadding + 2; preventStealing: true; cursorShape: Qt.OpenHandCursor; onPressed: function(m) { var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.beginColumnReorder(columnRole, g); m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.updateColumnReorder(columnRole, g) }; onReleased: browserColumnHeaderHost.endColumnReorder(columnRole); onCanceled: browserColumnHeaderHost.endColumnReorder(columnRole) }
                                 MouseArea { id: browserColumnResizeLength; objectName: "browserColumnResize_length"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize length"; onEntered: contextHintState.reportHover("browser.resize.length"); onExited: contextHintState.clearHover("browser.resize.length"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.length") : contextHintState.clearFocus("browser.resize.length"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("length", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                             // Issue 850: Type header shares visibility + width with the Type value cell so
@@ -5231,10 +5339,12 @@ ApplicationWindow {
                                 visible: !browserPane.browserNarrowColumns
                                 text: "TYPE"
                                 color: theme.textSecondary
+                                Layout.column: browserPane.visibleBrowserColumnIndex("type")
                                 Layout.preferredWidth: browserPane.effectiveBrowserTypeColumnWidth
                                 horizontalAlignment: Text.AlignLeft
                                 font.pixelSize: window.textCaption
                                 font.bold: true
+                                MouseArea { id: browserColumnReorderType; objectName: "browserColumnReorder_type"; property string columnRole: "type"; z: 4; anchors.fill: parent; anchors.rightMargin: browserPane.browserColumnHandlePadding + 2; preventStealing: true; cursorShape: Qt.OpenHandCursor; onPressed: function(m) { var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.beginColumnReorder(columnRole, g); m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.updateColumnReorder(columnRole, g) }; onReleased: browserColumnHeaderHost.endColumnReorder(columnRole); onCanceled: browserColumnHeaderHost.endColumnReorder(columnRole) }
                                 MouseArea { id: browserColumnResizeType; objectName: "browserColumnResize_type"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize type"; onEntered: contextHintState.reportHover("browser.resize.type"); onExited: contextHintState.clearHover("browser.resize.type"); onActiveFocusChanged: activeFocus ? contextHintState.reportFocus("browser.resize.type") : contextHintState.clearFocus("browser.resize.type"); property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("type", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
                             }
                         }
@@ -5659,8 +5769,8 @@ ApplicationWindow {
                                     font.pixelSize: window.textCaption
                                 }
                             }
-                            RowLayout { id: rowBody; visible: !browserRow.isLoopOwner; anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
-                                Item { id: waveformSurface; objectName: "browserWaveformSurface"; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
+                            GridLayout { id: rowBody; visible: !browserRow.isLoopOwner; columns: browserPane.browserVisibleColumnCount; anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; columnSpacing: window.densityRowSpacing; rowSpacing: 0; z: 1
+                                Item { id: waveformSurface; objectName: "browserWaveformSurface"; Layout.column: browserPane.visibleBrowserColumnIndex("waveform"); Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
                                     // #1281: transform/presentation only — layout height stays densityWaveformHeight.
                                     property int rowIndex: index
                                     readonly property bool isPrimaryHover: !browserRow.isLoopOwner && browser.hoveredWaveformIndex === index
@@ -5768,11 +5878,12 @@ ApplicationWindow {
                                         onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) }
                                     }
                                 }
-                                Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
-                                Label { id: bpmCell; text: modelData.bpm; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserBpmColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                                Label { id: filenameCell; objectName: "browserFilenameCell"; text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.column: browserPane.visibleBrowserColumnIndex("filename"); Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
+                                Label { id: bpmCell; objectName: "browserBpmCell"; text: modelData.bpm; color: theme.textSecondary; Layout.column: browserPane.visibleBrowserColumnIndex("bpm"); Layout.preferredWidth: browserPane.effectiveBrowserBpmColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
                                 Item {
                                     id: favoriteCell
                                     objectName: "browserFavoriteButton"
+                                    Layout.column: browserPane.visibleBrowserColumnIndex("favorite")
                                     Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth
                                     Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
                                     Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
@@ -5803,9 +5914,9 @@ ApplicationWindow {
                                         }
                                     }
                                 }
-                                Label { id: keyCell; text: modelData.key; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserKeyColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
-                                Label { id: lengthCell; objectName: "browserLengthCell"; text: modelData.duration; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta; elide: Text.ElideRight; clip: true }
-                                Label { id: typeCell; objectName: "browserTypeCell"; visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: browserPane.effectiveBrowserTypeColumnWidth; verticalAlignment: Text.AlignVCenter }
+                                Label { id: keyCell; objectName: "browserKeyCell"; text: modelData.key; color: theme.textSecondary; Layout.column: browserPane.visibleBrowserColumnIndex("key"); Layout.preferredWidth: browserPane.effectiveBrowserKeyColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                                Label { id: lengthCell; objectName: "browserLengthCell"; text: modelData.duration; color: theme.textSecondary; Layout.column: browserPane.visibleBrowserColumnIndex("length"); Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta; elide: Text.ElideRight; clip: true }
+                                Label { id: typeCell; objectName: "browserTypeCell"; visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.column: browserPane.visibleBrowserColumnIndex("type"); Layout.preferredWidth: browserPane.effectiveBrowserTypeColumnWidth; verticalAlignment: Text.AlignVCenter }
                             }
                             // #846: permanent vertical column dividers removed. Column resize
                             // lives on header overlays; rows keep horizontal chrome only.

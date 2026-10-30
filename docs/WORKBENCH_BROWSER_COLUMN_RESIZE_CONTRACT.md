@@ -1,7 +1,8 @@
-# Workbench Browser Column Resize Contract (#1211)
+# Workbench Browser Column Layout Contract (#1211 / #1292)
 
 **Status:** ACTIVE_SUPPORTING (Screen-1 child of #691)
-**Issues:** [#1211](https://github.com/jannekbuengener/sample-brain/issues/1211) (current product authority),
+**Issues:** [#1211](https://github.com/jannekbuengener/sample-brain/issues/1211) (resize authority),
+[#1292](https://github.com/jannekbuengener/sample-brain/issues/1292) (runtime column-order / gesture-arbitration authority),
 [#780](https://github.com/jannekbuengener/sample-brain/issues/780) / [#846](https://github.com/jannekbuengener/sample-brain/issues/846) (historical evidence)
 **Parent UX meta:** [#844](https://github.com/jannekbuengener/sample-brain/issues/844)
 **Builds on:** [#767](WORKBENCH_BROWSER_COLUMN_ARRANGEMENT_CONTRACT.md) column
@@ -16,7 +17,8 @@ assumptions for panel collapse ownership).
 
 | Layer | Owner |
 |-------|--------|
-| Independent per-column width overrides + pointer-direction invariant | **#1211** (current) |
+| Independent per-column width overrides + pointer-direction invariant | **#1211** |
+| Canonical runtime column order + reorder/resize pointer arbitration | **#1292** |
 | Width math shell, mins/maxes, narrow/wide, Name absorber | #780 foundation, reconciled by #1211 |
 | Visual presentation of column dividers / resize chrome | #846 presentation, preserved by #1211 |
 
@@ -52,9 +54,9 @@ calm surface -> header -> on demand ephemeral resize handle
 - Column resize remains fully functional via header-owned ephemeral surfaces.
 - Each visible data column that is user-resizable owns an independent override.
 
-## One owner for column width state
+## One owner for column layout state
 
-`browserPane` is the **only** Browser column geometry authority.
+`browserPane` is the **only** Browser column geometry/order authority.
 
 ```text
 one user override per resizable column
@@ -76,8 +78,14 @@ header + all row delegates consume exact same effective width
 - Resize of column A must not rewrite unrelated user overrides.
 - No Python-side width map and no second parallel QML width authority.
 - Header and virtualized delegates read the same `browserPane.effectiveBrowser*`.
+- `browserColumnOrder` is the one runtime-only ordered list of logical identities:
+  `waveform`, `filename`, `bpm`, `favorite`, `key`, `length`, `type`.
+- Header + ordinary row cells project that same list through
+  `visibleBrowserColumnIndex(role)` / `Layout.column`; widths remain attached to
+  the logical role, never the visual index.
+- `moveBrowserColumn(role, targetRole, after)` is the only reorder writer.
 
-Browser-column resize is **inner** Browser geometry. Panel resize / disclosure
+Browser-column resize/reorder is **inner** Browser geometry. Panel resize / disclosure
 (`layoutModel`, `PanelDisclosureSeam`, #1204) is **outer** workspace geometry.
 No shared MouseArea and no shared state authority.
 
@@ -119,7 +127,7 @@ Coordinate handling uses one stable space per drag (global/scene X via
 pressX / currentX / delta = currentX - previousX
 ```
 
-Do not mix shifting local coordinate systems across RowLayout reflow mid-drag.
+Do not mix shifting local coordinate systems across GridLayout reflow mid-drag.
 
 ### Boundary geometry (Name absorber)
 
@@ -139,7 +147,7 @@ by `−Δ`. Independent `bpm` / `key` overrides remove that inversion.
 ## Presentation — header-owned ephemeral overlays (#846 preserved)
 
 Resize surfaces are **overlay / edge children** of the header cell, not
-additional `RowLayout` siblings that consume layout width.
+additional `GridLayout` siblings that consume layout width.
 
 - Anchored to the **right edge** of the header cell.
 - Must **not** declare `Layout.preferredWidth` / `Layout.minimumWidth` on the
@@ -154,6 +162,21 @@ additional `RowLayout` siblings that consume layout width.
 
 Handle chrome uses existing Theme Core semantics only (`theme.surfaceElevated`,
 `theme.focusRing`, …). No new HEX literals in handle chrome.
+
+## Reorder + resize gesture arbitration (#1292)
+
+Header pointer ownership is deterministic:
+
+- separator/right-edge hit zone -> resize;
+- header body/label -> reorder only after the `8 DIP` drag threshold;
+- resize overlays (`z: 8`) outrank reorder body surfaces (`z: 4`);
+- sub-threshold press/release is a reorder no-op;
+- reorder uses stable scene X and header-cell centers, not delegate indices;
+- WAVEFORM participates in reorder/resize and exposes the visible `WAVEFORM`
+  label but no invented sort-arrow semantics;
+- the sample identity label is `DATEINAME`;
+- moving columns changes presentation only: no selection, audition, Favorite,
+  Add-to-Kit, Harmonic Match, Loop, analysis, DB, filesystem, or audio mutation.
 
 ## Accessibility / keyboard
 
@@ -180,13 +203,13 @@ Named, centralized on `browserPane`; no new inline magic numbers in delegates:
 
 ## Interaction isolation
 
-Resize must not trigger: selection, audition, Favorite, Add-to-Kit, Harmonic
-Matches intent, Browser panel resize, or #1204 disclosure.
+Resize/reorder must not trigger: selection, audition, Favorite, Add-to-Kit,
+Harmonic Matches intent, Loop intent, Browser panel resize, or #1204 disclosure.
 
 ## Persistence seam (V1 = runtime-only)
 
-Deterministic runtime resize only. Column widths reset to responsive defaults on
-relaunch. No new settings/persistence subsystem. Future persistence may use the
+Deterministic runtime resize + reorder only. Column widths and column order reset
+to responsive/default order on relaunch. No new settings/persistence subsystem. Future persistence may use the
 display-preference seam ([#696](WORKBENCH_DISPLAY_PREFERENCES.md)); this contract
 does not implement it.
 
@@ -195,7 +218,7 @@ does not implement it.
 - #1210 context hints
 - #1204 panel disclosure redesign
 - #843 Harmonic Match embed / context menu product changes
-- Column reordering, sorting/filter redesign, spreadsheet grid
+- sorting/filter redesign, spreadsheet grid
 - Panel docking/reordering, DnD, Screen 2/3, packaging
 - Theme-Core redesign; width persistence; full keyboard column-resize
 
@@ -206,6 +229,12 @@ does not implement it.
   `reuseItems: true`).
 - Runtime geometry probe (PySide6/QML) for pointer-sign / boundary direction
   and independence (BPM/KEY/TYPE at minimum).
+- #1292 pointer/geometry/identity coverage in
+  `tests/test_workbench_qml_browser_column_reorder_1292.py`, including real
+  `QTest` body/edge drags, shared header/row order, repeated reorder+resize
+  cycles, and narrow projection.
+- Exact-head Windows 100/125/150% evidence via
+  `tools/screen1_browser_column_reorder_1292_evidence.py`.
 - Theme wiring: `tests/test_workbench_qml_theme_runtime.py`.
 - Protected: #1204 panel disclosure suite; elastic / progressive disclosure /
   compact density as applicable.

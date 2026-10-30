@@ -38,8 +38,8 @@ def _browser_delegate() -> str:
 
 
 def _column_header() -> str:
-    marker = QML_SOURCE.index('text: "SAMPLE NAME"')
-    start = QML_SOURCE.rfind("RowLayout { Layout.fillWidth: true", 0, marker)
+    marker = QML_SOURCE.index('text: "DATEINAME"')
+    start = QML_SOURCE.rfind("GridLayout {", 0, marker)
     end = QML_SOURCE.index(_BROWSER_LIST, marker)
     return QML_SOURCE[start:end]
 
