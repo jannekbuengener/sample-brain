@@ -49,4 +49,17 @@ else
   echo "sample-brain-env-install-skip-mcp"
 fi
 
+# Meta-Work / multi-repo siblings (Python packages with [dev] extras).
+for sibling in agent-brain sample-brain-analysis arvp; do
+  sibling_root="${repos}/${sibling}"
+  if [[ -f "${sibling_root}/pyproject.toml" ]]; then
+    echo "sample-brain-env-install-sibling sibling=${sibling} root=${sibling_root}"
+    python3.12 -m venv "${sibling_root}/.venv"
+    "${sibling_root}/.venv/bin/python" -m pip install --upgrade pip
+    "${sibling_root}/.venv/bin/python" -m pip install -e "${sibling_root}[dev]"
+  else
+    echo "sample-brain-env-install-skip-sibling sibling=${sibling}"
+  fi
+done
+
 echo sample-brain-env-install-ok
