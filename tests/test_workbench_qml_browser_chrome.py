@@ -102,8 +102,8 @@ def test_browser_search_field_is_visually_integrated():
 
 def test_browser_header_composes_context_title_scope_count_and_error():
     title_snippet = _snippet(QML_SOURCE, "text: window.screenData.browserContext", 300)
-    assert "font.pixelSize: window.textTitle" in title_snippet
-    assert "font.bold: true" in title_snippet
+    assert "font.pixelSize: themeAuthority.typographyUiContentSize" in title_snippet
+    assert "font.weight: Font.Medium" in title_snippet
     assert 'window.screenData.browserRows.length + " samples"' in QML_SOURCE
     assert "errorMessage.length > 0" in QML_SOURCE
 
@@ -140,16 +140,12 @@ def test_browser_column_spec_is_shared_between_header_and_rows():
 
 
 def test_browser_typography_roles_are_bounded_and_assigned():
-    """Compact #692 typography — fit a single 30-DIP horizontal scan line."""
-    assert 16 <= _int_property(QML_SOURCE, "textTitle") <= 20
-    assert 11 <= _int_property(QML_SOURCE, "textBody") <= 13
-    assert 10 <= _int_property(QML_SOURCE, "textMeta") <= 12
-    assert 9 <= _int_property(QML_SOURCE, "textCaption") <= 11
+    """#1249 supersedes #692 font sizes without changing 30-DIP row geometry."""
+    assert "property int densityRowHeight: 30" in QML_SOURCE
 
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
-    assert "font.pixelSize: window.textBody" in delegate  # Sample-Name
-    assert "font.pixelSize: window.textCaption" in delegate  # Sample-Typ (inline)
-    assert QML_SOURCE.count("font.pixelSize: window.textMeta") >= 3  # BPM/Key/Length
+    assert "font.pixelSize: themeAuthority.typographyUiStandardSize" in delegate
+    assert delegate.count("font.pixelSize: themeAuthority.typographyUiCaptionSize") >= 4
 
 
 def test_browser_meta_fields_use_secondary_text_weight():
@@ -177,8 +173,8 @@ def test_browser_meta_fields_use_secondary_text_weight():
     assert 'text: modelData.key; color: theme.textSecondary' not in harmonic
 
     assert _int_property(QML_SOURCE, "densityRowHeight") == 30
-    assert _int_property(QML_SOURCE, "textMeta") == 11
-    assert _int_property(QML_SOURCE, "textBody") == 12
+    assert "font.pixelSize: themeAuthority.typographyUiCaptionSize" in delegate
+    assert "font.pixelSize: themeAuthority.typographyUiStandardSize" in delegate
 
 
 def test_browser_density_waveform_and_divider_invariants():
