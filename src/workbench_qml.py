@@ -1925,7 +1925,6 @@ class Screen1QmlInteractionAdapter:
             mutation="replace" if occupied else "add",
         )
         self._present_live_kit_after_mutation()
-        self._close_harmonic_match_presentation()
         return True
 
     def cancel_live_kit_add(self) -> bool:
