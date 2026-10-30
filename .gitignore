@@ -261,3 +261,7 @@ native/audio/**/build/
 *.obj
 *.exe
 !third_party/miniaudio.h
+
+.pytest-tmp*/
+.pt/
+
