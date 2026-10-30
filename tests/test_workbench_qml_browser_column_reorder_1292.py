@@ -40,6 +40,7 @@ def test_header_and_rows_project_same_logical_column_order():
 
 def test_browser_identity_header_is_dateiname_and_not_sample_name():
     header = _header_block()
+    assert 'text: "WAVEFORM"' in header
     assert 'text: "DATEINAME"' in header
     assert 'text: "SAMPLE NAME"' not in header
 

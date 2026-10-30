@@ -5270,6 +5270,7 @@ ApplicationWindow {
                                 Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth
                                 Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth
                                 Layout.fillHeight: true
+                                Label { anchors.fill: parent; text: "WAVEFORM"; color: theme.textSecondary; font.pixelSize: window.textCaption; font.bold: true; verticalAlignment: Text.AlignVCenter; z: 1 }
                                 // #846 ephemeral overlay: MouseArea root keeps resizeColumn +
                                 // theme tokens inside frozen assertion windows.
                                 MouseArea { id: browserColumnReorderWaveform; objectName: "browserColumnReorder_waveform"; property string columnRole: "waveform"; z: 4; anchors.fill: parent; anchors.rightMargin: browserPane.browserColumnHandlePadding + 2; preventStealing: true; cursorShape: Qt.OpenHandCursor; onPressed: function(m) { var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.beginColumnReorder(columnRole, g); m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserColumnHeaderHost.updateColumnReorder(columnRole, g) }; onReleased: browserColumnHeaderHost.endColumnReorder(columnRole); onCanceled: browserColumnHeaderHost.endColumnReorder(columnRole) }
