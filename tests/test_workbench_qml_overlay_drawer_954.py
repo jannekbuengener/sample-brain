@@ -41,7 +41,7 @@ def test_drawer_starts_closed_even_when_the_musical_kit_is_restored():
     assert adapter.live_kit_auto_disclosure_consumed is False
 
 
-def test_first_successful_slot_assignment_auto_opens_once_and_closes_harmony_non_destructively():
+def test_first_successful_slot_assignment_keeps_harmony_open_for_1207_hud():
     adapter, state = _adapter()
     adapter.harmonic_match_open = True
     preserved_rows = (object(),)
@@ -54,7 +54,8 @@ def test_first_successful_slot_assignment_auto_opens_once_and_closes_harmony_non
     assert adapter.live_kit_drawer_open is True
     assert adapter.live_kit_hud_mode == "transient"
     assert adapter.live_kit_auto_disclosure_consumed is True
-    assert adapter.harmonic_match_open is False
+    # Later #1207 owner amendment supersedes #954's auto-close expectation.
+    assert adapter.harmonic_match_open is True
     assert adapter.view_model.harmony_rows is preserved_rows
 
 
@@ -72,7 +73,7 @@ def test_later_assignment_respects_manual_drawer_close_and_manually_reopened_har
     assert state.assignment_for("Kick + Bass", "Bass") is not None
     assert adapter.live_kit_drawer_open is True
     assert adapter.live_kit_hud_mode == "transient"
-    assert adapter.harmonic_match_open is False
+    assert adapter.harmonic_match_open is True
 
 
 @pytest.mark.parametrize(

@@ -112,6 +112,11 @@ Cleared / empty slots follow existing domain reconciliation and disappear from t
 
 ### 6.1 Bottom overlay drawer contract (#954)
 
+Historical #954 geometry and auto-close behavior below is superseded for current
+Screen-1 Kit presentation by [#1207](https://github.com/jannekbuengener/sample-brain/issues/1207):
+the default-hidden HUD appears adjacent to already visible Harmonic Matches,
+and a successful Add does not close Harmony. Python remains Kit authority.
+
 - The Browser remains the dominant workspace. Opening the Drawer overlays the Browser; it must not reflow the Browser into a smaller upper row.
 - The Drawer is anchored to the Browser workspace, not to the whole application. Its left and right edges always equal the current Browser edges. It ends at the Harmony divider and never draws under Harmonic Matches.
 - Closing Harmony expands Browser and Drawer together; reopening Harmony contracts both together. The Drawer retains no stale right-edge pixel coordinate.
