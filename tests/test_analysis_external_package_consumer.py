@@ -10,11 +10,11 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.1.1"
+EXPECTED_VERSION = "0.1.3"
 EXPECTED_WHEEL_URL = (
     "https://github.com/jannekbuengener/sample-brain-analysis/releases/download/"
-    "v0.1.1/sample_brain_analysis-0.1.1-py3-none-any.whl"
-    "#sha256=3c5d3d97dbc5d171b65c19a56bba2317f64ebcbaaf6dcd075c836b8b29385da7"
+    "v0.1.3/sample_brain_analysis-0.1.3-py3-none-any.whl"
+    "#sha256=030a64c6fcfa9e1c7c13d5a9d32083c405766d4683ba634a6ff3b99b49f1739f"
 )
 
 MODULE_ALIASES = {

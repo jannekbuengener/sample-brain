@@ -9,15 +9,15 @@
 The versioned distribution `sample-brain-analysis` (import root
 `sample_brain_analysis`) owns the public Analysis API, result types, and
 computation. Its v1 manifest is canonical in the versioned
-[v0.1.1 package contract](https://github.com/jannekbuengener/sample-brain-analysis/blob/v0.1.1/docs/contracts/analysis-public-api-v1.md).
+[v0.1.3 package contract](https://github.com/jannekbuengener/sample-brain-analysis/blob/v0.1.3/docs/contracts/analysis-public-api-v1.md).
 This Sample Brain document defines only how the application consumes that
 package and where application behavior remains owned. It does not restate the
 package's symbol list or DTO fields.
 
-Sample Brain pins the released v0.1.1 wheel by URL and SHA-256 in both
+Sample Brain pins the released v0.1.3 wheel by URL and SHA-256 in both
 `pyproject.toml` and `requirements.txt`. The released artifact is
-`sample_brain_analysis-0.1.1-py3-none-any.whl`, SHA-256
-`3c5d3d97dbc5d171b65c19a56bba2317f64ebcbaaf6dcd075c836b8b29385da7`.
+`sample_brain_analysis-0.1.3-py3-none-any.whl`, SHA-256
+`030a64c6fcfa9e1c7c13d5a9d32083c405766d4683ba634a6ff3b99b49f1739f`.
 
 ## Consumer ownership
 

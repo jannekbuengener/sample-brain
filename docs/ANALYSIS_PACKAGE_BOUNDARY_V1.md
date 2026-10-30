@@ -9,16 +9,16 @@
 
 The physical Analysis extraction is complete at the package boundary. The
 versioned distribution is `sample-brain-analysis`, imported as
-`sample_brain_analysis`. Release `v0.1.1` provides
-`sample_brain_analysis-0.1.1-py3-none-any.whl` with SHA-256
-`3c5d3d97dbc5d171b65c19a56bba2317f64ebcbaaf6dcd075c836b8b29385da7`.
+`sample_brain_analysis`. Release `v0.1.3` provides
+`sample_brain_analysis-0.1.3-py3-none-any.whl` with SHA-256
+`030a64c6fcfa9e1c7c13d5a9d32083c405766d4683ba634a6ff3b99b49f1739f`.
 Sample Brain declares that exact wheel in both `pyproject.toml` and
 `requirements.txt`.
 
 The package owns its public manifest, result contracts, reusable algorithms,
 package architecture, and independent validation. The
-[v0.1.1 API contract](https://github.com/jannekbuengener/sample-brain-analysis/blob/v0.1.1/docs/contracts/analysis-public-api-v1.md)
-and [package architecture](https://github.com/jannekbuengener/sample-brain-analysis/blob/v0.1.1/ARCHITECTURE.md)
+[v0.1.3 API contract](https://github.com/jannekbuengener/sample-brain-analysis/blob/v0.1.3/docs/contracts/analysis-public-api-v1.md)
+and [package architecture](https://github.com/jannekbuengener/sample-brain-analysis/blob/v0.1.3/ARCHITECTURE.md)
 are the canonical package documents. This Sample Brain document owns only the
 consumer boundary and application ownership below; it does not copy the API
 manifest or analysis semantics.
