@@ -183,6 +183,42 @@ def test_spec_gate_targets_the_real_required_asset() -> None:
     assert "REQUIRED Screen-1 brand asset missing" in source
 
 
+def test_spec_collects_sample_brain_analysis_for_frozen_launch() -> None:
+    """Screen-1 imports bpm/matching via sample_brain_analysis; freeze must pack it."""
+    source = _spec_source()
+    assert '"sample_brain_analysis"' in source or "'sample_brain_analysis'" in source
+    assert "collect_all" in source
+    # collect_all loop must include the analysis package, not only a string hint.
+    assert "sample_brain_analysis" in source
+    tree = _spec_tree()
+    env = _spec_env(tree)
+    hidden = env.get("hiddenimports")
+    assert isinstance(hidden, (ast.List, ast.Tuple))
+    literals = [
+        n.value
+        for n in hidden.elts
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    ]
+    assert "sample_brain_analysis" in literals
+
+
+def test_spec_keeps_tkinter_for_transport_ui_import_chain() -> None:
+    """QML Screen-1 imports workbench_transport_ui which requires tkinter."""
+    source = _spec_source()
+    assert "tkinter" in source
+    # Must not be listed in excludes.
+    assert 'excludes=[' in source
+    excludes_block = source.split("excludes=[", 1)[1].split("]", 1)[0]
+    assert "tkinter" not in excludes_block
+
+
+def test_spec_filters_foreign_icu_binaries() -> None:
+    """Conda ICU must not ship; Qt binds Windows System32 icuuc."""
+    source = _spec_source()
+    assert "_is_foreign_icu" in source
+    assert "icuuc" in source
+
+
 def test_splash_typography_is_not_packed_without_a_runtime_consumer() -> None:
     """The splash slot has no QML binding in the distributable path."""
     entries = _spec_datas(_spec_tree())

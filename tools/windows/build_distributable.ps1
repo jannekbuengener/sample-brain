@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Build the #729 Windows Screen-1 portable tester ZIP.
@@ -148,6 +148,16 @@ Write-Host "=== PyInstaller onedir fallback build ==="
 $PyInstallerOut = Join-Path $StageDir "pyinstaller-out"
 New-Item -ItemType Directory -Force -Path $PyInstallerOut | Out-Null
 $SpecFile = Join-Path $RepoRoot "tools\windows\sample_brain_screen1.spec"
+# Prevent PyInstaller binary discovery from picking conda/Miniforge ICU (or other
+# toolchains) off PATH. Those DLLs break frozen Qt6Core import (WinError 127).
+$PackagingPathParts = @()
+foreach ($part in (($env:PATH) -split ';' | Where-Object { $_ -and $_.Trim() })) {
+    $lower = $part.ToLowerInvariant()
+    if ($lower -match '\\(miniforge|anaconda|conda|mambaforge)(\\|$)') { continue }
+    if ($lower -match '\\library\\bin(\\|$)') { continue }
+    $PackagingPathParts += $part
+}
+$env:PATH = ($PackagingPathParts -join ';')
 & $Py -m PyInstaller --noconfirm --clean --distpath $PyInstallerOut --workpath (Join-Path $StageDir "pyi-work") $SpecFile
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller onedir build failed." }
 
@@ -173,6 +183,18 @@ Copy-Item -LiteralPath $Dll -Destination $DllDest -Force
 $QWindows = Get-ChildItem -LiteralPath $FinalApp -Recurse -Filter "qwindows.dll" -ErrorAction SilentlyContinue |
     Select-Object -First 1
 if (-not $QWindows) { throw "qwindows.dll missing from standalone artifact - Qt platforms plugin FAIL." }
+
+# Foreign ICU gate: conda/Miniforge icuuc breaks frozen Qt6Core (WinError 127).
+# NOTE: Do not use Get-ChildItem -Include without a trailing\* path — it can
+# return the entire tree on Windows PowerShell.
+$ForeignIcu = @(
+    Get-ChildItem -Path (Join-Path $FinalApp '*') -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(icuuc|icudt|icuin).*\.dll$' }
+)
+if ($ForeignIcu.Count -gt 0) {
+    $names = ($ForeignIcu | ForEach-Object { $_.Name }) -join ", "
+    throw "Foreign ICU DLL(s) present in standalone artifact ($names) - QtCore load FAIL risk."
+}
 
 # Screen-1 brand runtime asset presence gate (frozen QML must not depend on repo checkout)
 $LogoName = "sample_brain_logo_primary.png"
