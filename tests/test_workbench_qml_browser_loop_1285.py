@@ -364,7 +364,7 @@ def test_1285_inline_loop_surface_is_nearly_full_width_and_recedes_ordinary_meta
     assert "visible: !browserRow.isLoopOwner" in browser
     assert "bpmCell" in browser and "keyCell" in browser and "lengthCell" in browser and "typeCell" in browser
     inline_start = browser.index('objectName: "browserLoopInlineSurface"')
-    inline_end = browser.index("RowLayout", inline_start)
+    inline_end = browser.index("GridLayout { id: rowBody", inline_start)
     inline = browser[inline_start:inline_end]
     assert "BPM" not in inline and "KEY" not in inline and "LENGTH" not in inline and "TYPE" not in inline
     assert "Arrangement" not in inline and "Timeline" not in inline and "Pattern" not in inline
