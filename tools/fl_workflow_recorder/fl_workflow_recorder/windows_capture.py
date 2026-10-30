@@ -318,9 +318,16 @@ class WindowsCapture:
             WM_MBUTTONUP: "middle_up",
         }.get(int(msg))
 
+    def _fl_foreground_now(self) -> bool:
+        """Revalidate live foreground ownership (do not trust the 150ms poll cache alone)."""
+        try:
+            return self._is_fl_process(self._foreground_process_name())
+        except Exception:
+            return False
+
     def _on_mouse(self, nCode, wParam, lParam):
         try:
-            if nCode == HC_ACTION and self._fl_foreground:
+            if nCode == HC_ACTION and self._fl_foreground_now():
                 info = ctypes.cast(lParam, ctypes.POINTER(self._MSLLHOOKSTRUCT)).contents
                 x, y = int(info.pt.x), int(info.pt.y)
                 msg = int(wParam)
@@ -370,7 +377,7 @@ class WindowsCapture:
 
     def _on_keyboard(self, nCode, wParam, lParam):
         try:
-            if nCode == HC_ACTION and self._fl_foreground:
+            if nCode == HC_ACTION and self._fl_foreground_now():
                 msg = int(wParam)
                 if msg in (WM_KEYDOWN, WM_SYSKEYDOWN):
                     info = ctypes.cast(lParam, ctypes.POINTER(self._KBDLLHOOKSTRUCT)).contents

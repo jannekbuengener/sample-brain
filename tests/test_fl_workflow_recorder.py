@@ -287,6 +287,13 @@ def test_numpad_redaction_present_in_windows_capture() -> None:
     ).read_text(encoding="utf-8")
     assert "0x60 <= vk <= 0x69" in src
     assert "CallNextHookEx.argtypes" in src
+    assert "_fl_foreground_now" in src
+
+
+def test_uninstall_removes_legacy_bridge() -> None:
+    text = (ROOT / "tools" / "fl_workflow_recorder" / "uninstall.ps1").read_text(encoding="utf-8")
+    assert "SBWorkflowSignalProbe" in text
+    assert "workflow-observer" in text
 
 
 def test_activity_listening_not_idle_while_playing(observer_root: ObserverPaths) -> None:

@@ -249,6 +249,15 @@ class RecorderService:
         self._ingest = SpoolIngestor(self._store)
 
         fl0 = find_fl_process()
+        # Drain outstanding spool into each still-open session before recovery closes it,
+        # so late events are not attributed to a later FL run.
+        for row in list(self._store.open_sessions()):
+            self._sessions.current_session_id = row["id"]
+            try:
+                self._ingest_once()
+            except Exception:
+                logger.exception("startup drain failed for session %s", row["id"])
+            self._sessions.current_session_id = None
         self._sessions.recover_stale_on_startup(fl_alive=fl0.alive, fl_pid=fl0.pid)
         if fl0.alive:
             fl_ver, midi_api = self._read_fl_meta()
