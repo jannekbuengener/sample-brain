@@ -5240,6 +5240,12 @@ ApplicationWindow {
                         // #1285: one owner row expands in-place; ordinary Browser rows keep compact density.
                         property int loopOwnerRowHeight: 112
                         property int waveformPrefetchMargin: 2
+                        // #1285 presentation-only handoff state. Product owner identity stays in Python.
+                        property string loopOwnerPathProjection: window.interaction.browserLoopOwnerPath
+                        property int loopOwnerVisibleIndex: -1
+                        property bool loopOwnerInlineVisible: false
+                        property string loopStickyEdge: "none"
+                        property string loopStickyEdgeMemory: "bottom"
                         implicitHeight: window.densityRowHeight * 2
                         // #1281: presentation-only waveform hover (not product state).
                         property int hoveredWaveformIndex: -1
@@ -5250,6 +5256,80 @@ ApplicationWindow {
                         property int hoverSettleMs: 120
                         function setHoveredWaveform(i) { hoveredWaveformIndex = i }
                         function clearHoveredWaveform(i) { if (hoveredWaveformIndex === i) hoveredWaveformIndex = -1 }
+                        function resolveLoopOwnerIndex() {
+                            if (!window.interaction.browserLoopActive || loopOwnerPathProjection.length === 0) {
+                                loopOwnerVisibleIndex = -1
+                                loopOwnerInlineVisible = false
+                                loopStickyEdge = "none"
+                                return
+                            }
+                            var rows = window.screenData.browserRows
+                            var resolved = -1
+                            for (var ownerIndex = 0; ownerIndex < rows.length; ownerIndex++) {
+                                if (("" + rows[ownerIndex].path) === ("" + loopOwnerPathProjection)) {
+                                    resolved = ownerIndex
+                                    break
+                                }
+                            }
+                            loopOwnerVisibleIndex = resolved
+                            reconcileLoopPresentation()
+                        }
+                        function reconcileLoopPresentation() {
+                            if (!window.interaction.browserLoopActive || loopOwnerPathProjection.length === 0) {
+                                loopOwnerInlineVisible = false
+                                loopStickyEdge = "none"
+                                return
+                            }
+                            if (loopOwnerVisibleIndex < 0) {
+                                loopOwnerInlineVisible = false
+                                loopStickyEdge = loopStickyEdgeMemory === "none" ? "bottom" : loopStickyEdgeMemory
+                                return
+                            }
+                            var first = visibleIndexNear(1, 1)
+                            var last = visibleIndexNear(Math.max(1, height - 2), -1)
+                            if (first >= 0 && loopOwnerVisibleIndex < first) {
+                                loopOwnerInlineVisible = false
+                                loopStickyEdge = "top"
+                                loopStickyEdgeMemory = "top"
+                                return
+                            }
+                            if (last >= 0 && loopOwnerVisibleIndex > last) {
+                                loopOwnerInlineVisible = false
+                                loopStickyEdge = "bottom"
+                                loopStickyEdgeMemory = "bottom"
+                                return
+                            }
+                            var ownerItem = itemAtIndex(loopOwnerVisibleIndex)
+                            if (ownerItem !== null) {
+                                var mapped = ownerItem.mapToItem(browser, 0, 0)
+                                var ownerTop = mapped.y
+                                var ownerBottom = ownerTop + ownerItem.height
+                                if (ownerBottom <= 0) {
+                                    loopOwnerInlineVisible = false
+                                    loopStickyEdge = "top"
+                                    loopStickyEdgeMemory = "top"
+                                    return
+                                }
+                                if (ownerTop >= height) {
+                                    loopOwnerInlineVisible = false
+                                    loopStickyEdge = "bottom"
+                                    loopStickyEdgeMemory = "bottom"
+                                    return
+                                }
+                                loopOwnerInlineVisible = true
+                                loopStickyEdge = "none"
+                                loopStickyEdgeMemory = (ownerTop + ownerBottom) / 2 < height / 2 ? "top" : "bottom"
+                                return
+                            }
+                            // Delegate may be between pool/reuse frames. Fail closed to one Sticky.
+                            loopOwnerInlineVisible = false
+                            if (first >= 0 && loopOwnerVisibleIndex <= first)
+                                loopStickyEdgeMemory = "top"
+                            else if (last >= 0 && loopOwnerVisibleIndex >= last)
+                                loopStickyEdgeMemory = "bottom"
+                            loopStickyEdge = loopStickyEdgeMemory === "none" ? "bottom" : loopStickyEdgeMemory
+                        }
+                        onLoopOwnerPathProjectionChanged: Qt.callLater(resolveLoopOwnerIndex)
                         onMovementStarted: { hoverScrollSuppressing = true; browserHoverSettleTimer.stop() }
                         onMovementEnded: browserHoverSettleTimer.restart()
                         onFlickStarted: { hoverScrollSuppressing = true; browserHoverSettleTimer.stop() }
@@ -5286,11 +5366,26 @@ ApplicationWindow {
                             )
                             window.interaction.requestWaveforms(first, Math.max(1, endExclusive - first))
                         }
-                        Component.onCompleted: Qt.callLater(requestVisibleWaveforms)
-                        onContentYChanged: requestVisibleWaveforms()
-                        onHeightChanged: requestVisibleWaveforms()
-                        onContentHeightChanged: Qt.callLater(requestVisibleWaveforms)
-                        onModelChanged: Qt.callLater(requestVisibleWaveforms)
+                        Component.onCompleted: Qt.callLater(function() {
+                            requestVisibleWaveforms()
+                            resolveLoopOwnerIndex()
+                        })
+                        onContentYChanged: {
+                            requestVisibleWaveforms()
+                            reconcileLoopPresentation()
+                        }
+                        onHeightChanged: {
+                            requestVisibleWaveforms()
+                            reconcileLoopPresentation()
+                        }
+                        onContentHeightChanged: Qt.callLater(function() {
+                            requestVisibleWaveforms()
+                            reconcileLoopPresentation()
+                        })
+                        onModelChanged: Qt.callLater(function() {
+                            requestVisibleWaveforms()
+                            resolveLoopOwnerIndex()
+                        })
                         Keys.onPressed: function(event) {
                             if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
                             else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
@@ -5311,9 +5406,13 @@ ApplicationWindow {
                             color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : "transparent"
                             border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0
                             border.color: theme.selectionBorder
-                            // #1281: freeze logical index for pool clear (index may change on reuse).
+                            // #1281/#1285: pooled delegates keep no live presentation residue.
                             property int logicalIndex: index
-                            Component.onCompleted: window.browserDelegateCreations += 1
+                            property bool presentationPooled: false
+                            Component.onCompleted: {
+                                window.browserDelegateCreations += 1
+                                Qt.callLater(browser.reconcileLoopPresentation)
+                            }
                             property string outboundUrl: window.interaction.outboundFileUrl(index)
                             // #1073: internal Sample payload from the frozen #1072 descriptor.
                             property string internalSampleDescriptor: window.interaction.internalSampleDragEnabled ? window.interaction.requestInternalSampleDragDescriptor(index, "browser") : ""
@@ -5406,7 +5505,8 @@ ApplicationWindow {
                                 }
                             }
                             ListView.onPooled: {
-                                // Virtualized reuse must not keep a stale hover owner.
+                                presentationPooled = true
+                                // Virtualized reuse must not keep stale hover/Loop presentation.
                                 if (rowSelection.containsMouse)
                                     contextHintState.clearHover("browser.sample_row")
                                 if (waveformHover.containsMouse)
@@ -5414,14 +5514,22 @@ ApplicationWindow {
                                 if (favoriteMouseArea.containsMouse)
                                     contextHintState.clearHover("browser.favorite")
                                 browser.clearHoveredWaveform(browserRow.logicalIndex)
+                                Qt.callLater(browser.reconcileLoopPresentation)
                             }
                             ListView.onReused: {
+                                presentationPooled = false
                                 browserRow.logicalIndex = index
+                                Qt.callLater(browser.reconcileLoopPresentation)
                             }
                             Item {
                                 id: loopInlineSurface
                                 objectName: "browserLoopInlineSurface"
-                                visible: browserRow.isLoopOwner
+                                visible: !browserRow.presentationPooled
+                                    && browserRow.width > 0
+                                    && browserRow.height > 0
+                                    && browserRow.isLoopOwner
+                                    && browser.loopOwnerInlineVisible
+                                    && browser.loopOwnerVisibleIndex === index
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.top: parent.top
@@ -5664,6 +5772,75 @@ ApplicationWindow {
                             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
                         }
                     }
+                        Item {
+                            id: browserLoopSticky
+                            objectName: "browserLoopSticky"
+                            width: parent.width
+                            height: 44
+                            x: 0
+                            y: browser.loopStickyEdge === "top" ? 0 : Math.max(0, parent.height - height)
+                            z: 22
+                            enabled: false
+                            visible: window.interaction.browserLoopActive && browser.loopStickyEdge !== "none"
+                            Rectangle {
+                                anchors.fill: parent
+                                color: theme.surfaceRoot
+                                opacity: 0.96
+                                border.width: 1
+                                border.color: theme.selectionBorder
+                            }
+                            Label {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.min(180, parent.width * 0.28)
+                                text: window.interaction.browserLoopOwnerName
+                                color: theme.textPrimary
+                                font.pixelSize: window.textCaption
+                                elide: Text.ElideRight
+                            }
+                            Label {
+                                anchors.left: parent.left
+                                anchors.leftMargin: Math.min(196, parent.width * 0.30)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "LOOP"
+                                color: theme.actionActive
+                                opacity: 0.76
+                                font.pixelSize: window.textCaption
+                            }
+                            Item {
+                                id: browserLoopStickyGrid
+                                anchors.left: parent.left
+                                anchors.leftMargin: Math.min(250, parent.width * 0.38)
+                                anchors.right: parent.right
+                                anchors.rightMargin: 10
+                                anchors.top: parent.top
+                                anchors.topMargin: 7
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: 7
+                                Repeater {
+                                    model: window.interaction.browserLoopBarPositions
+                                    Rectangle {
+                                        width: 1
+                                        height: browserLoopStickyGrid.height
+                                        x: Math.round(Math.max(0, Math.min(1, Number(modelData) || 0)) * Math.max(0, browserLoopStickyGrid.width - width))
+                                        color: theme.dividerDefault
+                                        opacity: 0.38
+                                    }
+                                }
+                                Rectangle {
+                                    width: 2
+                                    height: parent.height
+                                    color: theme.textPrimary
+                                    opacity: 0.82
+                                    visible: window.loopPlayheadArmed
+                                    x: Math.round(
+                                        Math.max(0, Math.min(1, window.interaction.browserLoopProgress))
+                                        * Math.max(0, parent.width - width)
+                                    )
+                                }
+                            }
+                        }
                         // #1281: short dark edge immersion on sample viewport only (not search/header).
                         // Stacked surfaceRoot bands approximate the MagicPath edge mask (no shader path).
                         Item {

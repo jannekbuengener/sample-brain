@@ -373,3 +373,39 @@ def test_1285_loop_grid_and_playhead_never_invent_phase_in_qml() -> None:
     assert "browserLoopProgress +" not in browser
     assert "browserLoopProgress +=" not in browser
     assert "browserLoopProgress =" not in browser
+
+
+
+def test_1285_sticky_is_one_non_actionable_viewport_child_and_not_a_second_owner() -> None:
+    source = qml.QML_SOURCE
+    viewport_start = source.index('objectName: "browserListViewport"')
+    viewport_end = source.index('objectName: "elasticHandleAfterBrowser"', viewport_start)
+    viewport = source[viewport_start:viewport_end]
+    assert source.count('objectName: "browserLoopSticky"') == 1
+    assert 'objectName: "browserLoopSticky"' in viewport
+    assert "loopStickyEdge" in viewport
+    assert "loopOwnerVisibleIndex" in viewport
+    assert "loopOwnerInlineVisible" in viewport
+    assert "enabled: false" in viewport
+    sticky_start = viewport.index('objectName: "browserLoopSticky"')
+    sticky = viewport[sticky_start:]
+    assert "MouseArea" not in sticky
+    assert "requestLoop" not in sticky
+    assert "contextLoopToggle" not in sticky
+    assert "browserLoopOwnerName" in sticky
+    assert "browserLoopBarPositions" in sticky
+    assert "browserLoopProgress" in sticky
+
+
+def test_1285_owner_index_scan_is_not_on_frame_refresh_path() -> None:
+    source = qml.QML_SOURCE
+    browser = _browser_block()
+    assert "function resolveLoopOwnerIndex()" in browser
+    assert "function reconcileLoopPresentation()" in browser
+    assert "onLoopOwnerPathProjectionChanged" in browser
+    assert "onModelChanged" in browser
+    frame_start = source.index("FrameAnimation {")
+    frame_end = source.index("}", frame_start)
+    frame = source[frame_start:frame_end]
+    assert "resolveLoopOwnerIndex" not in frame
+    assert "reconcileLoopPresentation" not in frame
