@@ -19,7 +19,7 @@ Final local validation head: `8f69df536ea6921b47159f998e6808285d25f592`.
 Focused Browser Loop/QML/audio authority suite:
 
 ```text
-123 passed, 1 warning in 21.48s
+152 passed, 1 warning in 23.73s
 ```
 
 Additional Browser chrome / compact-density / playlist-surface regression suite after updating stale source-shape assertions for the expanded delegate:
@@ -53,3 +53,7 @@ A broad ad-hoc glob over every test filename containing `qml|browser_loop|previe
 ## Exit target
 
 Local evidence supports `BROWSER_LOOP_QML_RUNTIME_PASS` subject to repository CI/review and live merge verification. Issue #1285 must not be closed until the PR is merged and exact-head live evidence is reconciled.
+
+## Review repair
+
+Codex P2 review findings were addressed before merge: Loop capability/SYNC changes now refresh the Python-owned projection independently of the animation gate, and the inline waveform is cropped to the same authoritative source extent used by grid/playhead. If source-frame alignment cannot be established, the waveform fails closed instead of depicting mismatched audio.

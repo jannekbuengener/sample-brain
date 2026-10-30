@@ -85,6 +85,7 @@ from .workbench_qml_startup import (
     resolve_launch_workspace,
 )
 from .workbench_waveform import compute_waveform_envelope
+from .workbench_editing import audio_source_frame_info
 from .workbench_native_window_chrome import wire_theme_authority
 from .workbench_window_placement import show_window_on_primary_screen
 
@@ -117,6 +118,9 @@ class BrowserLoopProjectionSnapshot:
     bar_positions: tuple[float, ...]
     reduced_capability_reason: str
     playback_available: bool
+    waveform_aligned: bool
+    waveform_start_ratio: float
+    waveform_end_ratio: float
 
     @classmethod
     def idle(cls) -> "BrowserLoopProjectionSnapshot":
@@ -129,6 +133,9 @@ class BrowserLoopProjectionSnapshot:
             bar_positions=(),
             reduced_capability_reason="",
             playback_available=False,
+            waveform_aligned=False,
+            waveform_start_ratio=0.0,
+            waveform_end_ratio=1.0,
         )
 
 
@@ -977,6 +984,7 @@ class Screen1QmlInteractionAdapter:
         self._pending_live_kit_row: WorkbenchRow | None = None
         self._sample_context_target: WorkbenchRow | None = None
         self._browser_loop: Any | None = None
+        self._browser_loop_waveform_window_cache: tuple[tuple[str, int, int], tuple[bool, float, float]] | None = None
         self._browser_loop_context_status = ""
         self._on_browser_loop_started: Callable[[], object] | None = None
         self._preview_active = False
@@ -1126,6 +1134,23 @@ class Screen1QmlInteractionAdapter:
 
         reason = str(getattr(owner, "reduced_capability_reason", None) or "")
         active = bool(getattr(owner, "is_active", True))
+        waveform_key = (str(row.path), start, end)
+        cached_window = self._browser_loop_waveform_window_cache
+        if cached_window is None or cached_window[0] != waveform_key:
+            try:
+                total_frames, _source_rate = audio_source_frame_info(Path(row.path))
+                total = int(total_frames)
+            except Exception:
+                total = 0
+            aligned = bool(total > 0 and 0 <= start < end <= total)
+            if aligned:
+                waveform_window = (True, start / float(total), end / float(total))
+            else:
+                waveform_window = (False, 0.0, 1.0)
+            self._browser_loop_waveform_window_cache = (waveform_key, waveform_window)
+        else:
+            waveform_window = cached_window[1]
+        waveform_aligned, waveform_start_ratio, waveform_end_ratio = waveform_window
         return BrowserLoopProjectionSnapshot(
             active=active,
             owner_path=str(row.path),
@@ -1135,6 +1160,9 @@ class Screen1QmlInteractionAdapter:
             bar_positions=bar_positions,
             reduced_capability_reason=reason,
             playback_available=bool(active and not reason),
+            waveform_aligned=bool(waveform_aligned),
+            waveform_start_ratio=float(waveform_start_ratio),
+            waveform_end_ratio=float(waveform_end_ratio),
         )
 
     def refresh_browser_loop_projection(self) -> BrowserLoopProjectionSnapshot:
@@ -5547,10 +5575,18 @@ ApplicationWindow {
                                         id: loopInlineWaveformCanvas
                                         anchors.fill: parent
                                         property var envelope: modelData.waveform
+                                        property bool waveformAligned: window.interaction.browserLoopWaveformAligned
+                                        property real waveformStartRatio: window.interaction.browserLoopWaveformStartRatio
+                                        property real waveformEndRatio: window.interaction.browserLoopWaveformEndRatio
                                         onEnvelopeChanged: requestPaint()
+                                        onWaveformAlignedChanged: requestPaint()
+                                        onWaveformStartRatioChanged: requestPaint()
+                                        onWaveformEndRatioChanged: requestPaint()
                                         onPaint: {
                                             var context = getContext("2d")
                                             context.clearRect(0, 0, width, height)
+                                            if (!waveformAligned)
+                                                return
                                             context.strokeStyle = theme.waveformActive
                                             context.lineWidth = 1.4
                                             context.beginPath()
@@ -5560,10 +5596,14 @@ ApplicationWindow {
                                                 context.moveTo(0, center)
                                                 context.lineTo(width, center)
                                             } else {
-                                                var step = width / points.length
-                                                for (var point = 0; point < points.length; point++) {
+                                                var startIndex = Math.max(0, Math.min(points.length - 1, Math.floor(waveformStartRatio * points.length)))
+                                                var endIndex = Math.max(startIndex + 1, Math.min(points.length, Math.ceil(waveformEndRatio * points.length)))
+                                                var visibleCount = Math.max(1, endIndex - startIndex)
+                                                var step = width / visibleCount
+                                                for (var point = startIndex; point < endIndex; point++) {
                                                     var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
-                                                    var x = Math.min(width, point * step + step / 2)
+                                                    var localPoint = point - startIndex
+                                                    var x = Math.min(width, localPoint * step + step / 2)
                                                     var amplitude = Math.max(1, height * 0.38 * value)
                                                     context.moveTo(x, center - amplitude)
                                                     context.lineTo(x, center + amplitude)
@@ -7707,6 +7747,18 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def browserLoopPlaybackAvailable(self) -> bool:
             return bool(self._browser_loop_snapshot.playback_available)
+
+        @Property(bool, notify=state_changed)
+        def browserLoopWaveformAligned(self) -> bool:
+            return bool(self._browser_loop_snapshot.waveform_aligned)
+
+        @Property(float, notify=state_changed)
+        def browserLoopWaveformStartRatio(self) -> float:
+            return float(self._browser_loop_snapshot.waveform_start_ratio)
+
+        @Property(float, notify=state_changed)
+        def browserLoopWaveformEndRatio(self) -> float:
+            return float(self._browser_loop_snapshot.waveform_end_ratio)
 
         @Property(bool, notify=state_changed)
         def contextTargetIsLoopOwner(self) -> bool:
@@ -11034,6 +11086,9 @@ def _qml_engine(
         ),
         on_tempo_map_replaced=arrangement_bridge.refresh,
     )
+    # #1285: capability/SYNC changes must refresh Loop availability even when
+    # the animation driver is stopped because playback is currently unavailable.
+    transport_bridge.state_changed.connect(bridge.refreshPlaybackProjection)
     adapter._runtime_composition = runtime_composition
     # #1077: restore workspace visibility preference only for production-composed
     # adapters. Injected harness adapters own their presentation state.

@@ -106,6 +106,34 @@ def test_1285_loop_projection_derives_identity_grid_and_phase_from_owner() -> No
     assert snapshot.playback_available is True
 
 
+def test_1285_loop_projection_aligns_waveform_window_to_source_extent(monkeypatch) -> None:
+    row = _row()
+    extent = BrowserLoopExtent(100, 700, 2, (100, 300, 700))
+    monkeypatch.setattr(qml, "audio_source_frame_info", lambda _path: (1000, 48000))
+    adapter = qml.Screen1QmlInteractionAdapter(view_model=_view_model())
+    adapter.bind_browser_loop(_LoopStub(row=row, extent=extent, phase=400))
+
+    snapshot = adapter.browser_loop_projection_snapshot()
+
+    assert snapshot.waveform_aligned is True
+    assert snapshot.waveform_start_ratio == pytest.approx(0.1)
+    assert snapshot.waveform_end_ratio == pytest.approx(0.7)
+
+
+def test_1285_loop_projection_hides_waveform_when_source_extent_cannot_be_aligned(monkeypatch) -> None:
+    row = _row()
+    extent = BrowserLoopExtent(100, 700, 1, (100, 700))
+    monkeypatch.setattr(qml, "audio_source_frame_info", lambda _path: (_ for _ in ()).throw(OSError("missing")))
+    adapter = qml.Screen1QmlInteractionAdapter(view_model=_view_model())
+    adapter.bind_browser_loop(_LoopStub(row=row, extent=extent, phase=250))
+
+    snapshot = adapter.browser_loop_projection_snapshot()
+
+    assert snapshot.waveform_aligned is False
+    assert snapshot.waveform_start_ratio == 0.0
+    assert snapshot.waveform_end_ratio == 1.0
+
+
 def test_1285_loop_projection_clamps_phase_to_half_open_unit_interval() -> None:
     row = _row()
     extent = BrowserLoopExtent(100, 700, 1, (100, 700))
@@ -409,3 +437,19 @@ def test_1285_owner_index_scan_is_not_on_frame_refresh_path() -> None:
     frame = source[frame_start:frame_end]
     assert "resolveLoopOwnerIndex" not in frame
     assert "reconcileLoopPresentation" not in frame
+
+
+def test_1285_transport_state_refreshes_loop_projection_even_when_animation_is_stopped() -> None:
+    import inspect
+
+    source = inspect.getsource(qml._qml_engine)
+    assert "transport_bridge.state_changed.connect(bridge.refreshPlaybackProjection)" in source
+
+
+def test_1285_inline_waveform_uses_authoritative_loop_window() -> None:
+    source = qml.QML_SOURCE
+    start = source.index('objectName: "browserLoopInlineWaveform"')
+    block = source[start:start + 5000]
+    assert "browserLoopWaveformAligned" in block
+    assert "browserLoopWaveformStartRatio" in block
+    assert "browserLoopWaveformEndRatio" in block
