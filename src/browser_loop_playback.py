@@ -21,7 +21,11 @@ from . import native_audio
 from .native_pcm_decode import decode_native_pcm
 from .session_grid import MusicalPosition, compute_sync_playback_rate
 from .workbench_controller import WorkbenchRow
-from .workbench_editing import load_source_downbeats, source_edit_grid_from_details
+from .workbench_editing import (
+    audio_source_frame_info,
+    load_source_downbeats,
+    source_edit_grid_from_details,
+)
 from .workbench_transport_adapter import WorkbenchTransportAdapter
 
 DECLICK_FRAMES = 32
@@ -129,6 +133,17 @@ def map_comparison_phase_to_source_frame(
     return max(start, frame)
 
 
+def _scale_source_frame_to_engine(
+    source_frame: int, *, source_rate: int, engine_rate: int
+) -> int:
+    """Map a source/analysis frame index into decoded engine-rate PCM frames."""
+    if source_rate <= 0 or engine_rate <= 0:
+        raise ValueError("sample rates must be positive")
+    if source_rate == engine_rate:
+        return int(source_frame)
+    return int(round(int(source_frame) * float(engine_rate) / float(source_rate)))
+
+
 def _load_pcm_span(
     path: Path,
     *,
@@ -136,10 +151,24 @@ def _load_pcm_span(
     start_frame: int,
     end_frame_exclusive: int,
 ) -> tuple[np.ndarray, int]:
-    """Decode then slice a half-open source-frame span at the engine rate."""
+    """Decode then slice a half-open source-frame span at the engine rate.
+
+    Downbeat indices are in the file's source/analysis timebase; convert them
+    into decoded PCM frames when ``sample_rate`` differs from the source rate.
+    """
+    try:
+        _total, source_rate = audio_source_frame_info(path)
+    except Exception:
+        source_rate = int(sample_rate)
+    engine_start = _scale_source_frame_to_engine(
+        int(start_frame), source_rate=source_rate, engine_rate=int(sample_rate)
+    )
+    engine_end = _scale_source_frame_to_engine(
+        int(end_frame_exclusive), source_rate=source_rate, engine_rate=int(sample_rate)
+    )
     pcm, channels = decode_native_pcm(path, sample_rate=sample_rate, start_ms=0)
-    start = max(0, int(start_frame))
-    end = max(start + 1, int(end_frame_exclusive))
+    start = max(0, int(engine_start))
+    end = max(start + 1, int(engine_end))
     if start >= pcm.shape[0]:
         raise ValueError("Loop start liegt außerhalb der Audiodatei.")
     end = min(end, int(pcm.shape[0]))
@@ -191,7 +220,8 @@ class BrowserLoopOwner:
         self._first_cycle_duration_frames: int | None = None
         self._source_phase_frame: int = 0
         self._reduced_capability_reason: str | None = None
-        self._pcm_start_offset: int = 0  # within extent buffer for phase entry
+        self._pcm_start_offset: int = 0  # one-shot sliced PCM for next create_voice
+        self._phase_entry_pcm_offset: int = 0  # retained for source-phase tracking
 
     @property
     def is_active(self) -> bool:
@@ -394,16 +424,30 @@ class BrowserLoopOwner:
         engine_frame = int(self._transport.get_engine_frame())
         if phase is not None:
             self._source_phase_frame = phase
-            self._pcm_start_offset = max(
-                0, int(phase) - int(self._extent.source_start_frame)
+            # Convert retained source phase into engine-rate PCM offset.
+            try:
+                _total, source_rate = audio_source_frame_info(self._owner_row.path)
+            except Exception:
+                source_rate = int(self._transport.tempo_map.sample_rate)
+            engine_rate = int(self._transport.tempo_map.sample_rate)
+            mapped_engine = _scale_source_frame_to_engine(
+                int(phase), source_rate=source_rate, engine_rate=engine_rate
             )
+            start_engine = _scale_source_frame_to_engine(
+                int(self._extent.source_start_frame),
+                source_rate=source_rate,
+                engine_rate=engine_rate,
+            )
+            offset = max(0, mapped_engine - start_engine)
+            self._pcm_start_offset = offset
+            self._phase_entry_pcm_offset = offset
         self._stop_loop_voices()
         self._cycle_anchor_engine_frame = engine_frame
         self._next_cycle_index = 0
         self._cycle_duration_frames = self._compute_cycle_duration()
         # Shortened first pass until remainder ends, then full source cycles.
         pcm_len = int(self._pcm.shape[0]) if self._pcm is not None else 0
-        remaining_pcm = max(1, pcm_len - int(self._pcm_start_offset))
+        remaining_pcm = max(1, pcm_len - int(self._phase_entry_pcm_offset))
         rate = self._current_rate()
         self._first_cycle_duration_frames = max(
             1, int(math.ceil(remaining_pcm / max(rate, 1e-9)))
@@ -432,8 +476,8 @@ class BrowserLoopOwner:
                 engine.set_voice_rate(voice_id, rate)
             except Exception:
                 continue
-        # Keep comparison-cycle length coherent with new tempo for future ticks.
-        self._cycle_duration_frames = self._compute_cycle_duration()
+        # Reconcile queued cycle boundaries against the updated TempoMap.
+        self._reschedule_after_tempo_change()
 
     def comparison_source_frame_for_row(
         self, row: WorkbenchRow, *, session_frame: int | None = None
@@ -514,6 +558,7 @@ class BrowserLoopOwner:
         self._first_cycle_duration_frames = None
         self._source_phase_frame = 0
         self._pcm_start_offset = 0
+        self._phase_entry_pcm_offset = 0
         self._reduced_capability_reason = None
 
     def _arm_phase_entry_at_current_master(
@@ -534,9 +579,24 @@ class BrowserLoopOwner:
                 except Exception:
                     pass
         mapped = self._map_session_to_extent_frame(session_frame)
-        self._pcm_start_offset = max(
-            0, mapped - int(self._extent.source_start_frame)
+        # Map comparison phase into engine-rate PCM offset within the Loop span.
+        # Extent downbeats are source-timebase; PCM buffer is already engine-rate.
+        try:
+            _total, source_rate = audio_source_frame_info(self._owner_row.path)
+        except Exception:
+            source_rate = int(self._transport.tempo_map.sample_rate)
+        engine_rate = int(self._transport.tempo_map.sample_rate)
+        mapped_engine = _scale_source_frame_to_engine(
+            mapped, source_rate=source_rate, engine_rate=engine_rate
         )
+        start_engine = _scale_source_frame_to_engine(
+            int(self._extent.source_start_frame),
+            source_rate=source_rate,
+            engine_rate=engine_rate,
+        )
+        offset = max(0, mapped_engine - start_engine)
+        self._pcm_start_offset = offset
+        self._phase_entry_pcm_offset = offset
         self._source_phase_frame = mapped
         steady = self._compute_cycle_duration()
         self._cycle_duration_frames = steady
@@ -577,7 +637,7 @@ class BrowserLoopOwner:
         steady = self._cycle_duration_for_index(1)
         if elapsed < first:
             into = elapsed
-            pcm_offset = int(self._pcm_start_offset)
+            pcm_offset = int(self._phase_entry_pcm_offset)
         else:
             into = (elapsed - first) % steady
             pcm_offset = 0
@@ -662,6 +722,45 @@ class BrowserLoopOwner:
         sliced = np.ascontiguousarray(self._pcm[offset:], dtype=np.float32)
         return sliced, self._pcm_channels
 
+    def _reschedule_after_tempo_change(self) -> None:
+        """Drop queued future voices and rebuild cycle lengths from the live map."""
+        if not self.is_active or self._extent is None:
+            return
+        engine_frame = int(self._transport.get_engine_frame())
+        # Stop only non-sounding scheduled voices; keep the current audible pass.
+        engine = self._transport.get_native_engine()
+        scheduled = self._scheduled_voice_id
+        if scheduled is not None and scheduled != self._sounding_voice_id:
+            if engine is not None:
+                try:
+                    engine.stop_voice(scheduled)
+                    engine.remove_voice(scheduled)
+                except Exception:
+                    pass
+            self._transport.unregister_voice(scheduled)
+            self._active_voice_ids = [
+                v for v in self._active_voice_ids if v != scheduled
+            ]
+            self._scheduled_voice_id = None
+        steady = self._compute_cycle_duration()
+        self._cycle_duration_frames = steady
+        # Remaining time in the current comparison cycle under the new tempo.
+        session_frame = int(self._transport.get_session_frame())
+        pos = self._transport.tempo_map.frame_to_bar_beat(session_frame)
+        l_bars = int(self._extent.bar_count)
+        cycle_start_bar = (int(pos.bar) // l_bars) * l_bars
+        next_boundary_bar = cycle_start_bar + l_bars
+        next_boundary_session = self._transport.tempo_map.bar_beat_to_frame(
+            MusicalPosition(bar=next_boundary_bar, beat=0)
+        )
+        remaining_session = max(1, int(next_boundary_session) - int(session_frame))
+        self._first_cycle_duration_frames = remaining_session
+        self._cycle_anchor_engine_frame = engine_frame
+        self._next_cycle_index = 0
+        self._pcm_start_offset = 0
+        # Keep phase_entry offset for continuity until the remainder finishes.
+        self.tick(engine_frame=engine_frame)
+
     def _schedule_cycle_voice(self, engine: Any, *, start_engine_frame: int) -> None:
         assert self._pcm is not None
         assert self._extent is not None
@@ -670,7 +769,7 @@ class BrowserLoopOwner:
         # First voice after phase entry may use offset PCM; later cycles full.
         if self._next_cycle_index == 0 and self._pcm_start_offset > 0:
             pcm, channels = self._pcm_for_schedule()
-            self._pcm_start_offset = 0
+            self._pcm_start_offset = 0  # slice flag only; phase_entry offset retained
         else:
             pcm, channels = self._pcm, self._pcm_channels
         try:
