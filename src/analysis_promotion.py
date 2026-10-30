@@ -13,6 +13,7 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Any, Mapping, Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 from src.analysis_eval_artifact import assert_portable_value, fingerprint
 from src.analysis_locked_holdout import (
@@ -107,6 +108,35 @@ class PromotionHost(Protocol):
 def _require(condition, message):
     if not condition:
         raise PromotionError(message)
+
+
+def origin_matches_repository(remote: str, identity: str) -> bool:
+    """Return True when remote identifies the expected GitHub repository.
+
+    Fail closed on host, owner, repository name, and protocol/security form.
+    Only URL userinfo (credentials/token) may be ignored so Cloud Agent
+    insteadOf rewrites of an otherwise identical GitHub remote still match.
+    """
+    if not isinstance(remote, str) or not isinstance(identity, str):
+        return False
+    allowed = {
+        f"https://github.com/{identity}",
+        f"https://github.com/{identity}.git",
+        f"git@github.com:{identity}.git",
+    }
+    if remote in allowed:
+        return True
+    parts = urlsplit(remote)
+    if parts.scheme.lower() != "https" or not parts.hostname:
+        return False
+    host = parts.hostname.lower()
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    # Strip userinfo only; keep scheme/host/path/query/fragment identity intact.
+    cleaned = urlunsplit(
+        ("https", host, parts.path, parts.query, parts.fragment)
+    )
+    return cleaned in allowed
 
 
 def _hex(value, pattern=_HEX64):
@@ -437,12 +467,7 @@ class GitRepository:
         remote = self.git("remote", "get-url", "origin")
         identity = manifest["repository_id"]
         _require(
-            remote
-            in {
-                f"https://github.com/{identity}",
-                f"https://github.com/{identity}.git",
-                f"git@github.com:{identity}.git",
-            },
+            origin_matches_repository(remote, identity),
             "origin repository mismatch",
         )
 
