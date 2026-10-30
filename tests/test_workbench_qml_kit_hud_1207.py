@@ -136,6 +136,18 @@ def test_successful_add_opens_transient_hud_not_manual():
     assert adapter._live_kit_visibility_desired is not True
 
 
+def test_add_keeps_already_visible_harmony_open_beside_hud():
+    adapter = _adapter()
+    assert adapter.toggle_harmonic_match() is True
+    assert adapter.harmonic_match_open is True
+
+    assert _assign(adapter, _row("harmony_add.wav"), "Kick + Bass", "Kick") is True
+
+    assert adapter.harmonic_match_open is True
+    assert adapter.live_kit_hud_mode == LIVE_KIT_HUD_MODE_TRANSIENT
+    assert adapter.live_kit_is_visible() is True
+
+
 def test_failed_add_does_not_show_success_hud():
     adapter = _adapter()
     # Invalid slot → fail closed; no transient presentation.

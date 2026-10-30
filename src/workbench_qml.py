@@ -1925,7 +1925,6 @@ class Screen1QmlInteractionAdapter:
             mutation="replace" if occupied else "add",
         )
         self._present_live_kit_after_mutation()
-        self._close_harmonic_match_presentation()
         return True
 
     def cancel_live_kit_add(self) -> bool:
@@ -4366,6 +4365,9 @@ ApplicationWindow {
                         libraryTree.keyboardFocusVisible = true
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             browser.forceActiveFocus()
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Escape) {
+                            window.interaction.escapeLiveKitContext()
                             event.accepted = true
                         }
                     }
