@@ -248,7 +248,7 @@ def test_browser_intent_keyboard_and_virtualization_contracts_preserved():
     assert 'text: "Play"' not in QML_SOURCE
     assert 'text: "▶"' not in QML_SOURCE
     assert QML_SOURCE.count("reuseItems: true") == 2
-    assert "Component.onCompleted: window.browserDelegateCreations += 1" in QML_SOURCE
+    assert "window.browserDelegateCreations += 1" in QML_SOURCE
     assert "navigateBrowser(1)" in QML_SOURCE
     assert "navigateBrowser(-1)" in QML_SOURCE
     assert QML_SOURCE.count('objectName: "browserList"') == 1

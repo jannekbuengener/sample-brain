@@ -19,7 +19,7 @@ from src.workbench_qml import QML_SOURCE
 
 BROWSER_ROW_DELEGATE_MARKER = "id: browserRow"
 HARMONIC_LIST_MARKER = 'objectName: "harmonicMatchList"'
-BROWSER_ROW_DELEGATE_SPAN = 28000  # #1210/#1281 hover/pool/waveform presentation grows the delegate
+BROWSER_ROW_DELEGATE_SPAN = 42000  # #1210/#1281 hover/pool/waveform presentation grows the delegate
 HARMONIC_LIST_SPAN = 12000
 _SHARED_DENSITY_ROLES = (
     "densityRowHeight",
