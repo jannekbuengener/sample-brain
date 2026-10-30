@@ -183,11 +183,13 @@ class RecorderService:
             return
         try:
             on_ev = self._sessions.on_ingested_event
+            # Reclaim FL spool only when FL is not writing (process gone).
+            fl_alive = find_fl_process().alive
             fl_res = self._ingest.ingest_file(
                 self.paths.fl_spool,
                 spool_name="fl-events.jsonl",
                 session_id=sid,
-                rotate_after_commit=True,
+                rotate_after_commit=not fl_alive,
                 rotate_keep_bytes=self.spool_rotate_bytes,
                 on_event=on_ev,
             )
@@ -210,10 +212,20 @@ class RecorderService:
                 self.paths.win_spool,
                 spool_name="windows-events.jsonl",
                 session_id=sid,
-                rotate_after_commit=True,
-                rotate_keep_bytes=self.spool_rotate_bytes,
+                rotate_after_commit=False,
                 on_event=on_ev,
             )
+            # Reclaim windows spool under the capture emit lock (writer-safe).
+            if (
+                self._capture is not None
+                and self.paths.win_spool.exists()
+                and self.paths.win_spool.stat().st_size > self.spool_rotate_bytes
+            ):
+                with self._capture._lock:  # noqa: SLF001 — coordinated reclaim
+                    self._ingest._archive_fully_ingested_spool(  # noqa: SLF001
+                        self.paths.win_spool,
+                        "windows-events.jsonl",
+                    )
             if fl_res.inserted:
                 self._fl_script_silent = False
                 self._last_fl_event_wall = self._store.last_event_wall_ns(sid)  # type: ignore[union-attr]

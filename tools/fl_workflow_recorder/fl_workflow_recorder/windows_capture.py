@@ -116,6 +116,23 @@ class WindowsCapture:
         )
         self._mouse_proc_ref = LowLevelMouseProc(self._on_mouse)
         self._kb_proc_ref = LowLevelKeyboardProc(self._on_keyboard)
+        # Pointer-sized Win32 signatures — untyped CallNextHookEx truncates lParam on x64.
+        self._user32.CallNextHookEx.argtypes = [
+            wintypes.HHOOK,
+            ctypes.c_int,
+            wintypes.WPARAM,
+            wintypes.LPARAM,
+        ]
+        self._user32.CallNextHookEx.restype = ctypes.c_long
+        self._user32.SetWindowsHookExW.argtypes = [
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.HINSTANCE,
+            wintypes.DWORD,
+        ]
+        self._user32.SetWindowsHookExW.restype = wintypes.HHOOK
+        self._user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
+        self._user32.UnhookWindowsHookEx.restype = wintypes.BOOL
 
     @property
     def fl_foreground(self) -> bool:
@@ -270,6 +287,9 @@ class WindowsCapture:
 
     def _is_printable_unmodified(self, vk: int) -> bool:
         if 0x30 <= vk <= 0x39 or 0x41 <= vk <= 0x5A:
+            return True
+        # Numeric keypad digits / decimal (printable when Num Lock on).
+        if 0x60 <= vk <= 0x69 or vk == 0x6E:
             return True
         if vk in (0x20, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xC0, 0xDB, 0xDC, 0xDD, 0xDE):
             return True

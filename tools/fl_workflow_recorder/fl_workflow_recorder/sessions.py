@@ -115,10 +115,8 @@ class SessionManager:
                 if row["fl_pid"] is not None and int(row["fl_pid"]) == int(fl_pid):
                     keep_id = row["id"]
                     break
-            # If FL alive but no pid match, still prefer newest open session to continue.
-            if keep_id is None and open_rows:
-                keep_id = open_rows[-1]["id"]
-                self.store.update_session_meta(keep_id, fl_pid=fl_pid)
+            # PID mismatch = recovery boundary (do not merge unrelated FL runs).
+            # keep_id stays None → open sessions recovered below; caller opens a new session.
 
         for row in open_rows:
             sid = row["id"]
@@ -133,27 +131,20 @@ class SessionManager:
                 )
                 continue
             last_ev = self.store.last_event_wall_ns(sid) or int(row["started_at_wall_ns"])
-            # If FL is gone, or session is old without keep — recover.
-            if not fl_alive or (now - last_ev) > self.stale_grace_ns:
-                self.store.close_session(
-                    sid,
-                    close_reason="stale_recovery",
-                    status="recovered",
-                    ended_at_wall_ns=last_ev,
-                    recovery_marker=1,
-                )
-                recovered.append(sid)
-            else:
-                # FL gone but within grace — still close as crash recovery.
-                if not fl_alive:
-                    self.store.close_session(
-                        sid,
-                        close_reason="fl_crash",
-                        status="recovered",
-                        ended_at_wall_ns=last_ev,
-                        recovery_marker=1,
-                    )
-                    recovered.append(sid)
+            # No matching keep_id: always recover leftover open sessions.
+            # - FL gone → crash/stale close
+            # - FL alive with different/unknown pid → new-run boundary
+            reason = "fl_crash" if not fl_alive else "stale_recovery"
+            if fl_alive and keep_id is None and row["fl_pid"] is not None:
+                reason = "fl_pid_mismatch"
+            self.store.close_session(
+                sid,
+                close_reason=reason,
+                status="recovered",
+                ended_at_wall_ns=last_ev if last_ev <= now else now,
+                recovery_marker=1,
+            )
+            recovered.append(sid)
         return recovered
 
     def ensure_session(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -121,12 +122,39 @@ class SpoolIngestor:
         )
         result.bytes_advanced = max(0, new_offset - offset)
 
-        # Active spool compaction against concurrent FL/Windows writers is unsafe
-        # (appends between size-check and truncate can be lost). V1 keeps spools
-        # append-only; disk growth is bounded by retention + optional offline compact.
-        _ = (rotate_after_commit, rotate_keep_bytes)
+        if (
+            rotate_after_commit
+            and new_offset > rotate_keep_bytes
+            and not result.partial_tail
+            and new_offset >= spool_path.stat().st_size
+        ):
+            # Writer-safe reclaim: only rename when the file is fully ingested
+            # (cursor at EOF). Callers must ensure no concurrent writer (e.g. FL
+            # not running, or Windows capture paused). Truncate-in-place is avoided.
+            self._archive_fully_ingested_spool(spool_path, spool_name)
 
         return result
+
+    def _archive_fully_ingested_spool(self, spool_path: Path, spool_name: str) -> None:
+        try:
+            if not spool_path.exists():
+                return
+            size = spool_path.stat().st_size
+            if size <= 0 or self.store.get_cursor(spool_name) < size:
+                return
+            stamp = int(time.time())
+            archive = spool_path.with_name(f"{spool_path.stem}.archived.{stamp}.jsonl")
+            spool_path.replace(archive)
+            spool_path.write_bytes(b"")
+            self.store.set_cursor(spool_name, 0)
+            # Best-effort: drop archive immediately after successful rename — durable
+            # truth is SQLite. Fail-soft if delete blocked.
+            try:
+                archive.unlink()
+            except OSError:
+                pass
+        except OSError:
+            return
 
 
 def _safe_quarantine_excerpt(text: str) -> str:

@@ -137,8 +137,8 @@ def test_incremental_ingest_partial_line_malformed_and_replay(observer_root: Obs
     store.close()
 
 
-def test_spool_ingest_does_not_truncate_active_file(observer_root: ObserverPaths) -> None:
-    """V1 keeps active spools append-only (no racey truncate against writers)."""
+def test_spool_reclaim_only_when_fully_ingested(observer_root: ObserverPaths) -> None:
+    """Fully ingested spool may be archived; concurrent-safe path requires EOF cursor."""
     store = WorkflowStore(observer_root.db)
     sid = str(uuid.uuid4())
     store.create_session(sid)
@@ -150,16 +150,26 @@ def test_spool_ingest_does_not_truncate_active_file(observer_root: ObserverPaths
     ]
     body = "\n".join(lines) + "\n"
     spool.write_text(body, encoding="utf-8")
+    # Without rotate: file retained, cursor advanced.
     r = ing.ingest_file(
+        spool,
+        spool_name="windows-events.jsonl",
+        session_id=sid,
+        rotate_after_commit=False,
+    )
+    assert r.inserted == 5
+    assert spool.stat().st_size > 0
+    # With rotate after full ingest: reclaim empties active file.
+    r2 = ing.ingest_file(
         spool,
         spool_name="windows-events.jsonl",
         session_id=sid,
         rotate_after_commit=True,
         rotate_keep_bytes=0,
     )
-    assert r.inserted == 5
-    assert spool.stat().st_size > 0
-    assert store.get_cursor("windows-events.jsonl") == spool.stat().st_size
+    assert r2.inserted == 0
+    assert spool.stat().st_size == 0
+    assert store.get_cursor("windows-events.jsonl") == 0
     store.close()
 
 
@@ -258,6 +268,25 @@ def test_recorder_restart_continues_matching_fl_pid(observer_root: ObserverPaths
     assert mgr.activity.listening_ns == 222
     assert mgr.activity.idle_ns == 333
     store.close()
+
+
+def test_pid_mismatch_recovers_old_session(observer_root: ObserverPaths) -> None:
+    store = WorkflowStore(observer_root.db)
+    old = str(uuid.uuid4())
+    store.create_session(old, fl_pid=11)
+    mgr = SessionManager(store, stale_grace_ns=0)
+    recovered = mgr.recover_stale_on_startup(fl_alive=True, fl_pid=99)
+    assert old in recovered
+    assert mgr.current_session_id is None
+    store.close()
+
+
+def test_numpad_redaction_present_in_windows_capture() -> None:
+    src = (
+        ROOT / "tools" / "fl_workflow_recorder" / "fl_workflow_recorder" / "windows_capture.py"
+    ).read_text(encoding="utf-8")
+    assert "0x60 <= vk <= 0x69" in src
+    assert "CallNextHookEx.argtypes" in src
 
 
 def test_activity_listening_not_idle_while_playing(observer_root: ObserverPaths) -> None:
