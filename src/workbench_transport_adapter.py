@@ -79,6 +79,7 @@ class WorkbenchTransportAdapter:
         self._native_available = native_engine is not None
         self._last_native_engine_frame: int | None = None
         self._native_started = False
+        self._preferred_output_device_applied: str | None = None
 
         if native_engine is None:
             self._native_available = _native_audio.is_available()
@@ -145,6 +146,27 @@ class WorkbenchTransportAdapter:
             self._pending_tempo = None
             self._pending_tempo_frame = None
 
+    def _preferred_output_device_id_unlocked(self) -> str | None:
+        """Return persisted preferred render device id, or None for OS default."""
+        try:
+            from .workbench_audio_output import load_workbench_audio_output_settings
+
+            settings = load_workbench_audio_output_settings()
+        except Exception as exc:  # pragma: no cover - preference IO is best-effort
+            warn("Audio output preference load failed: %s", exc)
+            return None
+        device_id = str(getattr(settings, "preferred_output_device_id", "") or "").strip()
+        if not device_id:
+            return None
+        # Explicit selection must be a complete native id (512 hex chars).
+        if len(device_id) != 512:
+            warn(
+                "Ignoring invalid preferred_output_device_id length=%s",
+                len(device_id),
+            )
+            return None
+        return device_id
+
     def _ensure_owned_native_open_unlocked(self) -> None:
         if (
             self._native_engine is None
@@ -153,11 +175,78 @@ class WorkbenchTransportAdapter:
             or self._native_opened
         ):
             return
+        output_device = self._preferred_output_device_id_unlocked()
         self._native_engine.open(
-            _native_audio.EngineConfig(sample_rate=self._sample_rate)
+            _native_audio.EngineConfig(
+                sample_rate=self._sample_rate,
+                output_device=output_device,
+            )
         )
         self._native_opened = True
         self._last_native_engine_frame = 0
+        self._preferred_output_device_applied = output_device
+
+    def reopen_native_output_device(self) -> bool:
+        """Close/reopen owned native engine so a new preferred device takes effect.
+
+        Callers must release any active audition voice before reopen so ownership
+        cannot point at destroyed native voices. Musical ``session_frame`` is
+        preserved; ``engine_frame`` is rebased onto the replacement native clock
+        so ``schedule_voice_start`` stays in the new engine's present.
+        """
+        with self._lock:
+            if (
+                not self._native_available
+                or self._native_engine is None
+                or not self._native_owned
+            ):
+                return False
+            desired = self._preferred_output_device_id_unlocked()
+            applied = getattr(self, "_preferred_output_device_applied", None)
+            if self._native_opened and desired == applied:
+                return True
+            # Drop voice registrations tied to the destroyed engine.
+            self._voice_source_bpms.clear()
+            self._voice_sync_states.clear()
+            # Tear down owned engine so next ensure_engine_running reopens with preference.
+            try:
+                if self._native_started and hasattr(self._native_engine, "stop"):
+                    self._native_engine.stop()
+            except Exception as exc:  # pragma: no cover - device specific
+                warn("Native engine stop before device reopen failed: %s", exc)
+            try:
+                if self._native_opened and hasattr(self._native_engine, "close"):
+                    self._native_engine.close()
+            except Exception as exc:  # pragma: no cover - device specific
+                warn("Native engine close before device reopen failed: %s", exc)
+            self._native_opened = False
+            self._native_started = False
+            self._last_native_engine_frame = None
+            self._preferred_output_device_applied = None
+            # Recreate engine handle for a clean open contract.
+            try:
+                self._native_engine = _native_audio.NativeAudioEngine()
+            except Exception as exc:  # pragma: no cover - machine specific
+                warn("Native audio engine recreate failed: %s", exc)
+                self._native_engine = None
+                self._native_available = False
+                return False
+            if not self.ensure_engine_running():
+                return False
+            # Rebase scheduling clock onto the replacement native epoch while
+            # preserving musical session position.
+            native_frame = 0
+            if hasattr(self._native_engine, "snapshot"):
+                try:
+                    native_frame = int(self._native_engine.snapshot().engine_frame)
+                except Exception as exc:  # pragma: no cover - device specific
+                    warn("Native snapshot after device reopen failed: %s", exc)
+                    native_frame = 0
+            if native_frame < 0:
+                native_frame = 0
+            self._transport.engine_frame = native_frame
+            self._last_native_engine_frame = native_frame
+            return True
 
     def ensure_engine_running(self) -> bool:
         """Ensure the owned native engine is opened AND running (started).

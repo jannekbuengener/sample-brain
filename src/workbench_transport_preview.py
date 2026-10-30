@@ -146,7 +146,14 @@ class TransportAwarePreview:
                 engine.stop_voice(voice_id)
                 engine.remove_voice(voice_id)
             except Exception:
-                return False
+                # Voice may already be gone after a native device reopen (#1209).
+                # Clear ownership so the next audition is not permanently blocked.
+                try:
+                    self._transport.unregister_voice(voice_id)
+                except Exception:
+                    pass
+                self._clear_native_audition_state()
+                return True
         self._transport.unregister_voice(voice_id)
         self._clear_native_audition_state()
         return True
