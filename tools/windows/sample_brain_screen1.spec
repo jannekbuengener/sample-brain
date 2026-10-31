@@ -6,7 +6,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
+from PyInstaller.utils.hooks import (
+    collect_all,
+    collect_dynamic_libs,
+    collect_submodules,
+)
 
 REPO = Path(SPECPATH).resolve().parents[1]
 ENTRY = REPO / "tools" / "windows" / "sample_brain_gui_entry.py"
@@ -78,6 +82,40 @@ except Exception:
     pass
 
 binaries += collect_dynamic_libs("soundfile")
+
+# SciPy 1.16+ FFT imports scipy._external.array_api_compat. A bare "scipy"
+# hiddenimport does not ship that pure-Python subtree; missing it makes packaged
+# Browser analysis fail and poison the library cache (#1220).
+# Hiddenimports alone are not enough: onedir lays scipy on the filesystem, so
+# `_external` must also exist as a real package directory beside it.
+try:
+    hiddenimports += collect_submodules("scipy._external")
+except Exception:
+    hiddenimports += [
+        "scipy._external",
+        "scipy._external.array_api_compat",
+        "scipy._external.array_api_compat.numpy",
+        "scipy._external.array_api_compat.numpy.fft",
+    ]
+try:
+    import shutil
+    import tempfile
+
+    import scipy as _scipy_for_packaging
+
+    _scipy_external = Path(_scipy_for_packaging.__file__).resolve().parent / "_external"
+    if _scipy_external.is_dir():
+        # Copy without __pycache__: artifact hygiene forbids that name in the
+        # staged SampleBrain tree (tools/windows/build_distributable.ps1).
+        _external_stage = Path(tempfile.mkdtemp(prefix="sb_scipy_external_")) / "_external"
+        shutil.copytree(
+            _scipy_external,
+            _external_stage,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+        )
+        datas.append((str(_external_stage), str(Path("scipy") / "_external")))
+except Exception:
+    pass
 
 if DLL.is_file():
     binaries.append((str(DLL), "."))

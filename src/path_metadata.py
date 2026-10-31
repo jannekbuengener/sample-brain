@@ -910,9 +910,65 @@ def run_metadata_reconcile(
     return {"samples_reconciled": reconciled}
 
 
+@dataclass(frozen=True)
+class WorkbenchConsumerMetadata:
+    """Consumer-facing BPM/Key for Workbench/Browser (#1203 / #1220).
+
+    ``bpm`` / ``key`` are the resolved product values. Raw analyzer evidence is
+    retained separately so UI never collapses provenance into one opaque field.
+    """
+
+    bpm: float | None
+    key: str | None
+    bpm_status: str
+    key_status: str
+    analysis_bpm: float | None
+    analysis_key: str | None
+
+
+def resolve_workbench_consumer_metadata(
+    filename: str,
+    relpath: str | None,
+    *,
+    analysis_bpm: float | None,
+    analysis_key: str | None,
+) -> WorkbenchConsumerMetadata:
+    """Resolve Browser BPM/Key from path claims + analysis without inventing values."""
+    claims = extract_claims_from_path(filename, relpath)
+    bpm_claim = next(
+        (c.normalized_value for c in claims if c.field == FIELD_BPM),
+        None,
+    )
+    key_claim = next(
+        (c.normalized_value for c in claims if c.field == FIELD_KEY),
+        None,
+    )
+    bpm_status, bpm_resolved, _bpm_note = _reconcile_bpm(bpm_claim, analysis_bpm)
+    key_status, key_resolved, _key_note = _reconcile_key(key_claim, analysis_key)
+
+    consumer_bpm: float | None = None
+    if bpm_resolved is not None:
+        try:
+            consumer_bpm = float(bpm_resolved)
+        except (TypeError, ValueError):
+            consumer_bpm = analysis_bpm
+    elif analysis_bpm is not None:
+        consumer_bpm = float(analysis_bpm)
+
+    return WorkbenchConsumerMetadata(
+        bpm=consumer_bpm,
+        key=key_resolved,
+        bpm_status=bpm_status,
+        key_status=key_status,
+        analysis_bpm=analysis_bpm,
+        analysis_key=analysis_key if isinstance(analysis_key, str) else None,
+    )
+
+
 __all__ = [
     "PATH_METADATA_PARSER_VERSION",
     "PathClaim",
+    "WorkbenchConsumerMetadata",
     "path_fingerprint",
     "extract_bpm_hint",
     "extract_key_hint",
@@ -924,6 +980,7 @@ __all__ = [
     "replace_path_metadata_claims",
     "list_path_metadata_claims",
     "list_metadata_resolutions",
+    "resolve_workbench_consumer_metadata",
     "run_path_metadata_prepass",
     "run_metadata_reconcile",
     "STATUS_CONFIRMED",

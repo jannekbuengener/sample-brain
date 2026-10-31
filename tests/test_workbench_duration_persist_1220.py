@@ -65,13 +65,15 @@ def test_analyze_cache_roundtrip_keeps_duration_for_browser_length(tmp_path: Pat
     assert qml.duration != "—"
 
 
-def test_unknown_bpm_key_stay_unknown_for_short_oneshot(tmp_path: Path, monkeypatch):
-    """Do not invent BPM/Key from filenames; short oneshots may honestly stay empty."""
+def test_unknown_bpm_key_stay_unknown_without_filename_claims(
+    tmp_path: Path, monkeypatch
+):
+    """Honest unknown only when neither analysis nor deterministic path claims exist."""
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     root = tmp_path / "vox"
     root.mkdir()
     wav = write_sine_wav(
-        root / "kiki_riggs_yeah_80bpm_Em.wav",
+        root / "kiki_riggs_yeah.wav",
         duration_sec=0.2,
         frequency_hz=440.0,
     )
@@ -84,7 +86,6 @@ def test_unknown_bpm_key_stay_unknown_for_short_oneshot(tmp_path: Path, monkeypa
     )
     row = result.rows[0]
     qml = _qml_row(row)
-    # Analyzer may or may not find BPM on a short tone; never invent from filename.
     if row.bpm is None:
         assert qml.bpm == "—"
     if not row.key:
