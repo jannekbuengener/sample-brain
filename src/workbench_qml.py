@@ -3559,6 +3559,11 @@ ApplicationWindow {
                     x: displayPreferencesOverflow.width - width
                     y: displayPreferencesOverflow.height + 6
                     width: 300
+                    // Bound to Window so added Appearance V2 rows remain reachable at 640px height.
+                    height: Math.min(
+                        displayPreferencesScroll.contentHeight + 2 * padding,
+                        Math.max(220, (Overlay.overlay ? Overlay.overlay.height : 640) - 48)
+                    )
                     padding: 12
                     modal: false
                     focus: true
@@ -3568,9 +3573,23 @@ ApplicationWindow {
                         border.color: theme.borderSubtle
                         radius: 6
                     }
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: 8
+                    contentItem: Flickable {
+                        id: displayPreferencesScroll
+                        objectName: "displayPreferencesScroll"
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        flickableDirection: Flickable.VerticalFlick
+                        contentWidth: width
+                        contentHeight: displayPreferencesColumn.implicitHeight
+                        ScrollBar.vertical: ScrollBar {
+                            policy: displayPreferencesScroll.contentHeight > displayPreferencesScroll.height
+                                ? ScrollBar.AsNeeded
+                                : ScrollBar.AlwaysOff
+                        }
+                        ColumnLayout {
+                            id: displayPreferencesColumn
+                            width: displayPreferencesScroll.width
+                            spacing: 8
                         Label { text: "Appearance"; color: theme.textSecondary; font.pixelSize: 11 }
                         Label { text: "Mode"; color: theme.textSecondary; font.pixelSize: 11 }
                         ComboBox {
@@ -3802,6 +3821,7 @@ ApplicationWindow {
                                 window.interaction.returnToCleanStart()
                                 displayPreferencesPopover.close()
                             }
+                        }
                         }
                     }
                 }

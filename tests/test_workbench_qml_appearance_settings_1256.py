@@ -94,6 +94,16 @@ def test_appearance_settings_ui_has_no_local_persistence_or_derivation() -> None
         assert token not in prefs, f"settings UI must not contain {token}"
 
 
+def test_display_preferences_popover_is_vertically_scrollable() -> None:
+    """Expanded Appearance V2 rows must remain reachable at 640px window height."""
+    prefs = _prefs_popover()
+    assert 'objectName: "displayPreferencesScroll"' in prefs
+    assert "Flickable" in prefs
+    assert "ScrollBar.vertical" in prefs
+    assert "Overlay.overlay" in prefs
+    assert "contentHeight: displayPreferencesColumn.implicitHeight" in prefs
+
+
 def test_mode_contrast_slice_does_not_claim_full_1256_exit_in_product_code() -> None:
     """Marker is reserved for full #1256 close-out, not intermediate slices."""
     qml = Path(__file__).resolve().parents[1] / "src" / "workbench_qml.py"
