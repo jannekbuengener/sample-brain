@@ -61,9 +61,12 @@ void float_to_driver(SbAsioHost* host, long index, const float* interleaved) {
             int32_t* dst = static_cast<int32_t*>(buf);
             for (long i = 0; i < host->buffer_size; ++i) {
                 float s = interleaved[static_cast<size_t>(i) * host->output_channels + ch];
-                if (s > 1.0f) s = 1.0f;
-                if (s < -1.0f) s = -1.0f;
-                dst[i] = static_cast<int32_t>(s * 2147483647.0f);
+                // Scale in double and clamp to INT32_MAX so +1.0f never rounds
+                // to 2147483648 before the int32 cast (UB / sign flip).
+                double scaled = static_cast<double>(s) * 2147483647.0;
+                if (scaled > 2147483647.0) scaled = 2147483647.0;
+                if (scaled < -2147483648.0) scaled = -2147483648.0;
+                dst[i] = static_cast<int32_t>(scaled);
             }
         } else {
             // Leave silence for uncommon packed formats in V1.
@@ -193,14 +196,38 @@ sb_result_t sb_asio_host_open(
     if (use_out > out_ch) use_out = out_ch;
 
     ASIOSampleRate rate = static_cast<ASIOSampleRate>(sample_rate);
-    uint32_t effective_rate = sample_rate;
+    uint32_t effective_rate = 0;
     if (driver->canSampleRate(rate) == ASE_OK) {
-        driver->setSampleRate(rate);
+        ASIOError set_rc = driver->setSampleRate(rate);
+        if (set_rc != ASE_OK && set_rc != ASE_SUCCESS) {
+            // Requested rate claimed supported but could not be applied.
+            ASIOSampleRate current = 0;
+            if (driver->getSampleRate(&current) != ASE_OK || current <= 0) {
+                driver->Release();
+                if (host->com_inited_here) CoUninitialize();
+                delete host;
+                return SB_ERR_UNSUPPORTED;
+            }
+            effective_rate = static_cast<uint32_t>(current);
+        } else {
+            ASIOSampleRate current = 0;
+            if (driver->getSampleRate(&current) == ASE_OK && current > 0) {
+                effective_rate = static_cast<uint32_t>(current);
+            } else {
+                effective_rate = sample_rate;
+            }
+        }
     } else {
         ASIOSampleRate current = 0;
         if (driver->getSampleRate(&current) == ASE_OK && current > 0) {
             effective_rate = static_cast<uint32_t>(current);
         }
+    }
+    if (effective_rate == 0) {
+        driver->Release();
+        if (host->com_inited_here) CoUninitialize();
+        delete host;
+        return SB_ERR_UNSUPPORTED;
     }
 
     long min_sz = 0, max_sz = 0, pref_sz = 0, gran = 0;
