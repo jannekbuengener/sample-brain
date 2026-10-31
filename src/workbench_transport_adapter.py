@@ -251,6 +251,28 @@ class WorkbenchTransportAdapter:
             self._last_native_engine_frame = native_frame
             return True
 
+    def _rebase_transport_engine_frame_unlocked(self) -> None:
+        """Align SessionTransport.engine_frame to the live native clock.
+
+        Native ``start()`` resets ``engine_frame`` to 0. Audition schedules voices
+        via ``get_engine_frame()``; if the transport clock still holds a pre-stop
+        value, voices stay SCHEDULED in the native future and produce silence
+        while ``PreviewResult.ok`` remains True (#1209).
+        Musical ``session_frame`` is preserved.
+        """
+        native_frame = 0
+        engine = self._native_engine
+        if engine is not None and hasattr(engine, "snapshot"):
+            try:
+                native_frame = int(engine.snapshot().engine_frame)
+            except Exception as exc:  # pragma: no cover - device specific
+                warn("Native snapshot after engine start failed: %s", exc)
+                native_frame = 0
+        if native_frame < 0:
+            native_frame = 0
+        self._transport.engine_frame = native_frame
+        self._last_native_engine_frame = native_frame
+
     def ensure_engine_running(self) -> bool:
         """Ensure the owned native engine is opened AND running (started).
         Does NOT start the musical transport if it was stopped - only starts the audio engine callback.
@@ -269,6 +291,8 @@ class WorkbenchTransportAdapter:
             try:
                 self._native_engine.start()
                 self._native_started = True
+                # Native start resets the device clock; rebase scheduling clock.
+                self._rebase_transport_engine_frame_unlocked()
                 return True
             except Exception as exc:  # pragma: no cover - machine specific
                 warn("Native audio engine start failed: %s", exc)
@@ -451,6 +475,8 @@ class WorkbenchTransportAdapter:
                 if not self._native_started:
                     self._native_engine.start()
                     self._native_started = True
+                    # Same rebase as ensure_engine_running: native epoch is 0.
+                    self._rebase_transport_engine_frame_unlocked()
                 self._transport.play()
                 # Preserve a previously established explicit seek anchor. Only
                 # fall back to the configured source-start offset when nothing
