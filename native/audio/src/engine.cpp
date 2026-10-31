@@ -7,6 +7,9 @@
 #include "synthetic.h"
 
 #include "keylock_voice.h"
+#if defined(_WIN32) && !defined(SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND)
+#include "asio_host.hpp"
+#endif
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
@@ -20,6 +23,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <new>
 
 static_assert(sizeof(ma_device_id) * 2 + 1 <= sizeof(sb_device_info_t::id_hex),
               "device ID buffer must hold the full hexadecimal ID and terminator");
@@ -45,6 +49,13 @@ static int hex_char_to_val(char c) {
     return -1;
 }
 
+// Vendor ASIO device tokens are CLSID strings ("{...}"), not ma_device_id hex (#1350).
+static int is_vendor_asio_device_token(const char* token) {
+    if (!token || token[0] != '{') return 0;
+    size_t n = strlen(token);
+    return (n >= 38 && token[n - 1] == '}') ? 1 : 0;
+}
+
 static int hex_to_device_id(const char* hex, ma_device_id* out_id) {
     if (!hex || !out_id) return 0;
     size_t id_size = sizeof(ma_device_id);
@@ -58,6 +69,19 @@ static int hex_to_device_id(const char* hex, ma_device_id* out_id) {
         bytes[i] = static_cast<uint8_t>((hi << 4) | lo);
     }
     return 1;
+}
+
+static const char* backend_name(ma_backend backend) {
+    switch (backend) {
+        case ma_backend_wasapi: return "wasapi";
+        case ma_backend_dsound: return "dsound";
+        case ma_backend_winmm: return "winmm";
+        case ma_backend_coreaudio: return "coreaudio";
+        case ma_backend_pulseaudio: return "pulseaudio";
+        case ma_backend_alsa: return "alsa";
+        case ma_backend_null: return "null";
+        default: return "unknown";
+    }
 }
 
 // Engine version
@@ -83,6 +107,11 @@ SAMPLEBRAIN_EXPORT sb_result_t sb_enumerate_devices(int capture, sb_device_info_
 #ifdef SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND
     ma_backend test_backends[] = {ma_backend_null};
     ma_result ma_res = ma_context_init(test_backends, 1, &ctx_config, &context);
+#elif defined(_WIN32)
+    // Sample Brain Audio (#1347): explicit WASAPI Shared path — never accidental
+    // DirectSound/WinMM fallback for product enumeration.
+    ma_backend wasapi_backends[] = {ma_backend_wasapi};
+    ma_result ma_res = ma_context_init(wasapi_backends, 1, &ctx_config, &context);
 #else
     ma_result ma_res = ma_context_init(nullptr, 0, &ctx_config, &context);
 #endif
@@ -134,6 +163,17 @@ struct sb_engine {
     sb_engine_config_t config;
     ma_device device;
     ma_context context;
+    bool context_ready = false;
+    bool device_ready = false;
+    bool uses_vendor_asio = false;
+#if defined(_WIN32) && !defined(SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND)
+    SbAsioHost* asio_host = nullptr;
+#endif
+
+    // Opened playback identity captured after ma_device_init (#1346/#1347).
+    char opened_output_id_hex[513] = {};
+    char opened_output_name[SB_MAX_DEVICE_NAME] = {};
+    char opened_backend[32] = {};
 
     // State
     std::atomic<bool> running{false};
@@ -223,9 +263,64 @@ static void ma_on_notification(const ma_device_notification* pNotification) {
 
 // Forward declarations
 static void ma_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount);
+static void sb_engine_render_output(sb_engine_t engine, float* output, uint32_t frame_count);
 static sb_result_t process_commands(sb_engine_t engine);
 static Voice* find_voice(sb_engine_t engine, sb_voice_id_t id);
 static sb_result_t enqueue_command(sb_engine_t engine, const sb_engine::Command& cmd);
+
+#if defined(_WIN32) && !defined(SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND)
+static void sb_asio_render_trampoline(void* user_data, float* interleaved_output, uint32_t frame_count) {
+    sb_engine_render_output(static_cast<sb_engine_t>(user_data), interleaved_output, frame_count);
+}
+
+static sb_result_t sb_engine_open_vendor_asio(
+    sb_engine_t engine,
+    const sb_engine_config_t* config
+) {
+    if (config->input_channels > 0) {
+        // Vendor ASIO V1 is playback-only under the single Device Authority.
+        return SB_ERR_INVALID_ARG;
+    }
+    char driver_name[SB_MAX_DEVICE_NAME] = {};
+    uint32_t opened_rate = config->sample_rate;
+    uint32_t opened_frames = config->buffer_frames;
+    uint32_t opened_channels = config->output_channels;
+    sb_result_t rc = sb_asio_host_open(
+        &engine->asio_host,
+        config->output_device,
+        config->sample_rate,
+        config->buffer_frames,
+        config->output_channels,
+        &sb_asio_render_trampoline,
+        engine,
+        driver_name,
+        sizeof(driver_name),
+        &opened_rate,
+        &opened_frames,
+        &opened_channels
+    );
+    if (rc != SB_OK) return rc;
+
+    engine->uses_vendor_asio = true;
+    engine->config.sample_rate = opened_rate;
+    engine->config.buffer_frames = opened_frames;
+    engine->config.output_channels = opened_channels;
+    std::snprintf(
+        engine->opened_output_id_hex,
+        sizeof(engine->opened_output_id_hex),
+        "%s",
+        config->output_device
+    );
+    std::snprintf(
+        engine->opened_output_name,
+        sizeof(engine->opened_output_name),
+        "%s",
+        driver_name
+    );
+    std::snprintf(engine->opened_backend, sizeof(engine->opened_backend), "%s", "asio");
+    return SB_OK;
+}
+#endif
 
 sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_engine) {
     if (!config || !out_engine) return SB_ERR_INVALID_ARG;
@@ -233,9 +328,12 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     if (config->output_channels == 0 || config->output_channels > 8) return SB_ERR_INVALID_ARG;
     if (config->input_channels > 8) return SB_ERR_INVALID_ARG;
 
+    const int vendor_asio =
+        (config->output_device && is_vendor_asio_device_token(config->output_device)) ? 1 : 0;
+
     ma_device_id output_device_id = {};
     ma_device_id input_device_id = {};
-    if (config->output_device && !hex_to_device_id(config->output_device, &output_device_id)) {
+    if (!vendor_asio && config->output_device && !hex_to_device_id(config->output_device, &output_device_id)) {
         return SB_ERR_INVALID_ARG;
     }
     if (config->input_device && !hex_to_device_id(config->input_device, &input_device_id)) {
@@ -251,13 +349,38 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     engine->config.output_device = config->output_device ? strdup(config->output_device) : nullptr;
     engine->config.input_device = config->input_device ? strdup(config->input_device) : nullptr;
 
+#if defined(_WIN32) && !defined(SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND)
+    if (vendor_asio) {
+        sb_result_t asio_rc = sb_engine_open_vendor_asio(engine, config);
+        if (asio_rc != SB_OK) {
+            free((void*)engine->config.output_device);
+            free((void*)engine->config.input_device);
+            delete engine;
+            return asio_rc;
+        }
+        *out_engine = engine;
+        return SB_OK;
+    }
+#else
+    if (vendor_asio) {
+        free((void*)engine->config.output_device);
+        free((void*)engine->config.input_device);
+        delete engine;
+        return SB_ERR_DEVICE_ERROR;
+    }
+#endif
+
     // Initialize miniaudio context. Native CTest uses miniaudio's null backend so
     // transport/voice logic can be exercised on hosted runners without changing
-    // production WASAPI/device behavior.
+    // production WASAPI/device behavior. On Windows product builds, Sample Brain
+    // Audio (#1347) forces WASAPI Shared explicitly.
     ma_context_config ctx_config = ma_context_config_init();
 #ifdef SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND
     ma_backend test_backends[] = {ma_backend_null};
     ma_result ma_res = ma_context_init(test_backends, 1, &ctx_config, &engine->context);
+#elif defined(_WIN32)
+    ma_backend wasapi_backends[] = {ma_backend_wasapi};
+    ma_result ma_res = ma_context_init(wasapi_backends, 1, &ctx_config, &engine->context);
 #else
     ma_result ma_res = ma_context_init(nullptr, 0, &ctx_config, &engine->context);
 #endif
@@ -267,6 +390,7 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
         delete engine;
         return SB_ERR_DEVICE_ERROR;
     }
+    engine->context_ready = true;
 
     if (config->output_device || config->input_device) {
         ma_device_info* playback_infos = nullptr;
@@ -303,9 +427,13 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     dev_config.periods = 3;  // Triple buffering for safety
     dev_config.playback.format = ma_format_f32;
     dev_config.playback.channels = config->output_channels;
+    // Sample Brain Audio V1 (#1347): shared-mode only so other Windows sessions
+    // are not muted/taken over. Exclusive mode is intentionally not the default.
+    dev_config.playback.shareMode = ma_share_mode_shared;
     if (config->input_channels > 0) {
         dev_config.capture.format = ma_format_f32;
         dev_config.capture.channels = config->input_channels;
+        dev_config.capture.shareMode = ma_share_mode_shared;
     }
     dev_config.dataCallback = ma_data_callback;
     dev_config.pUserData = engine;
@@ -327,6 +455,24 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
         delete engine;
         return SB_ERR_DEVICE_ERROR;
     }
+    engine->device_ready = true;
+
+    // Capture the physical playback endpoint that miniaudio actually opened.
+    ma_device_info opened_info = {};
+    if (ma_device_get_info(&engine->device, ma_device_type_playback, &opened_info) == MA_SUCCESS) {
+        device_id_to_hex(&opened_info.id, engine->opened_output_id_hex, sizeof(engine->opened_output_id_hex));
+        strncpy(engine->opened_output_name, opened_info.name, sizeof(engine->opened_output_name) - 1);
+        engine->opened_output_name[sizeof(engine->opened_output_name) - 1] = '\0';
+    } else if (config->output_device) {
+        strncpy(engine->opened_output_id_hex, config->output_device, sizeof(engine->opened_output_id_hex) - 1);
+        engine->opened_output_id_hex[sizeof(engine->opened_output_id_hex) - 1] = '\0';
+    }
+    strncpy(
+        engine->opened_backend,
+        backend_name(engine->context.backend),
+        sizeof(engine->opened_backend) - 1
+    );
+    engine->opened_backend[sizeof(engine->opened_backend) - 1] = '\0';
 
     *out_engine = engine;
     return SB_OK;
@@ -337,6 +483,22 @@ sb_result_t sb_engine_start(sb_engine_t engine) {
     if (engine->running.load()) return SB_ERR_ALREADY_RUNNING;
 
     const bool intentional_restart = engine->stopping.exchange(false, std::memory_order_acq_rel);
+#if defined(_WIN32) && !defined(SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND)
+    if (engine->uses_vendor_asio) {
+        sb_result_t rc = sb_asio_host_start(engine->asio_host);
+        if (rc != SB_OK) {
+            if (intentional_restart) {
+                engine->stopping.store(true, std::memory_order_release);
+            }
+            return rc;
+        }
+        engine->running.store(true);
+        engine->engine_frame.store(0);
+        engine->metrics.reset();
+        return SB_OK;
+    }
+#endif
+    if (!engine->device_ready) return SB_ERR_NOT_INITIALIZED;
     ma_result res = ma_device_start(&engine->device);
     if (res != MA_SUCCESS) {
         if (intentional_restart) {
@@ -362,8 +524,17 @@ sb_result_t sb_engine_stop(sb_engine_t engine) {
 
     engine->stopping.store(true);
 
+#if defined(_WIN32) && !defined(SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND)
+    if (engine->uses_vendor_asio) {
+        sb_asio_host_stop(engine->asio_host);
+        engine->running.store(false);
+        return SB_OK;
+    }
+#endif
     // Wait for audio callback to finish
-    ma_device_stop(&engine->device);
+    if (engine->device_ready) {
+        ma_device_stop(&engine->device);
+    }
 
     engine->running.store(false);
     return SB_OK;
@@ -395,9 +566,23 @@ sb_result_t sb_engine_close(sb_engine_t engine) {
     free((void*)engine->config.output_device);
     free((void*)engine->config.input_device);
 
+#if defined(_WIN32) && !defined(SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND)
+    if (engine->uses_vendor_asio) {
+        sb_asio_host_close(&engine->asio_host);
+        delete engine;
+        return SB_OK;
+    }
+#endif
+
     // Uninit miniaudio
-    ma_device_uninit(&engine->device);
-    ma_context_uninit(&engine->context);
+    if (engine->device_ready) {
+        ma_device_uninit(&engine->device);
+        engine->device_ready = false;
+    }
+    if (engine->context_ready) {
+        ma_context_uninit(&engine->context);
+        engine->context_ready = false;
+    }
 
     delete engine;
     return SB_OK;
@@ -418,6 +603,49 @@ uint32_t sb_engine_get_output_channels(sb_engine_t engine) {
 
 uint32_t sb_engine_get_input_channels(sb_engine_t engine) {
     return engine->config.input_channels;
+}
+
+sb_result_t sb_engine_get_opened_output_device(
+    sb_engine_t engine,
+    char* out_id_hex,
+    size_t id_hex_len,
+    char* out_name,
+    size_t name_len
+) {
+    if (!engine) return SB_ERR_NOT_INITIALIZED;
+    if (out_id_hex && id_hex_len > 0) {
+        size_t needed = strlen(engine->opened_output_id_hex) + 1;
+        if (id_hex_len < needed) return SB_ERR_BUFFER_TOO_SMALL;
+        memcpy(out_id_hex, engine->opened_output_id_hex, needed);
+    }
+    if (out_name && name_len > 0) {
+        size_t needed = strlen(engine->opened_output_name) + 1;
+        if (name_len < needed) return SB_ERR_BUFFER_TOO_SMALL;
+        memcpy(out_name, engine->opened_output_name, needed);
+    }
+    return SB_OK;
+}
+
+sb_result_t sb_engine_get_opened_backend(
+    sb_engine_t engine,
+    char* out_backend,
+    size_t backend_len
+) {
+    if (!engine) return SB_ERR_NOT_INITIALIZED;
+    if (!out_backend || backend_len == 0) return SB_ERR_INVALID_ARG;
+    size_t needed = strlen(engine->opened_backend) + 1;
+    if (backend_len < needed) return SB_ERR_BUFFER_TOO_SMALL;
+    memcpy(out_backend, engine->opened_backend, needed);
+    return SB_OK;
+}
+
+int sb_vendor_asio_backend_available(void) {
+    // #1350: SDK-free COM IASIO host under NativeAudioEngine (manufacturer drivers).
+#if defined(_WIN32) && !defined(SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND)
+    return sb_asio_host_available();
+#else
+    return 0;
+#endif
 }
 
 sb_frame_t sb_engine_get_frame(sb_engine_t engine) {
@@ -610,6 +838,15 @@ void sb_recording_free_buffer(float* buffer) {
 sb_result_t sb_engine_snapshot(sb_engine_t engine, sb_snapshot_t* out_snapshot) {
     if (!engine || !out_snapshot) return SB_ERR_INVALID_ARG;
 
+#if defined(_WIN32) && !defined(SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND)
+    // Poll ASIO reset/loss on the control thread (never in the RT callback).
+    if (engine->uses_vendor_asio && engine->asio_host &&
+        sb_asio_host_device_lost(engine->asio_host)) {
+        engine->device_status.store(SB_DEVICE_LOST, std::memory_order_relaxed);
+        engine->recovery_state.store(1, std::memory_order_relaxed);
+    }
+#endif
+
     // Fill snapshot atomically/lock-free where possible
     out_snapshot->engine_frame = engine->engine_frame.load(std::memory_order_relaxed);
     out_snapshot->running = engine->running.load(std::memory_order_relaxed);
@@ -691,52 +928,60 @@ sb_result_t sb_engine_snapshot(sb_engine_t engine, sb_snapshot_t* out_snapshot) 
     return SB_OK;
 }
 
+// Shared render path for WASAPI (miniaudio) and Vendor ASIO (#1350).
+static void sb_engine_render_output(sb_engine_t engine, float* output, uint32_t frame_count) {
+    if (!engine) return;
+    if (!engine->running.load()) {
+        if (output) {
+            std::memset(
+                output,
+                0,
+                static_cast<size_t>(frame_count) * engine->config.output_channels * sizeof(float)
+            );
+        }
+        return;
+    }
+
+    engine->metrics.on_callback_start();
+    process_commands(engine);
+
+    sb_frame_t current_frame = engine->engine_frame.load(std::memory_order_relaxed);
+    engine->engine_frame.store(current_frame + frame_count, std::memory_order_relaxed);
+
+    const size_t num_channels = engine->config.output_channels;
+    const size_t num_frames = frame_count;
+    if (output) {
+        std::fill(output, output + num_frames * num_channels, 0.0f);
+        std::lock_guard<std::mutex> lock(engine->voices_mutex);
+        for (auto* v : engine->voices) {
+            v->process(output, num_frames, current_frame, num_channels);
+        }
+    }
+    engine->metrics.on_callback_end();
+}
+
 // Internal: miniaudio data callback
 static void ma_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
     sb_engine_t engine = static_cast<sb_engine_t>(pDevice->pUserData);
     if (!engine) {
         return;
     }
-    if (!engine->running.load()) {
-        if (pOutput) memset(pOutput, 0, frameCount * engine->config.output_channels * sizeof(float));
-        return;
-    }
 
-    engine->metrics.on_callback_start();
-
-    // Process pending voice-control commands.
-    process_commands(engine);
-
-    // Get current frame before processing
     sb_frame_t current_frame = engine->engine_frame.load(std::memory_order_relaxed);
-    engine->engine_frame.store(current_frame + frameCount, std::memory_order_relaxed);
-
-    // Process voices (mix to output)
-    float* output = static_cast<float*>(pOutput);
-    const size_t num_channels = engine->config.output_channels;
-    const size_t num_frames = frameCount;
-
-    if (output) {
-        std::fill(output, output + num_frames * num_channels, 0.0f);
-
-        std::lock_guard<std::mutex> lock(engine->voices_mutex);
-        for (auto* v : engine->voices) {
-            v->process(output, num_frames, current_frame, num_channels);
-        }
-    }
+    sb_engine_render_output(engine, static_cast<float*>(pOutput), frameCount);
 
     // Process recording (capture input). Scheduled recordings are called every
     // callback; Recording::write applies the exact start-frame offset itself.
-    if (pInput && engine->config.input_channels > 0) {
+    // Capture remains WASAPI-only; Vendor ASIO V1 is playback-only.
+    if (pInput && engine->config.input_channels > 0 && engine->running.load()) {
         const float* input = static_cast<const float*>(pInput);
+        // engine_frame already advanced inside render; recover the start frame.
+        current_frame = engine->engine_frame.load(std::memory_order_relaxed) - frameCount;
         std::lock_guard<std::mutex> lock(engine->recordings_mutex);
         for (auto* r : engine->recordings) {
-            r->write(input, num_frames, engine->config.input_channels, current_frame);
+            r->write(input, frameCount, engine->config.input_channels, current_frame);
         }
     }
-
-    // Update metrics
-    engine->metrics.on_callback_end();
 }
 
 static sb_result_t process_commands(sb_engine_t engine) {

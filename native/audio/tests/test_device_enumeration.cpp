@@ -49,6 +49,32 @@ static bool explicit_device_selection_fails_closed() {
 
     config.output_device = devices[0].id_hex;
     if (sb_engine_open(&config, &engine) != SB_OK || engine == nullptr) return false;
+
+    char opened_id[513] = {};
+    char opened_name[256] = {};
+    char opened_backend[32] = {};
+    if (sb_engine_get_opened_output_device(engine, opened_id, sizeof(opened_id), opened_name, sizeof(opened_name)) != SB_OK) {
+        sb_engine_close(engine);
+        return false;
+    }
+    if (std::strcmp(opened_id, devices[0].id_hex) != 0) {
+        sb_engine_close(engine);
+        return false;
+    }
+    if (opened_name[0] == '\0') {
+        sb_engine_close(engine);
+        return false;
+    }
+    if (sb_engine_get_opened_backend(engine, opened_backend, sizeof(opened_backend)) != SB_OK) {
+        sb_engine_close(engine);
+        return false;
+    }
+#ifdef SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND
+    if (std::strcmp(opened_backend, "null") != 0) {
+        sb_engine_close(engine);
+        return false;
+    }
+#endif
     return sb_engine_close(engine) == SB_OK;
 }
 

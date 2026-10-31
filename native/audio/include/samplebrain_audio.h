@@ -187,6 +187,26 @@ SAMPLEBRAIN_EXPORT uint32_t sb_engine_get_buffer_frames(sb_engine_t engine);
 SAMPLEBRAIN_EXPORT uint32_t sb_engine_get_output_channels(sb_engine_t engine);
 SAMPLEBRAIN_EXPORT uint32_t sb_engine_get_input_channels(sb_engine_t engine);
 
+// Device Truth (#1346/#1356): identity of the playback endpoint actually opened.
+SAMPLEBRAIN_EXPORT sb_result_t sb_engine_get_opened_output_device(
+    sb_engine_t engine,
+    char* out_id_hex,
+    size_t id_hex_len,
+    char* out_name,
+    size_t name_len
+);
+
+// Sample Brain Audio (#1347): backend actually opened (e.g. "wasapi", "null").
+SAMPLEBRAIN_EXPORT sb_result_t sb_engine_get_opened_backend(
+    sb_engine_t engine,
+    char* out_backend,
+    size_t backend_len
+);
+
+// Vendor ASIO (#1350): 1 when NativeAudioEngine can open manufacturer ASIO
+// drivers under the same engine authority; 0 until the ASIO host backend lands.
+SAMPLEBRAIN_EXPORT int sb_vendor_asio_backend_available(void);
+
 // Engine state accessors
 SAMPLEBRAIN_EXPORT sb_frame_t sb_engine_get_frame(sb_engine_t engine);
 
