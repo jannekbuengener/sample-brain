@@ -98,11 +98,22 @@ except Exception:
         "scipy._external.array_api_compat.numpy.fft",
     ]
 try:
+    import shutil
+    import tempfile
+
     import scipy as _scipy_for_packaging
 
     _scipy_external = Path(_scipy_for_packaging.__file__).resolve().parent / "_external"
     if _scipy_external.is_dir():
-        datas.append((str(_scipy_external), str(Path("scipy") / "_external")))
+        # Copy without __pycache__: artifact hygiene forbids that name in the
+        # staged SampleBrain tree (tools/windows/build_distributable.ps1).
+        _external_stage = Path(tempfile.mkdtemp(prefix="sb_scipy_external_")) / "_external"
+        shutil.copytree(
+            _scipy_external,
+            _external_stage,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+        )
+        datas.append((str(_external_stage), str(Path("scipy") / "_external")))
 except Exception:
     pass
 
