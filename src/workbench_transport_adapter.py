@@ -79,6 +79,10 @@ class WorkbenchTransportAdapter:
         self._native_available = native_engine is not None
         self._last_native_engine_frame: int | None = None
         self._native_started = False
+        # Set by stop() when the native device was actually stopped. Next start
+        # must rebase transport.engine_frame onto the restarted native epoch
+        # (#1209). First-ever start must NOT wipe a pre-play engine_frame.
+        self._rebase_engine_clock_on_next_start = False
         self._preferred_output_device_applied: str | None = None
 
         if native_engine is None:
@@ -291,8 +295,10 @@ class WorkbenchTransportAdapter:
             try:
                 self._native_engine.start()
                 self._native_started = True
-                # Native start resets the device clock; rebase scheduling clock.
-                self._rebase_transport_engine_frame_unlocked()
+                if self._rebase_engine_clock_on_next_start:
+                    # Native start after stop resets the device clock.
+                    self._rebase_transport_engine_frame_unlocked()
+                    self._rebase_engine_clock_on_next_start = False
                 return True
             except Exception as exc:  # pragma: no cover - machine specific
                 warn("Native audio engine start failed: %s", exc)
@@ -475,8 +481,9 @@ class WorkbenchTransportAdapter:
                 if not self._native_started:
                     self._native_engine.start()
                     self._native_started = True
-                    # Same rebase as ensure_engine_running: native epoch is 0.
-                    self._rebase_transport_engine_frame_unlocked()
+                    if self._rebase_engine_clock_on_next_start:
+                        self._rebase_transport_engine_frame_unlocked()
+                        self._rebase_engine_clock_on_next_start = False
                 self._transport.play()
                 # Preserve a previously established explicit seek anchor. Only
                 # fall back to the configured source-start offset when nothing
@@ -498,6 +505,7 @@ class WorkbenchTransportAdapter:
     def stop(self) -> None:
         with self._lock:
             self._transport.stop()
+            was_started = self._native_started
             self._native_started = False
             # Invalidate the authoritative source playhead: after a stop there is
             # no honest anchor until the next play/seek. HÄFTIG must fail closed.
@@ -506,9 +514,15 @@ class WorkbenchTransportAdapter:
                 if not self._native_owned or self._native_opened:
                     try:
                         self._native_engine.stop()
+                        # Device clock will reset on the next start(); schedule
+                        # clock must follow or re-audition stays silent (#1209).
+                        if was_started:
+                            self._rebase_engine_clock_on_next_start = True
                     except Exception as exc:  # pragma: no cover - device specific
                         warn("Native engine stop failed: %s", exc)
                         self._native_available = False
+                        if was_started:
+                            self._rebase_engine_clock_on_next_start = True
 
     def pause(self) -> None:
         self.stop()
