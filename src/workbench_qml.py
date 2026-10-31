@@ -3559,6 +3559,11 @@ ApplicationWindow {
                     x: displayPreferencesOverflow.width - width
                     y: displayPreferencesOverflow.height + 6
                     width: 300
+                    // Bound to Window so added Appearance V2 rows remain reachable at 640px height.
+                    height: Math.min(
+                        displayPreferencesScroll.contentHeight + 2 * padding,
+                        Math.max(220, (Overlay.overlay ? Overlay.overlay.height : 640) - 48)
+                    )
                     padding: 12
                     modal: false
                     focus: true
@@ -3568,10 +3573,82 @@ ApplicationWindow {
                         border.color: theme.borderSubtle
                         radius: 6
                     }
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: 8
+                    contentItem: Flickable {
+                        id: displayPreferencesScroll
+                        objectName: "displayPreferencesScroll"
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        flickableDirection: Flickable.VerticalFlick
+                        contentWidth: width
+                        contentHeight: displayPreferencesColumn.implicitHeight
+                        ScrollBar.vertical: ScrollBar {
+                            policy: displayPreferencesScroll.contentHeight > displayPreferencesScroll.height
+                                ? ScrollBar.AsNeeded
+                                : ScrollBar.AlwaysOff
+                        }
+                        ColumnLayout {
+                            id: displayPreferencesColumn
+                            width: displayPreferencesScroll.width
+                            spacing: 8
                         Label { text: "Appearance"; color: theme.textSecondary; font.pixelSize: 11 }
+                        Label { text: "Mode"; color: theme.textSecondary; font.pixelSize: 11 }
+                        ComboBox {
+                            id: appearanceModeSelector
+                            objectName: "appearanceModeSelector"
+                            Layout.fillWidth: true
+                            property var appearanceModes: ["system", "light", "dark"]
+                            model: appearanceModes
+                            currentIndex: {
+                                var idx = appearanceModes.indexOf(themeAuthority.modeRequested)
+                                return idx < 0 ? 0 : idx
+                            }
+                            onActivated: function(index) {
+                                themeAuthority.setMode(appearanceModes[index])
+                            }
+                            Accessible.name: "Appearance mode"
+                        }
+                        CheckBox {
+                            id: appearanceSeparateLightDarkSwitch
+                            objectName: "appearanceSeparateLightDarkSwitch"
+                            text: "Separate Light / Dark"
+                            checked: themeAuthority.separateLightDark
+                            onToggled: themeAuthority.setSeparateLightDark(checked)
+                            Accessible.name: "Separate Light and Dark customization"
+                        }
+                        Label { text: "Contrast"; color: theme.textSecondary; font.pixelSize: 11 }
+                        SpinBox {
+                            id: appearanceContrastControl
+                            objectName: "appearanceContrastControl"
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 100
+                            value: themeAuthority.contrast
+                            editable: true
+                            onValueModified: themeAuthority.setContrast(value)
+                            Accessible.name: "Contrast"
+                        }
+                        Label { text: "UI font size"; color: theme.textSecondary; font.pixelSize: 11 }
+                        SpinBox {
+                            id: appearanceUiFontSpin
+                            objectName: "appearanceUiFontSpin"
+                            Layout.fillWidth: true
+                            from: 12
+                            to: 18
+                            value: themeAuthority.uiFontSize
+                            onValueModified: themeAuthority.setUiFontSize(value)
+                            Accessible.name: "UI font size"
+                        }
+                        Label { text: "Code font size"; color: theme.textSecondary; font.pixelSize: 11 }
+                        SpinBox {
+                            id: appearanceCodeFontSpin
+                            objectName: "appearanceCodeFontSpin"
+                            Layout.fillWidth: true
+                            from: 10
+                            to: 18
+                            value: themeAuthority.codeFontSize
+                            onValueModified: themeAuthority.setCodeFontSize(value)
+                            Accessible.name: "Code font size"
+                        }
                         ComboBox {
                             id: themePresetSelector
                             objectName: "themePresetSelector"
@@ -3581,6 +3658,7 @@ ApplicationWindow {
                             onActivated: function(index) {
                                 themeAuthority.selectTheme(themeAuthority.availableThemeNames[index])
                             }
+                            Accessible.name: "Theme preset"
                         }
                         Button {
                             id: themeCustomizeButton
@@ -3662,30 +3740,25 @@ ApplicationWindow {
                                 text = ""
                             }
                         }
+                        Label { text: "Motion"; color: theme.textSecondary; font.pixelSize: 11 }
+                        ComboBox {
+                            id: appearanceMotionSelector
+                            objectName: "appearanceMotionSelector"
+                            Layout.fillWidth: true
+                            property var appearanceMotionModes: ["system", "on", "reduced", "off"]
+                            model: appearanceMotionModes
+                            currentIndex: {
+                                var idx = appearanceMotionModes.indexOf(themeAuthority.motionModeRequested)
+                                return idx < 0 ? 0 : idx
+                            }
+                            onActivated: function(index) {
+                                themeAuthority.setMotionMode(appearanceMotionModes[index])
+                            }
+                            Accessible.name: "Motion mode"
+                        }
+                        // #696 frozen affordance: compact-only Density marker (not a second control).
                         Label { text: "Density"; color: theme.textSecondary; font.pixelSize: 11 }
                         Label { text: "Compact"; color: theme.textPrimary; font.pixelSize: 13 }
-                        Label { text: "Motion"; color: theme.textSecondary; font.pixelSize: 11 }
-                        RowLayout {
-                            spacing: 6
-                            Button {
-                                text: "On"
-                                checkable: true
-                                checked: window.interaction.waveformMotionMode === "on"
-                                onClicked: window.interaction.setWaveformMotionMode("on")
-                            }
-                            Button {
-                                text: "Reduced"
-                                checkable: true
-                                checked: window.interaction.waveformMotionMode === "reduced"
-                                onClicked: window.interaction.setWaveformMotionMode("reduced")
-                            }
-                            Button {
-                                text: "Off"
-                                checkable: true
-                                checked: window.interaction.waveformMotionMode === "off"
-                                onClicked: window.interaction.setWaveformMotionMode("off")
-                            }
-                        }
                         Label {
                             text: "Audition output"
                             color: theme.textSecondary
@@ -3748,6 +3821,7 @@ ApplicationWindow {
                                 window.interaction.returnToCleanStart()
                                 displayPreferencesPopover.close()
                             }
+                        }
                         }
                     }
                 }
@@ -9559,6 +9633,25 @@ def _qml_library_interaction_bridge(
     return QmlLibraryInteractionBridge()
 
 
+def _sync_interaction_motion_from_appearance(adapter: Any, theme_authority: Any) -> None:
+    """Push Appearance motionEffective into the #738/#696 interaction playhead seam.
+
+    Display Preferences Motion UI commits via themeAuthority.setMotionMode. The
+    QML playhead gate still reads window.interaction.waveformMotionMode, so the
+    adapter must be refreshed on every appearanceChanged without restart.
+    """
+    try:
+        effective = str(getattr(theme_authority, "motionEffective", "") or "").strip().lower()
+    except Exception:
+        return
+    if effective not in {"on", "reduced", "off"}:
+        return
+    try:
+        adapter.set_waveform_motion_mode(effective)
+    except Exception:
+        return
+
+
 def _qml_theme_authority_bridge(
     *,
     state_dir: Path | None = None,
@@ -11457,6 +11550,11 @@ def _qml_engine(
     engine.rootContext().setContextProperty("arrangementModel", arrangement_bridge)
     engine._screen1_session_persistence_bridge = persistence_bridge
     theme_authority = _qml_theme_authority_bridge()
+    # Keep #738 playhead seam aligned with Appearance motionEffective (#1256).
+    _sync_interaction_motion_from_appearance(adapter, theme_authority)
+    theme_authority.appearanceChanged.connect(
+        lambda *_args: _sync_interaction_motion_from_appearance(adapter, theme_authority)
+    )
     engine.rootContext().setContextProperty("themeAuthority", theme_authority)
     engine.rootContext().setContextProperty(
         "screen1BackgroundUrl",
