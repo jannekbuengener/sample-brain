@@ -3737,6 +3737,9 @@ ApplicationWindow {
                             }
                             Accessible.name: "Motion mode"
                         }
+                        // #696 frozen affordance: compact-only Density marker (not a second control).
+                        Label { text: "Density"; color: theme.textSecondary; font.pixelSize: 11 }
+                        Label { text: "Compact"; color: theme.textPrimary; font.pixelSize: 13 }
                         Label {
                             text: "Audition output"
                             color: theme.textSecondary
@@ -9610,6 +9613,25 @@ def _qml_library_interaction_bridge(
     return QmlLibraryInteractionBridge()
 
 
+def _sync_interaction_motion_from_appearance(adapter: Any, theme_authority: Any) -> None:
+    """Push Appearance motionEffective into the #738/#696 interaction playhead seam.
+
+    Display Preferences Motion UI commits via themeAuthority.setMotionMode. The
+    QML playhead gate still reads window.interaction.waveformMotionMode, so the
+    adapter must be refreshed on every appearanceChanged without restart.
+    """
+    try:
+        effective = str(getattr(theme_authority, "motionEffective", "") or "").strip().lower()
+    except Exception:
+        return
+    if effective not in {"on", "reduced", "off"}:
+        return
+    try:
+        adapter.set_waveform_motion_mode(effective)
+    except Exception:
+        return
+
+
 def _qml_theme_authority_bridge(
     *,
     state_dir: Path | None = None,
@@ -11508,6 +11530,11 @@ def _qml_engine(
     engine.rootContext().setContextProperty("arrangementModel", arrangement_bridge)
     engine._screen1_session_persistence_bridge = persistence_bridge
     theme_authority = _qml_theme_authority_bridge()
+    # Keep #738 playhead seam aligned with Appearance motionEffective (#1256).
+    _sync_interaction_motion_from_appearance(adapter, theme_authority)
+    theme_authority.appearanceChanged.connect(
+        lambda *_args: _sync_interaction_motion_from_appearance(adapter, theme_authority)
+    )
     engine.rootContext().setContextProperty("themeAuthority", theme_authority)
     engine.rootContext().setContextProperty(
         "screen1BackgroundUrl",
