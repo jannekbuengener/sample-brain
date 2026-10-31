@@ -90,7 +90,13 @@ void buffer_switch(long index, ASIOBool /*directProcess*/) {
     host->driver->outputReady();
 }
 
-void sample_rate_changed(ASIOSampleRate) {}
+void sample_rate_changed(ASIOSampleRate) {
+    // Live rate changes from the driver/control panel invalidate the opened
+    // rate contract. Signal device-lost so the control thread fail-closes
+    // rather than continuing with a stale SessionTransport/PCM rate.
+    SbAsioHost* host = g_callback_host.load(std::memory_order_acquire);
+    if (host) host->device_lost.store(1, std::memory_order_release);
+}
 
 long asio_message(long selector, long value, void*, double*) {
     if (selector == kAsioSelectorSupported) {
