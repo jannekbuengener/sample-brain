@@ -23,7 +23,9 @@ from typing import Any, Iterable, Iterator, Literal, Mapping, Sequence
 # re-analyzed by the existing refresh contract. Not a new analyzer algorithm.
 # v4: duration_sec persistence for Browser Length after cache reload (#1220).
 # Existing on-disk rows miss cache and refresh through the version contract.
-WORKBENCH_ANALYZER_VERSION = "workbench_v4"
+# v5: packaged SciPy `_external` heal + #1203 Browser consumer for path claims.
+# Sticky v4 analysis_exception / decode-failed rows must miss and re-analyze.
+WORKBENCH_ANALYZER_VERSION = "workbench_v5"
 WORKBENCH_LIBRARY_SCHEMA_VERSION = 7
 WAVEFORM_ARTIFACT_VERSION = "waveform_envelope_v1"
 WAVEFORM_POINT_BUDGET = 96

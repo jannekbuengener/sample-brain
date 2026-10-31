@@ -25,6 +25,7 @@ from .bpm_display import format_bpm_display, round_bpm_display
 from .export_fl import MAX_TAGS, write_fl_tags_from_sample_rows
 from .key_signature import parse_key_signature
 from .classify import rule_type
+from .path_metadata import resolve_workbench_consumer_metadata
 from .scan import iter_audio_files_stream, safe_audio_info
 from .workbench_catalog import (
     DEFAULT_CATALOG_LOAD_LIMIT,
@@ -696,14 +697,20 @@ def analyze_audio_paths_for_workbench(
                 dur, feats.loudness, feats.brightness, feats.mfcc_mean, feats.clazz
             )
             pred_type = tags[0] if tags else None
+            consumer = resolve_workbench_consumer_metadata(
+                audio_path.name,
+                rel,
+                analysis_bpm=feats.bpm,
+                analysis_key=feats.key,
+            )
             details: dict[str, Any] = {
                 "path": str(audio_path),
                 "relative_path": rel,
                 "duration_sec": _format_optional(dur, digits=3),
                 "samplerate": sr,
                 "channels": ch,
-                "bpm": round_bpm_display(feats.bpm),
-                "key": feats.key,
+                "bpm": round_bpm_display(consumer.bpm),
+                "key": consumer.key,
                 "key_conf": _format_optional(feats.key_conf, digits=3),
                 "loudness_dbfs": _format_optional(feats.loudness, digits=2),
                 "brightness_hz": _format_optional(feats.brightness, digits=1),
@@ -711,6 +718,10 @@ def analyze_audio_paths_for_workbench(
                 "pred_type": pred_type,
                 "tags": tags,
                 "analyzer_version": WORKBENCH_ANALYZER_VERSION,
+                "analysis_bpm": round_bpm_display(consumer.analysis_bpm),
+                "analysis_key": consumer.analysis_key,
+                "bpm_resolution_status": consumer.bpm_status,
+                "key_resolution_status": consumer.key_status,
             }
             if feats.quality_note:
                 details["short_audio_warning"] = feats.quality_note
@@ -720,8 +731,8 @@ def analyze_audio_paths_for_workbench(
                 display_name=display_name,
                 relative_path=rel,
                 path=str(audio_path),
-                bpm=feats.bpm,
-                key=feats.key,
+                bpm=consumer.bpm,
+                key=consumer.key,
                 key_conf=feats.key_conf,
                 loudness=feats.loudness,
                 brightness=feats.brightness,

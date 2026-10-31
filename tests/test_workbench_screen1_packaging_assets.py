@@ -214,6 +214,17 @@ def test_spec_collects_sample_brain_analysis_for_frozen_launch() -> None:
     assert "sample_brain_analysis" in literals
 
 
+def test_spec_collects_scipy_external_array_api_compat() -> None:
+    """SciPy FFT imports scipy._external.array_api_compat; freeze must ship it.
+
+    A bare ``"scipy"`` hiddenimport is not enough — packaged Browser analysis
+    otherwise fails with ModuleNotFoundError and poisons the library cache.
+    """
+    source = _spec_source()
+    assert "scipy._external" in source
+    assert "collect_submodules" in source or "array_api_compat" in source
+
+
 def test_spec_keeps_tkinter_for_transport_ui_import_chain() -> None:
     """QML Screen-1 imports workbench_transport_ui which requires tkinter."""
     source = _spec_source()

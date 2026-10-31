@@ -6,7 +6,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
+from PyInstaller.utils.hooks import (
+    collect_all,
+    collect_dynamic_libs,
+    collect_submodules,
+)
 
 REPO = Path(SPECPATH).resolve().parents[1]
 ENTRY = REPO / "tools" / "windows" / "sample_brain_gui_entry.py"
@@ -78,6 +82,19 @@ except Exception:
     pass
 
 binaries += collect_dynamic_libs("soundfile")
+
+# SciPy 1.16+ FFT imports scipy._external.array_api_compat. A bare "scipy"
+# hiddenimport does not ship that pure-Python subtree; missing it makes packaged
+# Browser analysis fail and poison the library cache (#1220).
+try:
+    hiddenimports += collect_submodules("scipy._external")
+except Exception:
+    hiddenimports += [
+        "scipy._external",
+        "scipy._external.array_api_compat",
+        "scipy._external.array_api_compat.numpy",
+        "scipy._external.array_api_compat.numpy.fft",
+    ]
 
 if DLL.is_file():
     binaries.append((str(DLL), "."))
