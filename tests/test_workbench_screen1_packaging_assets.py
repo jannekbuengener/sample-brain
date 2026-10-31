@@ -219,10 +219,13 @@ def test_spec_collects_scipy_external_array_api_compat() -> None:
 
     A bare ``"scipy"`` hiddenimport is not enough — packaged Browser analysis
     otherwise fails with ModuleNotFoundError and poisons the library cache.
+    Onedir also needs the filesystem ``scipy/_external`` datas copy because
+    scipy itself is extracted as a real package directory.
     """
     source = _spec_source()
     assert "scipy._external" in source
     assert "collect_submodules" in source or "array_api_compat" in source
+    assert 'Path("scipy") / "_external"' in source or "scipy/_external" in source
 
 
 def test_spec_keeps_tkinter_for_transport_ui_import_chain() -> None:

@@ -86,6 +86,8 @@ binaries += collect_dynamic_libs("soundfile")
 # SciPy 1.16+ FFT imports scipy._external.array_api_compat. A bare "scipy"
 # hiddenimport does not ship that pure-Python subtree; missing it makes packaged
 # Browser analysis fail and poison the library cache (#1220).
+# Hiddenimports alone are not enough: onedir lays scipy on the filesystem, so
+# `_external` must also exist as a real package directory beside it.
 try:
     hiddenimports += collect_submodules("scipy._external")
 except Exception:
@@ -95,6 +97,14 @@ except Exception:
         "scipy._external.array_api_compat.numpy",
         "scipy._external.array_api_compat.numpy.fft",
     ]
+try:
+    import scipy as _scipy_for_packaging
+
+    _scipy_external = Path(_scipy_for_packaging.__file__).resolve().parent / "_external"
+    if _scipy_external.is_dir():
+        datas.append((str(_scipy_external), str(Path("scipy") / "_external")))
+except Exception:
+    pass
 
 if DLL.is_file():
     binaries.append((str(DLL), "."))
