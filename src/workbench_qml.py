@@ -3572,6 +3572,64 @@ ApplicationWindow {
                         anchors.fill: parent
                         spacing: 8
                         Label { text: "Appearance"; color: theme.textSecondary; font.pixelSize: 11 }
+                        Label { text: "Mode"; color: theme.textSecondary; font.pixelSize: 11 }
+                        ComboBox {
+                            id: appearanceModeSelector
+                            objectName: "appearanceModeSelector"
+                            Layout.fillWidth: true
+                            property var appearanceModes: ["system", "light", "dark"]
+                            model: appearanceModes
+                            currentIndex: {
+                                var idx = appearanceModes.indexOf(themeAuthority.modeRequested)
+                                return idx < 0 ? 0 : idx
+                            }
+                            onActivated: function(index) {
+                                themeAuthority.setMode(appearanceModes[index])
+                            }
+                            Accessible.name: "Appearance mode"
+                        }
+                        CheckBox {
+                            id: appearanceSeparateLightDarkSwitch
+                            objectName: "appearanceSeparateLightDarkSwitch"
+                            text: "Separate Light / Dark"
+                            checked: themeAuthority.separateLightDark
+                            onToggled: themeAuthority.setSeparateLightDark(checked)
+                            Accessible.name: "Separate Light and Dark customization"
+                        }
+                        Label { text: "Contrast"; color: theme.textSecondary; font.pixelSize: 11 }
+                        SpinBox {
+                            id: appearanceContrastControl
+                            objectName: "appearanceContrastControl"
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 100
+                            value: themeAuthority.contrast
+                            editable: true
+                            onValueModified: themeAuthority.setContrast(value)
+                            Accessible.name: "Contrast"
+                        }
+                        Label { text: "UI font size"; color: theme.textSecondary; font.pixelSize: 11 }
+                        SpinBox {
+                            id: appearanceUiFontSpin
+                            objectName: "appearanceUiFontSpin"
+                            Layout.fillWidth: true
+                            from: 12
+                            to: 18
+                            value: themeAuthority.uiFontSize
+                            onValueModified: themeAuthority.setUiFontSize(value)
+                            Accessible.name: "UI font size"
+                        }
+                        Label { text: "Code font size"; color: theme.textSecondary; font.pixelSize: 11 }
+                        SpinBox {
+                            id: appearanceCodeFontSpin
+                            objectName: "appearanceCodeFontSpin"
+                            Layout.fillWidth: true
+                            from: 10
+                            to: 18
+                            value: themeAuthority.codeFontSize
+                            onValueModified: themeAuthority.setCodeFontSize(value)
+                            Accessible.name: "Code font size"
+                        }
                         ComboBox {
                             id: themePresetSelector
                             objectName: "themePresetSelector"
@@ -3581,6 +3639,7 @@ ApplicationWindow {
                             onActivated: function(index) {
                                 themeAuthority.selectTheme(themeAuthority.availableThemeNames[index])
                             }
+                            Accessible.name: "Theme preset"
                         }
                         Button {
                             id: themeCustomizeButton
@@ -3662,29 +3721,21 @@ ApplicationWindow {
                                 text = ""
                             }
                         }
-                        Label { text: "Density"; color: theme.textSecondary; font.pixelSize: 11 }
-                        Label { text: "Compact"; color: theme.textPrimary; font.pixelSize: 13 }
                         Label { text: "Motion"; color: theme.textSecondary; font.pixelSize: 11 }
-                        RowLayout {
-                            spacing: 6
-                            Button {
-                                text: "On"
-                                checkable: true
-                                checked: window.interaction.waveformMotionMode === "on"
-                                onClicked: window.interaction.setWaveformMotionMode("on")
+                        ComboBox {
+                            id: appearanceMotionSelector
+                            objectName: "appearanceMotionSelector"
+                            Layout.fillWidth: true
+                            property var appearanceMotionModes: ["system", "on", "reduced", "off"]
+                            model: appearanceMotionModes
+                            currentIndex: {
+                                var idx = appearanceMotionModes.indexOf(themeAuthority.motionModeRequested)
+                                return idx < 0 ? 0 : idx
                             }
-                            Button {
-                                text: "Reduced"
-                                checkable: true
-                                checked: window.interaction.waveformMotionMode === "reduced"
-                                onClicked: window.interaction.setWaveformMotionMode("reduced")
+                            onActivated: function(index) {
+                                themeAuthority.setMotionMode(appearanceMotionModes[index])
                             }
-                            Button {
-                                text: "Off"
-                                checkable: true
-                                checked: window.interaction.waveformMotionMode === "off"
-                                onClicked: window.interaction.setWaveformMotionMode("off")
-                            }
+                            Accessible.name: "Motion mode"
                         }
                         Label {
                             text: "Audition output"
