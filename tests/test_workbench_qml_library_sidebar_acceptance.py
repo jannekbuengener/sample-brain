@@ -634,7 +634,9 @@ class TestHoverBehavior:
         actions_block = source.split('objectName: "librarySourceActionsButton"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
         assert 'visible: model.kind === "registered_root"' in actions_block
         assert "sourceRowHover.hovered" in actions_block
-        assert "libraryDelegate.current && libraryTree.activeFocus" in actions_block
+        # #1248 reopen: selection/current alone must not keep … visible.
+        assert "libraryDelegate.current && libraryTree.activeFocus" not in actions_block
+        assert "activeFocus" in actions_block
 
     def test_source_hover_hides_ellipsis_on_leave(self, qml_engine):
         engine, window = qml_engine
@@ -754,15 +756,18 @@ class TestSourceActions:
         assert 'visible: model.kind === "registered_root"' in actions_block
         assert "sourceRowHover.hovered" in actions_block
 
-    def test_ellipsis_visible_on_keyboard_current(self, qml_engine):
+    def test_ellipsis_visible_on_direct_button_focus_not_row_current(self, qml_engine):
         engine, window = qml_engine
         root = engine.rootObjects()[0]
 
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         actions_block = source.split('objectName: "librarySourceActionsButton"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        # visible also when libraryDelegate.current && libraryTree.activeFocus
-        assert "libraryDelegate.current && libraryTree.activeFocus" in actions_block
+        # #1248 reopen: direct ToolButton activeFocus may reveal …;
+        # libraryDelegate.current + tree focus alone must not.
+        assert "libraryDelegate.current && libraryTree.activeFocus" not in actions_block
+        assert "activeFocus" in actions_block
+        assert "sourceRowHover.hovered" in actions_block
 
     def test_ellipsis_click_opens_removal_flow(self, qml_engine):
         engine, window = qml_engine
@@ -869,11 +874,13 @@ class TestKeyboardNavigation:
         tree.forceActiveFocus()
         QCoreApplication.processEvents()
 
-        # The delegate's current item with tree activeFocus should show actions
+        # #1248 reopen: tree/row current+focus alone must not show actions.
         from src import workbench_qml
         source = workbench_qml.QML_SOURCE
         actions_block = source.split('objectName: "librarySourceActionsButton"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-        assert "libraryDelegate.current && libraryTree.activeFocus" in actions_block
+        assert "libraryDelegate.current && libraryTree.activeFocus" not in actions_block
+        assert "sourceRowHover.hovered" in actions_block
+        assert "activeFocus" in actions_block
 
     def test_enter_space_on_action_opens_flow(self, qml_engine):
         engine, window = qml_engine
@@ -1083,16 +1090,18 @@ def test_can_remove_source_io_free(qml_engine, runtime_composition):
 
 
 # ============================================================
-# Regression test for Finding 2: Keyboard-current shows actions
+# Regression test for Finding 2 / #1248 reopen: idle selection ≠ actions
 # ============================================================
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
-def test_keyboard_current_shows_source_actions(qml_engine):
-    """Keyboard-current tree row must show Source Action."""
+def test_keyboard_current_does_not_force_source_actions(qml_engine):
+    """Tree/row current+focus alone must not permanently show Source Action."""
     from src import workbench_qml
     source = workbench_qml.QML_SOURCE
     actions_block = source.split('objectName: "librarySourceActionsButton"', 1)[1].split('objectName: "libraryContentHost"', 1)[0]
-    assert "libraryDelegate.current && libraryTree.activeFocus" in actions_block
+    assert "libraryDelegate.current && libraryTree.activeFocus" not in actions_block
+    assert "sourceRowHover.hovered" in actions_block
+    assert "activeFocus" in actions_block
 
 
 # ============================================================
