@@ -69,6 +69,9 @@ set(SAMPLEBRAIN_AUDIO_SOURCES
     src/metrics.cpp
     src/synthetic.cpp
 )
+if(WIN32)
+    list(APPEND SAMPLEBRAIN_AUDIO_SOURCES src/asio_host.cpp)
+endif()
 
 # Python loads this target through ctypes, so it must be a shared library.
 add_library(samplebrain_audio SHARED ${SAMPLEBRAIN_AUDIO_SOURCES})
@@ -91,12 +94,25 @@ target_compile_definitions(samplebrain_audio PRIVATE
 )
 
 target_link_libraries(samplebrain_audio PRIVATE ${MINIAUDIO_SYSTEM_LIBS})
+if(WIN32)
+    # Vendor ASIO (#1350): CoCreateInstance / CLSIDFromString against manufacturer drivers.
+    target_link_libraries(samplebrain_audio PRIVATE ole32 uuid)
+endif()
 
 # Hosted CI runners do not provide a dependable physical duplex audio device.
 # Compile the same core a second time for native CTest with miniaudio's null
 # backend only. This keeps production runtime behavior on the real platform
 # backend while making transport/voice/recording logic deterministic headlessly.
-add_library(samplebrain_audio_test_backend STATIC ${SAMPLEBRAIN_AUDIO_SOURCES})
+# Test backend intentionally omits asio_host.cpp (SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND).
+set(SAMPLEBRAIN_AUDIO_TEST_SOURCES
+    src/engine.cpp
+    src/voice.cpp
+    src/keylock_voice.cpp
+    src/ringbuffer.cpp
+    src/metrics.cpp
+    src/synthetic.cpp
+)
+add_library(samplebrain_audio_test_backend STATIC ${SAMPLEBRAIN_AUDIO_TEST_SOURCES})
 target_compile_definitions(samplebrain_audio_test_backend PRIVATE
     SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND=1
     -DSB_GIT_SHA="${SB_GIT_SHA}"

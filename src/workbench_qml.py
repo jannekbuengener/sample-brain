@@ -1536,39 +1536,72 @@ class Screen1QmlInteractionAdapter:
         return self._waveform_motion_mode
 
     def list_audio_output_devices(self) -> list[dict[str, object]]:
-        """Return playback devices for Display Preferences (#1209).
+        """Return playback devices for Display Preferences (#1209/#1356).
 
-        Always prefixes a System default entry (empty id). Enumeration failures
-        degrade to that single entry so preferences stay usable.
+        Always prefixes a System default entry (empty id) labeled with the live
+        OS default device name when known. If a preferred id is persisted but
+        missing from enumeration, it is appended as unavailable so the UI cannot
+        silently claim System default while that preference remains active.
         """
-        devices: list[dict[str, object]] = [
-            {
-                "id": "",
-                "name": "System default",
-                "is_default": True,
-            }
-        ]
+        from .audio_device_authority import build_output_device_choices
+        from .workbench_audio_output import (
+            AUDIO_SYSTEM_VENDOR_ASIO,
+            load_workbench_audio_output_settings,
+        )
+
+        settings = load_workbench_audio_output_settings()
+        preferred_id = str(settings.preferred_output_device_id or "")
+        preferred_name = str(settings.preferred_output_device_name or "")
+        if str(settings.audio_system or "") == AUDIO_SYSTEM_VENDOR_ASIO:
+            from .asio_driver_enumeration import enumerate_vendor_asio_drivers
+
+            drivers = enumerate_vendor_asio_drivers()
+            choices: list[dict[str, object]] = [
+                {
+                    "id": "",
+                    "name": "Select ASIO driver",
+                    "is_default": True,
+                }
+            ]
+            seen = {""}
+            for item in drivers:
+                driver_id = str(item.get("id") or "")
+                if not driver_id or driver_id in seen:
+                    continue
+                choices.append(
+                    {
+                        "id": driver_id,
+                        "name": str(item.get("name") or driver_id),
+                        "is_default": False,
+                    }
+                )
+                seen.add(driver_id)
+            if preferred_id and preferred_id not in seen:
+                label = preferred_name or "Selected ASIO driver"
+                choices.append(
+                    {
+                        "id": preferred_id,
+                        "name": f"{label} (unavailable)",
+                        "is_default": False,
+                        "unavailable": True,
+                    }
+                )
+            return choices
+        enumerated: list[dict[str, object]] = []
         try:
             from . import native_audio
 
-            if not native_audio.is_available():
-                return devices
-            enumerated = native_audio.NativeAudioEngine.enumerate_devices(False)
+            if native_audio.is_available():
+                enumerated = list(
+                    native_audio.NativeAudioEngine.enumerate_devices(False) or []
+                )
         except Exception:
-            return devices
-        for item in enumerated or []:
-            device_id = str(item.get("id_hex") or "")
-            name = str(item.get("name") or "").strip() or "Unnamed device"
-            if len(device_id) != 512:
-                continue
-            devices.append(
-                {
-                    "id": device_id,
-                    "name": name,
-                    "is_default": bool(item.get("is_default")),
-                }
-            )
-        return devices
+            enumerated = []
+        return build_output_device_choices(
+            enumerated,
+            preferred_id=preferred_id,
+            preferred_name=preferred_name,
+        )
 
     def preferred_audio_output_device_id(self) -> str:
         from .workbench_audio_output import load_workbench_audio_output_settings
@@ -1577,14 +1610,31 @@ class Screen1QmlInteractionAdapter:
             load_workbench_audio_output_settings().preferred_output_device_id or ""
         )
 
+    def preferred_audio_output_device_index(
+        self,
+        devices: list[dict[str, object]] | None = None,
+    ) -> int:
+        """Combo index for the persisted preference; never lies as System default."""
+        from .audio_device_authority import preferred_device_index
+
+        choices = devices if devices is not None else self.list_audio_output_devices()
+        return preferred_device_index(choices, self.preferred_audio_output_device_id())
+
     def preferred_audio_output_device_name(self) -> str:
         from .workbench_audio_output import load_workbench_audio_output_settings
 
         settings = load_workbench_audio_output_settings()
         device_id = str(settings.preferred_output_device_id or "")
+        devices = self.list_audio_output_devices()
         if not device_id:
-            return "System default"
+            return str(devices[0].get("name") or "System default") if devices else "System default"
         name = str(settings.preferred_output_device_name or "").strip()
+        for item in devices:
+            if str(item.get("id") or "") == device_id:
+                # Persisted name stays clean; unavailable is a list-only marker.
+                if item.get("unavailable") is True:
+                    return name or "Selected device"
+                return str(item.get("name") or name or "Selected device")
         return name or "Selected device"
 
     def set_preferred_audio_output_device(
@@ -1597,12 +1647,19 @@ class Screen1QmlInteractionAdapter:
         """Persist preferred render device and reopen owned native engine (#1209)."""
         from .workbench_audio_output import (
             WorkbenchAudioOutputSettings,
+            load_workbench_audio_output_settings,
             save_workbench_audio_output_settings,
         )
 
         normalized_id = str(device_id or "").strip()
         normalized_name = str(device_name or "").strip()
-        if normalized_id and len(normalized_id) != 512:
+        current = load_workbench_audio_output_settings()
+        # WASAPI device ids are native 512-hex; ASIO driver ids are CLSID/name tokens.
+        if (
+            current.audio_system != "vendor_asio"
+            and normalized_id
+            and len(normalized_id) != 512
+        ):
             return self.preferred_audio_output_device_id()
         if not normalized_id:
             normalized_name = ""
@@ -1610,6 +1667,9 @@ class Screen1QmlInteractionAdapter:
             WorkbenchAudioOutputSettings(
                 preferred_output_device_id=normalized_id,
                 preferred_output_device_name=normalized_name,
+                audio_system=current.audio_system,
+                sample_rate=current.sample_rate,
+                buffer_frames=current.buffer_frames,
             )
         )
         if not saved:
@@ -1630,6 +1690,286 @@ class Screen1QmlInteractionAdapter:
             except Exception:
                 pass
         return normalized_id
+
+    def audio_system(self) -> str:
+        from .workbench_audio_output import (
+            AUDIO_SYSTEM_SAMPLE_BRAIN_AUDIO,
+            load_workbench_audio_output_settings,
+        )
+
+        return str(
+            load_workbench_audio_output_settings().audio_system
+            or AUDIO_SYSTEM_SAMPLE_BRAIN_AUDIO
+        )
+
+    def audio_system_labels(self) -> list[str]:
+        """Visible audio-system choices. Vendor ASIO persists as intent (#1350)."""
+        return ["Sample Brain Audio", "Vendor ASIO"]
+
+    def audio_system_index(self) -> int:
+        return 0 if self.audio_system() != "vendor_asio" else 1
+
+    def set_audio_system_by_index(
+        self,
+        index: int,
+        *,
+        transport: object | None = None,
+    ) -> str:
+        from .workbench_audio_output import (
+            AUDIO_SYSTEM_SAMPLE_BRAIN_AUDIO,
+            AUDIO_SYSTEM_VENDOR_ASIO,
+            WorkbenchAudioOutputSettings,
+            load_workbench_audio_output_settings,
+            save_workbench_audio_output_settings,
+        )
+
+        # Persist Vendor ASIO intent (#1350). Transport fail-closes without a
+        # CLSID; do not carry incompatible WASAPI hex ids into ASIO mode.
+        system = AUDIO_SYSTEM_SAMPLE_BRAIN_AUDIO
+        if int(index) == 1:
+            system = AUDIO_SYSTEM_VENDOR_ASIO
+        current = load_workbench_audio_output_settings()
+        preferred_id = str(current.preferred_output_device_id or "")
+        preferred_name = str(current.preferred_output_device_name or "")
+        if system == AUDIO_SYSTEM_VENDOR_ASIO:
+            token = preferred_id.strip()
+            if not (token.startswith("{") and token.endswith("}") and len(token) >= 38):
+                preferred_id = ""
+                preferred_name = ""
+        elif preferred_id.startswith("{") and preferred_id.endswith("}"):
+            # Drop ASIO CLSID when returning to Sample Brain Audio / WASAPI.
+            preferred_id = ""
+            preferred_name = ""
+        save_workbench_audio_output_settings(
+            WorkbenchAudioOutputSettings(
+                preferred_output_device_id=preferred_id,
+                preferred_output_device_name=preferred_name,
+                audio_system=system,
+                sample_rate=current.sample_rate,
+                buffer_frames=current.buffer_frames,
+            )
+        )
+        engine_transport = transport or getattr(self, "_session_transport", None)
+        reopen = getattr(engine_transport, "reopen_native_output_device", None)
+        if callable(reopen):
+            try:
+                self.quiet_audition()
+            except Exception:
+                pass
+            try:
+                reopen(force=True)
+            except TypeError:
+                try:
+                    reopen()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return self.audio_system()
+
+    def preferred_sample_rate(self) -> int:
+        from .workbench_audio_output import (
+            DEFAULT_SAMPLE_RATE,
+            load_workbench_audio_output_settings,
+        )
+
+        return int(load_workbench_audio_output_settings().sample_rate or DEFAULT_SAMPLE_RATE)
+
+    def sample_rate_labels(self) -> list[str]:
+        from .workbench_audio_output import ALLOWED_SAMPLE_RATES
+
+        return [f"{rate} Hz" for rate in ALLOWED_SAMPLE_RATES]
+
+    def sample_rate_index(self) -> int:
+        from .workbench_audio_output import ALLOWED_SAMPLE_RATES
+
+        rate = self.preferred_sample_rate()
+        try:
+            return list(ALLOWED_SAMPLE_RATES).index(rate)
+        except ValueError:
+            return list(ALLOWED_SAMPLE_RATES).index(48000)
+
+    def set_sample_rate_by_index(
+        self,
+        index: int,
+        *,
+        transport: object | None = None,
+    ) -> int:
+        from .workbench_audio_output import (
+            ALLOWED_SAMPLE_RATES,
+            WorkbenchAudioOutputSettings,
+            load_workbench_audio_output_settings,
+            save_workbench_audio_output_settings,
+        )
+
+        rates = list(ALLOWED_SAMPLE_RATES)
+        try:
+            rate = rates[int(index)]
+        except (IndexError, TypeError, ValueError):
+            rate = 48000
+        current = load_workbench_audio_output_settings()
+        save_workbench_audio_output_settings(
+            WorkbenchAudioOutputSettings(
+                preferred_output_device_id=current.preferred_output_device_id,
+                preferred_output_device_name=current.preferred_output_device_name,
+                audio_system=current.audio_system,
+                sample_rate=rate,
+                buffer_frames=current.buffer_frames,
+            )
+        )
+        engine_transport = transport or getattr(self, "_session_transport", None)
+        reopen = getattr(engine_transport, "reopen_native_output_device", None)
+        if callable(reopen):
+            try:
+                self.quiet_audition()
+            except Exception:
+                pass
+            try:
+                reopen(force=True)
+            except TypeError:
+                try:
+                    reopen()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return rate
+
+    def preferred_buffer_frames(self) -> int:
+        from .workbench_audio_output import (
+            DEFAULT_BUFFER_FRAMES,
+            load_workbench_audio_output_settings,
+        )
+
+        return int(
+            load_workbench_audio_output_settings().buffer_frames or DEFAULT_BUFFER_FRAMES
+        )
+
+    def buffer_size_labels(self) -> list[str]:
+        from .workbench_audio_output import ALLOWED_BUFFER_FRAMES
+
+        return [f"{frames} samples" for frames in ALLOWED_BUFFER_FRAMES]
+
+    def buffer_size_index(self) -> int:
+        from .workbench_audio_output import ALLOWED_BUFFER_FRAMES
+
+        frames = self.preferred_buffer_frames()
+        try:
+            return list(ALLOWED_BUFFER_FRAMES).index(frames)
+        except ValueError:
+            return list(ALLOWED_BUFFER_FRAMES).index(256)
+
+    def set_buffer_size_by_index(
+        self,
+        index: int,
+        *,
+        transport: object | None = None,
+    ) -> int:
+        from .workbench_audio_output import (
+            ALLOWED_BUFFER_FRAMES,
+            WorkbenchAudioOutputSettings,
+            load_workbench_audio_output_settings,
+            save_workbench_audio_output_settings,
+        )
+
+        choices = list(ALLOWED_BUFFER_FRAMES)
+        try:
+            frames = choices[int(index)]
+        except (IndexError, TypeError, ValueError):
+            frames = 256
+        current = load_workbench_audio_output_settings()
+        save_workbench_audio_output_settings(
+            WorkbenchAudioOutputSettings(
+                preferred_output_device_id=current.preferred_output_device_id,
+                preferred_output_device_name=current.preferred_output_device_name,
+                audio_system=current.audio_system,
+                sample_rate=current.sample_rate,
+                buffer_frames=frames,
+            )
+        )
+        engine_transport = transport or getattr(self, "_session_transport", None)
+        reopen = getattr(engine_transport, "reopen_native_output_device", None)
+        if callable(reopen):
+            try:
+                self.quiet_audition()
+            except Exception:
+                pass
+            try:
+                reopen(force=True)
+            except TypeError:
+                try:
+                    reopen()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return frames
+
+    def audio_connection_status_text(self) -> str:
+        """Honest connection status for preferences (#1348/#1349/#1351)."""
+        transport = getattr(self, "_session_transport", None)
+        if transport is None:
+            return "Audio unavailable"
+        reconcile = getattr(transport, "reconcile_audio_device_health", None)
+        if callable(reconcile):
+            try:
+                reconcile()
+            except Exception:
+                pass
+        phase_getter = getattr(transport, "audio_switch_phase", None)
+        if callable(phase_getter):
+            try:
+                phase = str(phase_getter() or "")
+            except Exception:
+                phase = ""
+            if phase == "switching":
+                return "Switching output…"
+        evidence = None
+        getter = getattr(transport, "audio_routing_evidence", None)
+        if callable(getter):
+            try:
+                evidence = getter()
+            except Exception:
+                evidence = None
+        if not isinstance(evidence, dict):
+            return "Audio unavailable"
+        status = evidence.get("device_status")
+        if status in (1, 3) or evidence.get("switch_phase") == "unavailable":
+            if evidence.get("divergence") == "preferred_unavailable":
+                return "Unavailable — selected device missing"
+            if status == 1:
+                return "Unavailable — device lost"
+            return "Unavailable — recovering (no silent fallback)"
+        if evidence.get("audio_system") == "vendor_asio" and evidence.get(
+            "opened_backend"
+        ) not in {"asio", "vendor_asio"}:
+            return "Unavailable — Vendor ASIO backend not installed"
+        if evidence.get("divergence") == "preferred_unavailable":
+            return "Unavailable — selected device missing"
+        if evidence.get("divergence") == "opened_mismatch":
+            return "Routing error — opened device mismatch"
+        if not evidence.get("engine_running"):
+            if evidence.get("requested_device_id") or evidence.get("requested_device"):
+                return "Unavailable — engine not running"
+            return "Audio unavailable"
+        if evidence.get("ui_matches_opened"):
+            return "Connected"
+        return "Recovering"
+
+    def refresh_audio_output_devices(self) -> None:
+        """Rescan playback endpoints and explicitly retry preferred device (#1348/#1351)."""
+        transport = getattr(self, "_session_transport", None)
+        retry = getattr(transport, "retry_preferred_audio_output", None)
+        if callable(retry):
+            try:
+                self.quiet_audition()
+            except Exception:
+                pass
+            try:
+                retry()
+            except Exception:
+                pass
+        return None
 
     @property
     def gesture_rack_apply_enabled(self) -> bool:
@@ -3760,7 +4100,30 @@ ApplicationWindow {
                         Label { text: "Density"; color: theme.textSecondary; font.pixelSize: 11 }
                         Label { text: "Compact"; color: theme.textPrimary; font.pixelSize: 13 }
                         Label {
-                            text: "Audition output"
+                            text: "AUDIO"
+                            color: theme.textPrimary
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+                        Label {
+                            text: "Audio System"
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                        ComboBox {
+                            id: audioSystemCombo
+                            objectName: "audioSystemCombo"
+                            Layout.fillWidth: true
+                            model: window.interaction.audioSystemLabels
+                            Component.onCompleted: currentIndex = window.interaction.audioSystemIndex
+                            onActivated: function(index) {
+                                window.interaction.setAudioSystemByIndex(index)
+                                currentIndex = window.interaction.audioSystemIndex
+                            }
+                            Accessible.name: "Audio system"
+                        }
+                        Label {
+                            text: "Output Device"
                             color: theme.textSecondary
                             font.pixelSize: 11
                         }
@@ -3769,11 +4132,81 @@ ApplicationWindow {
                             objectName: "audioOutputDeviceCombo"
                             Layout.fillWidth: true
                             model: window.interaction.audioOutputDeviceNames
-                            currentIndex: window.interaction.preferredAudioOutputDeviceIndex
+                            // Keep ComboBox display aligned with persisted preference.
+                            // A one-shot currentIndex binding breaks when the control
+                            // writes currentIndex on model changes (#1356 UI lie).
+                            Component.onCompleted: resyncAudioOutputCombo()
+                            onModelChanged: resyncAudioOutputCombo()
+                            function resyncAudioOutputCombo() {
+                                var idx = window.interaction.preferredAudioOutputDeviceIndex
+                                if (audioOutputDeviceCombo.currentIndex !== idx)
+                                    audioOutputDeviceCombo.currentIndex = idx
+                            }
+                            Connections {
+                                target: window.interaction
+                                function onStateChanged() { audioOutputDeviceCombo.resyncAudioOutputCombo() }
+                            }
                             onActivated: function(index) {
                                 window.interaction.setPreferredAudioOutputDeviceByIndex(index)
                             }
                             Accessible.name: "Audition output device"
+                        }
+                        Button {
+                            id: audioOutputRescanButton
+                            objectName: "audioOutputRescanButton"
+                            Layout.fillWidth: true
+                            text: "Rescan devices"
+                            onClicked: window.interaction.rescanAudioOutputDevices()
+                            Accessible.name: "Rescan audio output devices"
+                        }
+                        Label {
+                            text: "Sample Rate"
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                        ComboBox {
+                            id: audioSampleRateCombo
+                            objectName: "audioSampleRateCombo"
+                            Layout.fillWidth: true
+                            model: window.interaction.sampleRateLabels
+                            Component.onCompleted: currentIndex = window.interaction.sampleRateIndex
+                            onActivated: function(index) {
+                                window.interaction.setSampleRateByIndex(index)
+                                currentIndex = window.interaction.sampleRateIndex
+                            }
+                            Accessible.name: "Audio sample rate"
+                        }
+                        Label {
+                            text: "Buffer Size"
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                        ComboBox {
+                            id: audioBufferSizeCombo
+                            objectName: "audioBufferSizeCombo"
+                            Layout.fillWidth: true
+                            model: window.interaction.bufferSizeLabels
+                            Component.onCompleted: currentIndex = window.interaction.bufferSizeIndex
+                            onActivated: function(index) {
+                                window.interaction.setBufferSizeByIndex(index)
+                                currentIndex = window.interaction.bufferSizeIndex
+                            }
+                            Accessible.name: "Audio buffer size"
+                        }
+                        Label {
+                            text: "Status"
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                        Label {
+                            id: audioConnectionStatusLabel
+                            objectName: "audioConnectionStatusLabel"
+                            Layout.fillWidth: true
+                            text: window.interaction.audioConnectionStatus
+                            color: theme.textPrimary
+                            font.pixelSize: 13
+                            wrapMode: Text.WordWrap
+                            Accessible.name: "Audio connection status"
                         }
                         Label { text: "Functional"; color: theme.textSecondary; font.pixelSize: 11 }
                         Button {
@@ -8178,12 +8611,57 @@ def _qml_interaction_bridge(
 
         @Property(int, notify=state_changed)
         def preferredAudioOutputDeviceIndex(self) -> int:
-            preferred = adapter.preferred_audio_output_device_id()
-            devices = adapter.list_audio_output_devices()
-            for index, item in enumerate(devices):
-                if str(item.get("id") or "") == preferred:
-                    return int(index)
-            return 0
+            return int(adapter.preferred_audio_output_device_index())
+
+        @Property(list, notify=state_changed)
+        def audioSystemLabels(self) -> list:
+            return list(adapter.audio_system_labels())
+
+        @Property(int, notify=state_changed)
+        def audioSystemIndex(self) -> int:
+            return int(adapter.audio_system_index())
+
+        @Slot(int)
+        def setAudioSystemByIndex(self, index: int) -> None:
+            adapter.set_audio_system_by_index(int(index))
+            self._refresh()
+
+        @Property(list, notify=state_changed)
+        def sampleRateLabels(self) -> list:
+            return list(adapter.sample_rate_labels())
+
+        @Property(int, notify=state_changed)
+        def sampleRateIndex(self) -> int:
+            return int(adapter.sample_rate_index())
+
+        @Slot(int)
+        def setSampleRateByIndex(self, index: int) -> None:
+            transport = getattr(adapter, "_session_transport", None)
+            adapter.set_sample_rate_by_index(int(index), transport=transport)
+            self._refresh()
+
+        @Property(list, notify=state_changed)
+        def bufferSizeLabels(self) -> list:
+            return list(adapter.buffer_size_labels())
+
+        @Property(int, notify=state_changed)
+        def bufferSizeIndex(self) -> int:
+            return int(adapter.buffer_size_index())
+
+        @Slot(int)
+        def setBufferSizeByIndex(self, index: int) -> None:
+            transport = getattr(adapter, "_session_transport", None)
+            adapter.set_buffer_size_by_index(int(index), transport=transport)
+            self._refresh()
+
+        @Property(str, notify=state_changed)
+        def audioConnectionStatus(self) -> str:
+            return str(adapter.audio_connection_status_text())
+
+        @Slot()
+        def rescanAudioOutputDevices(self) -> None:
+            adapter.refresh_audio_output_devices()
+            self._refresh()
 
         @Slot(int)
         def setPreferredAudioOutputDeviceByIndex(self, index: int) -> None:
@@ -8192,10 +8670,19 @@ def _qml_interaction_bridge(
                 selected = devices[int(index)]
             except (IndexError, TypeError, ValueError):
                 selected = devices[0] if devices else {"id": "", "name": "System default"}
+            # Unavailable sticky entries are display-only; selecting them must not
+            # re-arm a dead id. Fall back to System default (OS device).
+            if selected.get("unavailable") is True:
+                selected = devices[0] if devices else {"id": "", "name": "System default"}
             transport = getattr(adapter, "_session_transport", None)
+            # Persist the friendly label without the "(unavailable)" suffix noise
+            # when the live enumerated name is present.
+            raw_name = str(selected.get("name") or "")
+            if raw_name.endswith(" (unavailable)"):
+                raw_name = raw_name[: -len(" (unavailable)")]
             adapter.set_preferred_audio_output_device(
                 str(selected.get("id") or ""),
-                str(selected.get("name") or ""),
+                raw_name,
                 transport=transport,
             )
             self._refresh()

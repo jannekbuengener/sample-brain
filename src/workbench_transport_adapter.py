@@ -26,6 +26,31 @@ warn = logging.getLogger(__name__.partition(".")[2]).warning
 
 DEFAULT_TEMPO_BPM = 132.0
 
+# Import WASAPI meter deps before any native engine open can CoInitialize the
+# thread apartment (#1352). Late imports after ma_device_init can raise
+# RPC_E_CHANGED_MODE and would otherwise disable measurable_output.
+_METER_IMPORT_ERROR: str | None
+try:
+    from ctypes import POINTER as _METER_POINTER
+    from ctypes import cast as _METER_CAST
+
+    from comtypes import CLSCTX_ALL as _METER_CLSCTX_ALL
+    from comtypes import CoCreateInstance as _METER_CoCreateInstance
+    from pycaw.api.endpointvolume import IAudioMeterInformation as _METER_Iface
+    from pycaw.api.mmdeviceapi import IMMDeviceEnumerator as _METER_IMMDevEnum
+    from pycaw.constants import CLSID_MMDeviceEnumerator as _METER_CLSID
+
+    _METER_IMPORT_ERROR = None
+except Exception as _meter_exc:  # pragma: no cover - optional host dependency
+    _METER_IMPORT_ERROR = str(_meter_exc)
+    _METER_POINTER = None  # type: ignore[assignment]
+    _METER_CAST = None  # type: ignore[assignment]
+    _METER_CLSCTX_ALL = None  # type: ignore[assignment]
+    _METER_CoCreateInstance = None  # type: ignore[assignment]
+    _METER_Iface = None  # type: ignore[assignment]
+    _METER_IMMDevEnum = None  # type: ignore[assignment]
+    _METER_CLSID = None  # type: ignore[assignment]
+
 
 def _clamp_bpm(value: float) -> float:
     """Return a positive finite BPM suitable for the transport control."""
@@ -84,6 +109,10 @@ class WorkbenchTransportAdapter:
         # (#1209). First-ever start must NOT wipe a pre-play engine_frame.
         self._rebase_engine_clock_on_next_start = False
         self._preferred_output_device_applied: str | None = None
+        # #1349: coarse non-RT switch phase for honest UI status projection.
+        self._audio_switch_phase: str = "idle"
+        # #1351: after device loss, block ensure_engine_running until explicit retry.
+        self._audio_output_requires_explicit_retry: bool = False
 
         if native_engine is None:
             self._native_available = _native_audio.is_available()
@@ -150,26 +179,71 @@ class WorkbenchTransportAdapter:
             self._pending_tempo = None
             self._pending_tempo_frame = None
 
-    def _preferred_output_device_id_unlocked(self) -> str | None:
-        """Return persisted preferred render device id, or None for OS default."""
+    def _load_audio_output_settings_unlocked(self):
+        """Best-effort load of persisted audio output preferences."""
         try:
             from .workbench_audio_output import load_workbench_audio_output_settings
 
-            settings = load_workbench_audio_output_settings()
+            return load_workbench_audio_output_settings()
         except Exception as exc:  # pragma: no cover - preference IO is best-effort
             warn("Audio output preference load failed: %s", exc)
+            return None
+
+    def _preferred_output_device_id_unlocked(self) -> str | None:
+        """Return persisted preferred render device id, or None for OS default."""
+        settings = self._load_audio_output_settings_unlocked()
+        if settings is None:
             return None
         device_id = str(getattr(settings, "preferred_output_device_id", "") or "").strip()
         if not device_id:
             return None
-        # Explicit selection must be a complete native id (512 hex chars).
-        if len(device_id) != 512:
+        audio_system = str(getattr(settings, "audio_system", "") or "sample_brain_audio")
+        # WASAPI ids are 512-hex; ASIO driver tokens are CLSID/name strings (#1350).
+        if audio_system != "vendor_asio" and len(device_id) != 512:
             warn(
                 "Ignoring invalid preferred_output_device_id length=%s",
                 len(device_id),
             )
             return None
         return device_id
+
+    def _engine_open_config_unlocked(self, output_device: str | None):
+        """Build EngineConfig from persisted Sample Brain Audio preferences (#1348)."""
+        settings = self._load_audio_output_settings_unlocked()
+        sample_rate = int(self._sample_rate)
+        buffer_frames = 256
+        if settings is not None:
+            try:
+                sample_rate = int(getattr(settings, "sample_rate", sample_rate) or sample_rate)
+            except (TypeError, ValueError):
+                sample_rate = int(self._sample_rate)
+            try:
+                buffer_frames = int(getattr(settings, "buffer_frames", buffer_frames) or buffer_frames)
+            except (TypeError, ValueError):
+                buffer_frames = 256
+            self._sample_rate = sample_rate
+        return _native_audio.EngineConfig(
+            sample_rate=sample_rate,
+            buffer_frames=buffer_frames,
+            output_device=output_device,
+            # Audition/transport clock is playback-only. Opening duplex
+            # capture-by-default can interfere with other Windows sessions.
+            input_channels=0,
+        )
+
+    def _audio_system_unlocked(self) -> str:
+        settings = self._load_audio_output_settings_unlocked()
+        if settings is None:
+            return "sample_brain_audio"
+        return str(getattr(settings, "audio_system", "") or "sample_brain_audio").strip() or (
+            "sample_brain_audio"
+        )
+
+    def _vendor_asio_backend_available(self) -> bool:
+        """True only when NativeAudioEngine exposes a real vendor-ASIO path (#1350)."""
+        # Product rule: no ASIO4ALL / no second engine. Native COM IASIO host
+        # opens manufacturer drivers under the same NativeAudioEngine authority.
+        return bool(getattr(_native_audio, "VENDOR_ASIO_BACKEND_AVAILABLE", False))
 
     def _ensure_owned_native_open_unlocked(self) -> None:
         if (
@@ -179,27 +253,181 @@ class WorkbenchTransportAdapter:
             or self._native_opened
         ):
             return
-        output_device = self._preferred_output_device_id_unlocked()
-        self._native_engine.open(
-            _native_audio.EngineConfig(
-                sample_rate=self._sample_rate,
-                output_device=output_device,
-                # Audition/transport clock is playback-only. Opening duplex
-                # capture-by-default can interfere with other Windows sessions.
-                input_channels=0,
+        audio_system = self._audio_system_unlocked()
+        if audio_system == "vendor_asio" and not self._vendor_asio_backend_available():
+            # Never silently open WASAPI while ASIO is the persisted product choice.
+            warn(
+                "Vendor ASIO selected but native ASIO backend is unavailable; "
+                "fail-closed (no WASAPI substitute)"
             )
-        )
+            self._native_opened = False
+            self._preferred_output_device_applied = None
+            self._audio_switch_phase = "unavailable"
+            self._audio_output_requires_explicit_retry = True
+            return
+        output_device = self._preferred_output_device_id_unlocked()
+        if audio_system == "vendor_asio":
+            # Require a CLSID-shaped manufacturer token. Empty preference or a
+            # leftover WASAPI hex id must not open WASAPI under Vendor ASIO.
+            token = str(output_device or "").strip()
+            if not (token.startswith("{") and token.endswith("}") and len(token) >= 38):
+                warn(
+                    "Vendor ASIO selected without a valid driver CLSID; "
+                    "fail-closed (no WASAPI substitute)"
+                )
+                self._native_opened = False
+                self._preferred_output_device_applied = None
+                self._audio_switch_phase = "unavailable"
+                self._audio_output_requires_explicit_retry = True
+                return
+        # Prefer failing closed over silently opening a different physical device
+        # when the configured endpoint is missing (#1345/#1351).
+        try:
+            config = self._engine_open_config_unlocked(output_device)
+            self._native_engine.open(config)
+        except Exception as exc:
+            warn(
+                "Native audio open refused for preferred device (no silent fallback): %s",
+                exc,
+            )
+            self._native_opened = False
+            self._preferred_output_device_applied = None
+            return
+        # Keep SessionTransport / PCM consumers on the opened engine rate.
+        opened_rate = int(getattr(config, "sample_rate", self._sample_rate) or self._sample_rate)
+        if hasattr(self._native_engine, "snapshot"):
+            try:
+                snap = self._native_engine.snapshot()
+                opened_rate = int(getattr(snap, "sample_rate", opened_rate) or opened_rate)
+            except Exception:
+                pass
+        if opened_rate > 0:
+            self._sample_rate = opened_rate
+            self._transport.tempo_map.sample_rate = opened_rate
         self._native_opened = True
         self._last_native_engine_frame = 0
         self._preferred_output_device_applied = output_device
 
-    def reopen_native_output_device(self) -> bool:
+    def audio_switch_phase(self) -> str:
+        """Return idle|switching|ready|unavailable for preferences status (#1349)."""
+        with self._lock:
+            return str(getattr(self, "_audio_switch_phase", "idle") or "idle")
+
+    def _fail_closed_device_loss_unlocked(self, reason: str) -> None:
+        """Tear down owned engine without opening any other physical device (#1351)."""
+        warn("Audio device fail-closed (%s); no silent physical fallback", reason)
+        engine = self._native_engine
+        try:
+            if self._native_started and engine is not None and hasattr(engine, "stop"):
+                engine.stop()
+        except Exception as exc:  # pragma: no cover - device specific
+            warn("Native stop after device loss failed: %s", exc)
+        try:
+            if self._native_opened and engine is not None and hasattr(engine, "close"):
+                engine.close()
+        except Exception as exc:  # pragma: no cover - device specific
+            warn("Native close after device loss failed: %s", exc)
+        self._native_opened = False
+        self._native_started = False
+        self._last_native_engine_frame = None
+        self._preferred_output_device_applied = None
+        self._voice_source_bpms.clear()
+        self._voice_sync_states.clear()
+        self._audio_switch_phase = "unavailable"
+        self._audio_output_requires_explicit_retry = True
+        # Recreate a clean handle so a later explicit retry can open the
+        # persisted preference — never an implicit alternate endpoint.
+        if self._native_owned and self._native_available:
+            try:
+                self._native_engine = _native_audio.NativeAudioEngine()
+            except Exception as exc:  # pragma: no cover - machine specific
+                warn("Native engine recreate after device loss failed: %s", exc)
+                self._native_engine = None
+                self._native_available = False
+
+    def reconcile_audio_device_health(self) -> str:
+        """Poll native device_status / route truth and fail-closed on loss (#1351).
+
+        Returns the resulting switch phase. Never silently opens another device.
+        """
+        with self._lock:
+            if self._audio_switch_phase == "switching":
+                return "switching"
+            engine = self._native_engine
+            status = 0
+            if (
+                engine is not None
+                and self._native_opened
+                and hasattr(engine, "snapshot")
+            ):
+                try:
+                    status = int(getattr(engine.snapshot(), "device_status", 0) or 0)
+                except Exception as exc:  # pragma: no cover - device specific
+                    warn("Device health snapshot failed: %s", exc)
+                    status = 3  # SB_DEVICE_FAILED
+            # SB_DEVICE_LOST=1, RECOVERING=2, FAILED=3 — treat auto-recover as
+            # untrusted (miniaudio may have rerouted to a different endpoint).
+            if status in (1, 2, 3):
+                self._fail_closed_device_loss_unlocked(f"device_status={status}")
+                return self._audio_switch_phase
+
+            preferred = self._preferred_output_device_id_unlocked()
+            if preferred and self._native_opened and engine is not None:
+                opened = getattr(engine, "opened_output_device_id", None)
+                if opened and opened != preferred:
+                    self._fail_closed_device_loss_unlocked("opened_mismatch")
+                    return self._audio_switch_phase
+                # Preferred disappeared from live enumeration while still persisted.
+                # Vendor ASIO identities are CLSIDs from the ASIO registry, not
+                # WASAPI endpoint hex ids (#1350).
+                audio_system = self._audio_system_unlocked()
+                try:
+                    if audio_system == "vendor_asio":
+                        from .asio_driver_enumeration import enumerate_vendor_asio_drivers
+
+                        enumerated = list(enumerate_vendor_asio_drivers() or [])
+                        live_ids = {
+                            str(item.get("clsid") or item.get("id") or "")
+                            for item in enumerated
+                        }
+                    else:
+                        enumerated = list(
+                            _native_audio.NativeAudioEngine.enumerate_devices(False)
+                            or []
+                        )
+                        live_ids = {
+                            str(item.get("id_hex") or item.get("id") or "")
+                            for item in enumerated
+                        }
+                except Exception:
+                    live_ids = set()
+                if preferred not in live_ids:
+                    self._fail_closed_device_loss_unlocked("preferred_unavailable")
+                    return self._audio_switch_phase
+
+            if self._native_started and self._native_opened:
+                self._audio_switch_phase = "ready"
+            elif self._audio_switch_phase != "unavailable":
+                self._audio_switch_phase = (
+                    "ready" if self._native_started else self._audio_switch_phase
+                )
+            return self._audio_switch_phase
+
+    def retry_preferred_audio_output(self) -> bool:
+        """Explicit recovery attempt: reopen persisted preference only (#1351)."""
+        with self._lock:
+            self._audio_output_requires_explicit_retry = False
+        return self.reopen_native_output_device(force=True)
+
+    def reopen_native_output_device(self, *, force: bool = False) -> bool:
         """Close/reopen owned native engine so a new preferred device takes effect.
 
-        Callers must release any active audition voice before reopen so ownership
-        cannot point at destroyed native voices. Musical ``session_frame`` is
-        preserved; ``engine_frame`` is rebased onto the replacement native clock
-        so ``schedule_voice_start`` stays in the new engine's present.
+        V1 transition (#1349): controlled stop → close → resolve → open → start →
+        verify. No musical auto-resume. Callers must release active audition
+        voices before reopen so ownership cannot point at destroyed native voices.
+
+        Pass ``force=True`` when sample-rate/buffer preferences change but the
+        device id stays the same (#1348).
         """
         with self._lock:
             if (
@@ -207,11 +435,15 @@ class WorkbenchTransportAdapter:
                 or self._native_engine is None
                 or not self._native_owned
             ):
+                self._audio_switch_phase = "unavailable"
                 return False
             desired = self._preferred_output_device_id_unlocked()
             applied = getattr(self, "_preferred_output_device_applied", None)
-            if self._native_opened and desired == applied:
+            if self._native_opened and desired == applied and not force:
+                self._audio_switch_phase = "ready" if self._native_started else "idle"
                 return True
+            self._audio_switch_phase = "switching"
+            self._audio_output_requires_explicit_retry = False
             # Drop voice registrations tied to the destroyed engine.
             self._voice_source_bpms.clear()
             self._voice_sync_states.clear()
@@ -237,8 +469,12 @@ class WorkbenchTransportAdapter:
                 warn("Native audio engine recreate failed: %s", exc)
                 self._native_engine = None
                 self._native_available = False
+                self._audio_switch_phase = "unavailable"
+                self._audio_output_requires_explicit_retry = True
                 return False
             if not self.ensure_engine_running():
+                self._audio_switch_phase = "unavailable"
+                self._audio_output_requires_explicit_retry = True
                 return False
             # Rebase scheduling clock onto the replacement native epoch while
             # preserving musical session position.
@@ -253,6 +489,29 @@ class WorkbenchTransportAdapter:
                 native_frame = 0
             self._transport.engine_frame = native_frame
             self._last_native_engine_frame = native_frame
+            # Verify opened identity matches the resolved preference when explicit.
+            opened = None
+            if hasattr(self._native_engine, "opened_output_device_id"):
+                opened = getattr(self._native_engine, "opened_output_device_id")
+            if desired and opened and opened != desired:
+                warn(
+                    "Device switch opened mismatch (fail-closed): desired=%s opened=%s",
+                    desired[:32] if desired else desired,
+                    str(opened)[:32],
+                )
+                try:
+                    if self._native_started:
+                        self._native_engine.stop()
+                    if self._native_opened:
+                        self._native_engine.close()
+                except Exception:
+                    pass
+                self._native_opened = False
+                self._native_started = False
+                self._preferred_output_device_applied = None
+                self._audio_switch_phase = "unavailable"
+                return False
+            self._audio_switch_phase = "ready"
             return True
 
     def _rebase_transport_engine_frame_unlocked(self) -> None:
@@ -284,12 +543,20 @@ class WorkbenchTransportAdapter:
         Returns True if engine is available and running."""
         with self._lock:
             if not self._native_available or self._native_engine is None:
+                self._audio_switch_phase = "unavailable"
+                return False
+            if self._audio_output_requires_explicit_retry:
+                self._audio_switch_phase = "unavailable"
                 return False
             if self._native_owned:
                 self._ensure_owned_native_open_unlocked()
             if not self._native_opened:
+                if self._audio_switch_phase != "switching":
+                    self._audio_switch_phase = "unavailable"
                 return False
             if self._native_started:
+                if self._audio_switch_phase != "switching":
+                    self._audio_switch_phase = "ready"
                 return True
             # Start the engine callback without starting musical transport
             try:
@@ -299,9 +566,12 @@ class WorkbenchTransportAdapter:
                     # Native start after stop resets the device clock.
                     self._rebase_transport_engine_frame_unlocked()
                     self._rebase_engine_clock_on_next_start = False
+                if self._audio_switch_phase != "switching":
+                    self._audio_switch_phase = "ready"
                 return True
             except Exception as exc:  # pragma: no cover - machine specific
                 warn("Native audio engine start failed: %s", exc)
+                self._audio_switch_phase = "unavailable"
                 return False
 
     def _apply_native_rate_unlocked(self, voice_id: int, rate: float) -> None:
@@ -793,6 +1063,176 @@ class WorkbenchTransportAdapter:
     def get_native_engine(self):
         with self._lock:
             return self._native_engine
+
+    def audio_output_route(self):
+        """Return requested/resolved/opened route snapshot (#1346/#1356)."""
+        from .audio_device_authority import resolve_audio_output_route
+        from .workbench_audio_output import load_workbench_audio_output_settings
+
+        with self._lock:
+            settings = load_workbench_audio_output_settings()
+            preferred_id = str(settings.preferred_output_device_id or "")
+            preferred_name = str(settings.preferred_output_device_name or "")
+            settings_audio_system = str(
+                getattr(settings, "audio_system", "") or "sample_brain_audio"
+            ).strip() or "sample_brain_audio"
+            enumerated: list[dict] = []
+            try:
+                if settings_audio_system == "vendor_asio":
+                    from .asio_driver_enumeration import enumerate_vendor_asio_drivers
+
+                    enumerated = [
+                        {
+                            "id": str(item.get("clsid") or item.get("id") or ""),
+                            "id_hex": str(item.get("clsid") or item.get("id") or ""),
+                            "name": str(item.get("name") or ""),
+                            "is_default": False,
+                        }
+                        for item in (enumerate_vendor_asio_drivers() or [])
+                    ]
+                elif self._native_available:
+                    enumerated = list(
+                        _native_audio.NativeAudioEngine.enumerate_devices(False) or []
+                    )
+            except Exception as exc:  # pragma: no cover - machine specific
+                warn("Audio device enumeration for route snapshot failed: %s", exc)
+            opened = getattr(self, "_preferred_output_device_applied", None)
+            opened_name = ""
+            opened_backend = ""
+            engine = self._native_engine
+            if engine is not None and hasattr(engine, "opened_output_device_id"):
+                opened = getattr(engine, "opened_output_device_id")
+            if engine is not None and hasattr(engine, "opened_output_device_name"):
+                opened_name = str(getattr(engine, "opened_output_device_name") or "")
+            if engine is not None and hasattr(engine, "opened_backend"):
+                opened_backend = str(getattr(engine, "opened_backend") or "")
+            if not opened_backend:
+                opened_backend = (
+                    "wasapi"
+                    if settings_audio_system == "sample_brain_audio"
+                    else settings_audio_system
+                )
+            return resolve_audio_output_route(
+                preferred_id=preferred_id,
+                preferred_name=preferred_name,
+                enumerated=enumerated,
+                opened_device_id=opened,
+                opened_device_name=opened_name,
+                audio_system=settings_audio_system,
+                opened_backend=opened_backend,
+            )
+
+    def audio_routing_evidence(self) -> dict[str, object]:
+        """Agent-readable routing evidence for #1346/#1352 (no RT callback I/O)."""
+        # Health reconcile runs outside the evidence lock body via its own lock.
+        phase = self.reconcile_audio_device_health()
+        with self._lock:
+            route = self.audio_output_route()
+            evidence: dict[str, object] = route.as_dict()
+            # Canonical inspectable aliases from the #1345 contract.
+            evidence["requested_device"] = route.requested_device_id or route.requested_device_name
+            evidence["resolved_device"] = route.resolved_device_id or route.resolved_device_name
+            evidence["opened_device"] = route.opened_device_id or route.opened_device_name
+            evidence.update(
+                {
+                    "sample_rate": int(self._sample_rate),
+                    "buffer_size": None,
+                    "device_status": None,
+                    "engine_running": bool(self._native_started),
+                    "measurable_output": None,
+                    "switch_phase": str(phase or getattr(self, "_audio_switch_phase", "idle") or "idle"),
+                }
+            )
+            engine = self._native_engine
+            if engine is not None and hasattr(engine, "snapshot"):
+                try:
+                    snap = engine.snapshot()
+                    evidence["sample_rate"] = int(
+                        getattr(snap, "sample_rate", self._sample_rate) or self._sample_rate
+                    )
+                    evidence["buffer_size"] = int(getattr(snap, "buffer_frames", 0) or 0)
+                    evidence["device_status"] = int(getattr(snap, "device_status", 0) or 0)
+                    evidence["engine_running"] = bool(
+                        getattr(snap, "running", self._native_started)
+                    )
+                    evidence["engine_frame"] = int(getattr(snap, "engine_frame", 0) or 0)
+                    evidence["xrun_count"] = int(getattr(snap, "xrun_count", 0) or 0)
+                    evidence["underflow_count"] = int(
+                        getattr(snap, "underflow_count", 0) or 0
+                    )
+                    evidence["overflow_count"] = int(
+                        getattr(snap, "overflow_count", 0) or 0
+                    )
+                except Exception as exc:  # pragma: no cover - device specific
+                    warn("Audio routing evidence snapshot failed: %s", exc)
+            # #1352: non-RT, best-effort process-local WASAPI session peak on the
+            # opened endpoint. Never runs inside the audio callback.
+            evidence["measurable_output"] = self._measure_opened_output_peak_unlocked(
+                route.opened_device_id
+            )
+            return evidence
+
+    def _measure_opened_output_peak_unlocked(self, opened_device_id: str | None):
+        """Return endpoint peak for the opened device, or None.
+
+        Meter COM deps are imported at module load (before native open) to avoid
+        RPC_E_CHANGED_MODE. Endpoint meters are coarse (all sessions); PID-scoped
+        session meters remain an external agent verification tool (#1352).
+        """
+        device_id = str(opened_device_id or "").strip()
+        if not device_id:
+            return None
+        # Vendor ASIO bypasses the Windows audio engine; WASAPI endpoint meters
+        # cannot observe the stream. Prove callback progress instead (#1350/#1352).
+        if device_id.startswith("{") and device_id.endswith("}"):
+            if not self._native_started:
+                return {
+                    "peak": None,
+                    "sessions_active": 0,
+                    "source": "vendor_asio_engine_stopped",
+                    "engine_frame": 0,
+                }
+            engine = self._native_engine
+            frame = 0
+            try:
+                if engine is not None and hasattr(engine, "snapshot"):
+                    frame = int(getattr(engine.snapshot(), "engine_frame", 0) or 0)
+                elif engine is not None and hasattr(engine, "get_frame"):
+                    frame = int(engine.get_frame())
+            except Exception as exc:  # pragma: no cover - device specific
+                warn("vendor ASIO measurable_output frame probe failed: %s", exc)
+                frame = -1
+            return {
+                "peak": None,
+                "sessions_active": None,
+                "source": "vendor_asio_callback_frame",
+                "engine_frame": frame,
+                "callback_advancing": frame > 0,
+            }
+        if len(device_id) != 512:
+            return None
+        if not self._native_started:
+            return {"peak": 0.0, "sessions_active": 0, "source": "engine_stopped"}
+        if _METER_IMPORT_ERROR or _METER_CoCreateInstance is None or _METER_Iface is None:
+            return None
+        try:
+            wasapi_id = (
+                bytes.fromhex(device_id).decode("utf-16-le", errors="ignore").split("\x00")[0]
+            )
+            enumerator = _METER_CoCreateInstance(
+                _METER_CLSID, _METER_IMMDevEnum, _METER_CLSCTX_ALL
+            )
+            device = enumerator.GetDevice(wasapi_id)
+            iface = device.Activate(_METER_Iface._iid_, _METER_CLSCTX_ALL, None)
+            meter = _METER_CAST(iface, _METER_POINTER(_METER_Iface))
+            return {
+                "peak": float(meter.GetPeakValue()),
+                "sessions_active": None,
+                "source": "wasapi_endpoint_meter_coarse",
+            }
+        except Exception as exc:  # pragma: no cover - host/COM specific
+            warn("measurable_output probe failed: %s", exc)
+            return None
 
     def is_native_available(self) -> bool:
         with self._lock:

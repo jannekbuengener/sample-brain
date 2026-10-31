@@ -18,6 +18,10 @@ from typing import Optional, List, Tuple
 
 import numpy as np
 
+# #1350: default False; refreshed from native sb_vendor_asio_backend_available()
+# after the DLL loads (never ASIO4ALL / never a second playback engine).
+VENDOR_ASIO_BACKEND_AVAILABLE = False
+
 class SbDeviceInfo(ctypes.Structure):
     _fields_ = [
         ("name", ctypes.c_char * 256),
@@ -367,6 +371,22 @@ if _lib:
     _lib.sb_engine_stop.restype = sb_result_t
 
     _lib.sb_engine_close.argtypes = [sb_engine_t]
+    if hasattr(_lib, "sb_engine_get_opened_output_device"):
+        _lib.sb_engine_get_opened_output_device.argtypes = [
+            sb_engine_t,
+            ctypes.c_char_p,
+            ctypes.c_size_t,
+            ctypes.c_char_p,
+            ctypes.c_size_t,
+        ]
+        _lib.sb_engine_get_opened_output_device.restype = sb_result_t
+    if hasattr(_lib, "sb_engine_get_opened_backend"):
+        _lib.sb_engine_get_opened_backend.argtypes = [
+            sb_engine_t,
+            ctypes.c_char_p,
+            ctypes.c_size_t,
+        ]
+        _lib.sb_engine_get_opened_backend.restype = sb_result_t
     _lib.sb_engine_close.restype = sb_result_t
 
     _lib.sb_voice_create.argtypes = [sb_engine_t, ctypes.POINTER(SbVoiceConfig), ctypes.POINTER(sb_voice_id_t)]
@@ -423,6 +443,16 @@ if _lib:
         ctypes.POINTER(ctypes.c_int),
     ]
     _lib.sb_test_keylock_get_latency.restype = ctypes.c_int
+
+    if hasattr(_lib, "sb_vendor_asio_backend_available"):
+        _lib.sb_vendor_asio_backend_available.argtypes = []
+        _lib.sb_vendor_asio_backend_available.restype = ctypes.c_int
+        try:
+            globals()["VENDOR_ASIO_BACKEND_AVAILABLE"] = bool(
+                _lib.sb_vendor_asio_backend_available()
+            )
+        except Exception:
+            globals()["VENDOR_ASIO_BACKEND_AVAILABLE"] = False
 
 
 def _check_result(result: sb_result_t, operation: str) -> None:
@@ -561,6 +591,9 @@ class NativeAudioEngine:
         if not _lib:
             raise RuntimeError("Native library not loaded")
         self._engine: Optional[sb_engine_t] = None
+        self._opened_output_device: Optional[str] = None
+        self._opened_output_name: str = ""
+        self._opened_backend: str = ""
 
     def open(self, config: EngineConfig) -> None:
         """Open the audio engine."""
@@ -576,6 +609,60 @@ class NativeAudioEngine:
         engine = sb_engine_t()
         _check_result(_lib.sb_engine_open(ctypes.byref(c_config), ctypes.byref(engine)), "open")
         self._engine = engine
+        self._opened_output_device = config.output_device
+        self._opened_output_name = ""
+        self._opened_backend = ""
+        # Prefer native readback of the endpoint/backend miniaudio actually opened (#1346/#1347).
+        if hasattr(_lib, "sb_engine_get_opened_output_device"):
+            id_buf = ctypes.create_string_buffer(513)
+            name_buf = ctypes.create_string_buffer(256)
+            try:
+                result = _lib.sb_engine_get_opened_output_device(
+                    engine, id_buf, len(id_buf), name_buf, len(name_buf)
+                )
+                if result == SB_OK:
+                    opened_id = id_buf.value.decode().rstrip("\x00")
+                    opened_name = name_buf.value.decode().rstrip("\x00")
+                    if opened_id:
+                        self._opened_output_device = opened_id
+                    self._opened_output_name = opened_name
+            except Exception:
+                pass
+        if hasattr(_lib, "sb_engine_get_opened_backend"):
+            backend_buf = ctypes.create_string_buffer(32)
+            try:
+                result = _lib.sb_engine_get_opened_backend(
+                    engine, backend_buf, len(backend_buf)
+                )
+                if result == SB_OK:
+                    self._opened_backend = backend_buf.value.decode().rstrip("\x00")
+            except Exception:
+                pass
+        if self._opened_output_device is None:
+            # Fallback when native readback is unavailable: resolve OS default.
+            try:
+                for item in self.enumerate_devices(False):
+                    if item.get("is_default"):
+                        self._opened_output_device = str(item.get("id_hex") or "") or None
+                        self._opened_output_name = str(item.get("name") or "")
+                        break
+            except Exception:
+                pass
+
+    @property
+    def opened_output_device_id(self) -> Optional[str]:
+        """Device id opened by the last successful open (resolved default when None)."""
+        return self._opened_output_device
+
+    @property
+    def opened_output_device_name(self) -> str:
+        """Friendly name of the opened playback endpoint when known."""
+        return str(getattr(self, "_opened_output_name", "") or "")
+
+    @property
+    def opened_backend(self) -> str:
+        """Backend actually opened (e.g. wasapi)."""
+        return str(getattr(self, "_opened_backend", "") or "")
 
     def start(self) -> None:
         """Start the audio engine."""
@@ -595,6 +682,9 @@ class NativeAudioEngine:
             raise RuntimeError("Engine not open")
         _check_result(_lib.sb_engine_close(self._engine), "close")
         self._engine = None
+        self._opened_output_device = None
+        self._opened_output_name = ""
+        self._opened_backend = ""
 
     def get_version(self) -> str:
         """Get the native engine build version."""
