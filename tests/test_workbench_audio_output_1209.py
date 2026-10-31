@@ -746,6 +746,70 @@ def test_vendor_asio_opens_with_clsid_when_backend_available(tmp_path, monkeypat
     assert evidence["measurable_output"]["callback_advancing"] is True
 
 
+def test_vendor_asio_without_clsid_fail_closed_no_wasapi(tmp_path, monkeypatch):
+    """#1350 Codex P1: Vendor ASIO with empty/WASAPI id must not open WASAPI."""
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_workbench_audio_output_settings(
+        WorkbenchAudioOutputSettings(
+            preferred_output_device_id="",  # no driver selected yet
+            preferred_output_device_name="",
+            audio_system="vendor_asio",
+        )
+    )
+    engine = RecordingOpenEngine()
+    monkeypatch.setattr(adapter_module._native_audio, "is_available", lambda: True)
+    monkeypatch.setattr(
+        adapter_module._native_audio,
+        "NativeAudioEngine",
+        lambda: engine,
+    )
+    monkeypatch.setattr(
+        adapter_module._native_audio, "VENDOR_ASIO_BACKEND_AVAILABLE", True, raising=False
+    )
+    adapter = adapter_module.WorkbenchTransportAdapter(sample_rate=48_000)
+    assert adapter.ensure_engine_running() is False
+    assert engine.open_calls == []
+    assert adapter.audio_switch_phase() == "unavailable"
+
+    # Sticky WASAPI hex while Vendor ASIO is selected must also fail closed.
+    save_workbench_audio_output_settings(
+        WorkbenchAudioOutputSettings(
+            preferred_output_device_id=_VALID_ID,
+            preferred_output_device_name="ASUS leftover",
+            audio_system="vendor_asio",
+        )
+    )
+    assert adapter.reopen_native_output_device(force=True) is False
+    assert engine.open_calls == []
+
+
+def test_engine_open_syncs_transport_sample_rate(tmp_path, monkeypatch):
+    """#1350/#1348 Codex P1: SessionTransport must track opened engine rate."""
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_workbench_audio_output_settings(
+        WorkbenchAudioOutputSettings(
+            preferred_output_device_id="",
+            preferred_output_device_name="",
+            audio_system="sample_brain_audio",
+            sample_rate=44100,
+            buffer_frames=256,
+        )
+    )
+    engine = RecordingOpenEngine()
+    monkeypatch.setattr(adapter_module._native_audio, "is_available", lambda: True)
+    monkeypatch.setattr(
+        adapter_module._native_audio,
+        "NativeAudioEngine",
+        lambda: engine,
+    )
+    adapter = adapter_module.WorkbenchTransportAdapter(sample_rate=48_000)
+    assert adapter.ensure_engine_running() is True
+    assert engine.open_calls[0].sample_rate == 44100
+    assert adapter._sample_rate == 44100  # noqa: SLF001
+    assert adapter.tempo_map.sample_rate == 44100
+    assert adapter._transport.sample_rate == 44100  # noqa: SLF001
+
+
 def test_native_open_failure_does_not_silently_fallback(tmp_path, monkeypatch):
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     save_workbench_audio_output_settings(

@@ -231,6 +231,17 @@ sb_result_t sb_asio_host_open(
             host->sample_type = host->channel_infos[ch].type;
         }
     }
+    // V1 renderer supports Float32 and Int32LSB only. Fail closed on packed/
+    // Int16/Float64 rather than reporting healthy callbacks while writing silence
+    // into the wrong buffer stride (#1350 review).
+    if (host->sample_type != ASIOSTFloat32LSB &&
+        host->sample_type != ASIOSTFloat32MSB &&
+        host->sample_type != ASIOSTInt32LSB) {
+        driver->Release();
+        if (host->com_inited_here) CoUninitialize();
+        delete host;
+        return SB_ERR_UNSUPPORTED;
+    }
 
     host->callbacks.bufferSwitch = &buffer_switch;
     host->callbacks.sampleRateDidChange = &sample_rate_changed;

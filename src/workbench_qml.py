@@ -1723,16 +1723,27 @@ class Screen1QmlInteractionAdapter:
             save_workbench_audio_output_settings,
         )
 
-        # Persist Vendor ASIO intent (#1350). Until the native ASIO backend exists,
-        # transport fail-closes instead of silently opening WASAPI.
+        # Persist Vendor ASIO intent (#1350). Transport fail-closes without a
+        # CLSID; do not carry incompatible WASAPI hex ids into ASIO mode.
         system = AUDIO_SYSTEM_SAMPLE_BRAIN_AUDIO
         if int(index) == 1:
             system = AUDIO_SYSTEM_VENDOR_ASIO
         current = load_workbench_audio_output_settings()
+        preferred_id = str(current.preferred_output_device_id or "")
+        preferred_name = str(current.preferred_output_device_name or "")
+        if system == AUDIO_SYSTEM_VENDOR_ASIO:
+            token = preferred_id.strip()
+            if not (token.startswith("{") and token.endswith("}") and len(token) >= 38):
+                preferred_id = ""
+                preferred_name = ""
+        elif preferred_id.startswith("{") and preferred_id.endswith("}"):
+            # Drop ASIO CLSID when returning to Sample Brain Audio / WASAPI.
+            preferred_id = ""
+            preferred_name = ""
         save_workbench_audio_output_settings(
             WorkbenchAudioOutputSettings(
-                preferred_output_device_id=current.preferred_output_device_id,
-                preferred_output_device_name=current.preferred_output_device_name,
+                preferred_output_device_id=preferred_id,
+                preferred_output_device_name=preferred_name,
                 audio_system=system,
                 sample_rate=current.sample_rate,
                 buffer_frames=current.buffer_frames,

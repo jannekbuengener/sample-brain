@@ -266,10 +266,25 @@ class WorkbenchTransportAdapter:
             self._audio_output_requires_explicit_retry = True
             return
         output_device = self._preferred_output_device_id_unlocked()
+        if audio_system == "vendor_asio":
+            # Require a CLSID-shaped manufacturer token. Empty preference or a
+            # leftover WASAPI hex id must not open WASAPI under Vendor ASIO.
+            token = str(output_device or "").strip()
+            if not (token.startswith("{") and token.endswith("}") and len(token) >= 38):
+                warn(
+                    "Vendor ASIO selected without a valid driver CLSID; "
+                    "fail-closed (no WASAPI substitute)"
+                )
+                self._native_opened = False
+                self._preferred_output_device_applied = None
+                self._audio_switch_phase = "unavailable"
+                self._audio_output_requires_explicit_retry = True
+                return
         # Prefer failing closed over silently opening a different physical device
         # when the configured endpoint is missing (#1345/#1351).
         try:
-            self._native_engine.open(self._engine_open_config_unlocked(output_device))
+            config = self._engine_open_config_unlocked(output_device)
+            self._native_engine.open(config)
         except Exception as exc:
             warn(
                 "Native audio open refused for preferred device (no silent fallback): %s",
@@ -278,6 +293,17 @@ class WorkbenchTransportAdapter:
             self._native_opened = False
             self._preferred_output_device_applied = None
             return
+        # Keep SessionTransport / PCM consumers on the opened engine rate.
+        opened_rate = int(getattr(config, "sample_rate", self._sample_rate) or self._sample_rate)
+        if hasattr(self._native_engine, "snapshot"):
+            try:
+                snap = self._native_engine.snapshot()
+                opened_rate = int(getattr(snap, "sample_rate", opened_rate) or opened_rate)
+            except Exception:
+                pass
+        if opened_rate > 0:
+            self._sample_rate = opened_rate
+            self._transport.tempo_map.sample_rate = opened_rate
         self._native_opened = True
         self._last_native_engine_frame = 0
         self._preferred_output_device_applied = output_device
