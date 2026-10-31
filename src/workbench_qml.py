@@ -2965,6 +2965,11 @@ ApplicationWindow {
         readonly property int sourceGap: 4
         readonly property int sourceRowHeight: 36
         readonly property int labelFadeWidth: 24
+        // #1248 reopen: … only on hover/button-focus, and only while label keeps priority.
+        readonly property int sourceActionsWidth: 28
+        readonly property int sourceActionsGap: 8
+        readonly property int sourceLabelMinUsefulWidth: 64
+        readonly property int sourceActionsRevealMinWidth: 4 + sourceLabelMinUsefulWidth + sourceActionsGap + sourceActionsWidth + 8
         // MagicPath rev 466430376995328000 — proportional visual evidence as DIP.
         readonly property int railTopInset: 8
         readonly property int railBottomInset: 18
@@ -4321,9 +4326,14 @@ ApplicationWindow {
                             border.color: theme.libraryFocusRing
                         }
                         contentItem: Item {
+                            id: sourceRowContent
                             implicitHeight: libraryMetrics.sourceRowHeight
                             implicitWidth: libraryTree.width
                             property bool dropHover: false
+                            // Enough width for a useful label + text-space gap + …;
+                            // below this, hide actions so selected/unselected stay consistent.
+                            readonly property bool sourceActionsWidthAvailable:
+                                width >= libraryMetrics.sourceActionsRevealMinWidth
                             HoverHandler {
                                 id: sourceRowHover
                                 onHoveredChanged: {
@@ -4382,6 +4392,7 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 anchors.leftMargin: 4
                                 anchors.rightMargin: 8
+                                spacing: libraryMetrics.sourceActionsGap
                                 Item {
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: libraryMetrics.textLineHeight
@@ -4422,16 +4433,19 @@ ApplicationWindow {
                                     ToolButton {
                                     id: sourceActionsButton
                                     objectName: "librarySourceActionsButton"
+                                    // #1248 reopen: selection/current alone must not keep … visible.
+                                    // Hover or direct button keyboard focus may reveal it while width allows.
                                     visible: model.kind === "registered_root"
-                                             && (sourceRowHover.hovered
-                                                 || (libraryDelegate.current && libraryTree.activeFocus)
-                                                 || activeFocus)
+                                             && (sourceRowHover.hovered || activeFocus)
                                              && libraryInteraction.canRemoveSource(model.nodeId)
+                                             && sourceRowContent.sourceActionsWidthAvailable
                                     text: "…"
                                     flat: true
                                     activeFocusOnTab: visible
-                                    implicitWidth: 28
-                                    implicitHeight: 28
+                                    implicitWidth: visible ? libraryMetrics.sourceActionsWidth : 0
+                                    implicitHeight: libraryMetrics.sourceActionsWidth
+                                    Layout.preferredWidth: visible ? libraryMetrics.sourceActionsWidth : 0
+                                    Layout.maximumWidth: visible ? libraryMetrics.sourceActionsWidth : 0
                                     Accessible.name: "Source actions"
                                     ToolTip.visible: hovered
                                     ToolTip.text: "Source actions"

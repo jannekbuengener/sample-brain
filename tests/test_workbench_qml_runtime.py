@@ -583,7 +583,7 @@ def test_library_bridge_source_actions_use_existing_python_removal_preview_witho
     assert bridge.canRemoveSource("scope:all-library") is False
 
 
-def test_qml_source_actions_follow_keyboard_current_and_exclude_row_tap():
+def test_qml_source_actions_follow_hover_or_button_focus_and_exclude_row_tap():
     from src.workbench_qml import QML_SOURCE
 
     source_row = QML_SOURCE.split('id: sourceRowTap', 1)[1].split(
@@ -593,7 +593,10 @@ def test_qml_source_actions_follow_keyboard_current_and_exclude_row_tap():
         'objectName: "libraryContentHost"', 1
     )[0]
     assert "enabled: !sourceActionsButton.hovered && !sourceActionsButton.activeFocus" in source_row
-    assert "libraryDelegate.current && libraryTree.activeFocus" in actions
+    # #1248 reopen: selection/current alone must not keep … visible.
+    assert "libraryDelegate.current && libraryTree.activeFocus" not in actions
+    assert "sourceRowHover.hovered" in actions
+    assert "activeFocus" in actions
     assert "libraryDelegate.activeFocus" not in actions
 
 
