@@ -41,6 +41,19 @@ def test_appearance_font_controls_wire_theme_authority() -> None:
     assert "themeAuthority.setCodeFontSize" in prefs
     assert "themeAuthority.uiFontSize" in prefs
     assert "themeAuthority.codeFontSize" in prefs
+    # Bounds match workbench_appearance.UI_FONT_* / CODE_FONT_*.
+    ui = prefs[prefs.index('objectName: "appearanceUiFontSpin"') :]
+    ui = ui[: ui.index("Accessible.name")]
+    assert "from: 12" in ui and "to: 18" in ui
+    code = prefs[prefs.index('objectName: "appearanceCodeFontSpin"') :]
+    code = code[: code.index("Accessible.name")]
+    assert "from: 10" in code and "to: 18" in code
+
+
+def test_appearance_panel_removes_inert_density_stub() -> None:
+    prefs = _prefs_popover()
+    assert "Density" not in prefs
+    assert 'text: "Compact"' not in prefs
 
 
 def test_appearance_motion_control_uses_theme_authority_four_way() -> None:
