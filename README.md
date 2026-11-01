@@ -1,5 +1,9 @@
 # Sample Brain
 
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/jannekbuengener/badge.svg)](https://hub.xerj.org/contributors/jannekbuengener)
+
+**XERJ Corpus Hub:** [Sample Brain Corpus](https://hub.xerj.org/corpus/jannekbuengener--sample-brain) · [Contributor-Profil](https://hub.xerj.org/contributors/jannekbuengener)
+
 Sample Brain ist ein lokales, Workbench-first Producing-System für Sample-Analyse, musikalisches Matching, Track-Zerlegung und Performance Packs — mit Product Modes **Edit → Arrangement → later Live**.
 
 ---
@@ -394,6 +398,14 @@ Der vollständige Navigations-Index liegt in [docs/README.md](docs/README.md).
 - [Search Quality Evidence](docs/benchmarks/SEARCH_QUALITY_EVIDENCE.md) — gemessene P@K/R@K (Tier A + B)
 - [sqlite-vec Gate Evidence](docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — warum NumPy Default bleibt
 - [Issue Backlog](docs/ISSUE_BACKLOG.md) — HISTORICAL_LEDGER (kein Live-Board)
+
+---
+
+## Acknowledgements & Supporters
+
+Diese Sektion würdigt Menschen und Projekte, die Sample Brain durch Sichtbarkeit, Review, Infrastruktur oder konkrete Unterstützung voranbringen. Sie ist bewusst offen für zukünftige Supporter und keine Sponsoring-Liste.
+
+- **Ivan / [XERJ](https://xerj.org/)** — für die Auswahl von Sample Brain für den [XERJ Corpus Hub](https://hub.xerj.org/corpus/jannekbuengener--sample-brain) und dafür, das Projekt als zitierbare Referenz für AI Coding Agents öffentlich durchsuchbar zu machen. Das [Contributor-Profil](https://hub.xerj.org/contributors/jannekbuengener) bündelt den aktuellen Hub-Status.
 
 ---
 
