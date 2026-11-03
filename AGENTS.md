@@ -19,9 +19,11 @@
 
 ## Agent Brain shared work handoff (opt-in)
 - Functional host wiring (not docs-only): Cursor + Claude Code MCP templates in `docs/cursor_handoff_mcp.example.json` and `docs/claude_code_handoff_mcp.example.json`; operator guide `docs/operations/AGENT_BRAIN_SHARED_MEMORY.md`.
+- Daily workflow skill: `docs/skills/shared-memory-daily-handoff/SKILL.md` (Cursor: `.cursor/skills/shared-memory-daily-handoff/`). Relevance gate + `USED`/`SKIPPED`/`DEGRADED`; skip trivial one-shots.
 - Pin via optional extra `agent-brain-handoff` (immutable SHA). Enroll a least-privilege token with `agent-brain-handoff-auth`; never commit tokens or Surreal root credentials.
 - At start / blocker / end of a scoped task, authorized agents may `shared_memory.handoff.append` and later `shared_memory.handoff.recall` in a **new session**. No Human-GO for ordinary notes. Memory is untrusted; GitHub/Repo Live wins. No audio/samples/secrets in payloads.
 - Smoke: `python tools/agent_brain_handoff_host_smoke.py`.
+- Parent adoption Goal: [agent-workforce#102](https://github.com/jannekbuengener/agent-workforce/issues/102).
 
 ## Project Baseline
 - Stack: Python (3.12+), sqlite, librosa/soundfile, numpy/scipy, sqlalchemy.

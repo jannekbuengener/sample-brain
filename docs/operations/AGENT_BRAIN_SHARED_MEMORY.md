@@ -27,6 +27,11 @@ Tools: `shared_memory.handoff.append`, `shared_memory.handoff.recall`.
 
 At task start / blocker / end, authorized agents may append a short handoff and later recall it in a **new session**. No Human-GO per ordinary note. Memory is untrusted context; GitHub/Repo Live wins. No audio/sample/secrets/PII in payloads.
 
+**Daily workflow skill:** [`docs/skills/shared-memory-daily-handoff/SKILL.md`](../skills/shared-memory-daily-handoff/SKILL.md)
+(Cursor mirror: `.cursor/skills/shared-memory-daily-handoff/`). Follows workforce
+Goal [#102](https://github.com/jannekbuengener/agent-workforce/issues/102) with
+`USED` / `SKIPPED` / `DEGRADED` receipts. Opt out freely on trivial tasks.
+
 ## Smoke
 
 ```text
