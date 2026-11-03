@@ -39,6 +39,10 @@ beatgrid = [
 qtquick = [
     "PySide6>=6.8,<6.13",
 ]
+agent-brain-handoff = [
+    # Immutable SHA pin for Agent Brain shared-memory G1/G2 surface (package version 0.3.4 at this SHA).
+    "agent-brain @ git+https://github.com/jannekbuengener/agent-brain.git@e0ab6c644e39eb0f9c0d54b011a8cec5fd629bb9",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

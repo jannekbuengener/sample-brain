@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agent-brain-handoff": {
+      "command": "agent-brain-mcp-handoff",
+      "args": [],
+      "env": {
+        "AGENT_BRAIN_HANDOFF_TOKEN": "${AGENT_BRAIN_HANDOFF_TOKEN}",
+        "AGENT_BRAIN_SECRETS_PATH": "${AGENT_BRAIN_SECRETS_PATH}"
+      }
+    }
+  }
+}
