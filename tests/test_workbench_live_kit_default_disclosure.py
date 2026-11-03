@@ -137,6 +137,11 @@ def test_add_to_kit_pending_works_with_initially_collapsed_groups():
     assert all(group.active is False for group in live_kit.groups)
     adapter.request_add_to_kit(0)
     assert adapter.pending_live_kit_add == fixture.browser_rows[0].display_name
+    # #1374: pending Add auto-expands the first group with an empty slot
+    # (Kick + Bass) so Slot + is reachable without a hidden header click.
+    assert live_kit.presentation.active_group() == "Kick + Bass"
+    assert live_kit.groups[0].active is True
+    assert all(group.active is False for group in live_kit.groups[1:])
 
     assert adapter.toggle_live_kit_group("Drums") is False
     assert live_kit.groups[1].active is True
@@ -144,6 +149,19 @@ def test_add_to_kit_pending_works_with_initially_collapsed_groups():
     assert live_kit.state.assignment_for("Drums", "Main Drum") is fixture.browser_rows[0]
     assert adapter.pending_live_kit_add == ""
     assert view_model.live_kit_groups is live_kit.groups
+
+
+def test_pending_add_auto_expands_first_empty_group_slots_reachable():
+    fixture, view_model, adapter, live_kit = _production_adapter()
+    live_kit.assign("Kick + Bass", "Kick", _row("kick_occupied.wav"))
+
+    adapter.request_add_to_kit(0)
+
+    assert adapter.pending_live_kit_add == fixture.browser_rows[0].display_name
+    # Kick+Bass still has empty Bass slot → stays preferred first empty group.
+    assert live_kit.presentation.active_group() == "Kick + Bass"
+    assert adapter.assign_live_kit_slot("Kick + Bass", "Bass") is True
+    assert live_kit.state.assignment_for("Kick + Bass", "Bass") is fixture.browser_rows[0]
 
 
 def test_qml_slot_rows_bind_visibility_to_active_group_only():

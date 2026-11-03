@@ -154,6 +154,20 @@ class LiveKitPresentationState:
         self._active_group = None
         return True
 
+    def ensure_group_expanded(self, group: str) -> bool:
+        """Expand *group* (accordion: others collapse). No-op if already open.
+
+        Returns True when *group* is expanded after the call.
+        Used by pending Add-to-Kit (#1374) so Slot + affordances are reachable
+        without a hidden group-header discovery step.
+        """
+        self._state.slots_for(group)
+        if group not in self._collapsed_groups and self._active_group == group:
+            return True
+        self._collapsed_groups = set(self._state.groups()) - {group}
+        self._active_group = group
+        return True
+
     def is_collapsed(self, group: str) -> bool:
         self._state.slots_for(group)
         return group in self._collapsed_groups
