@@ -21,7 +21,7 @@ cavity, without a mandatory Step Grid, and without a second musical state owner.
 | #1070 materialization of `live_kit` | Python, driven by visible Live Kit state |
 | #1072 visible assignment targets | Python (`list_visible_live_kit_targets` + `visible_slot_keys`) |
 | Projection + typed reveal/hide/resize intents | QML (read-only for kit truth) |
-| Export Kit | Existing export seam (#728) |
+| Export Kit | Portable V1 contract [#1224](https://github.com/jannekbuengener/sample-brain/issues/1224) (`docs/LIVE_KIT_EXPORT_V1_CONTRACT.md`); historical runtime seam [#728](https://github.com/jannekbuengener/sample-brain/issues/728) |
 | Drag ghosts / drop highlights | Out of scope (#1073) |
 | Magnetic docking chrome | Out of scope (#1071) |
 | Arrangement entry CTA | Out of scope (#1078); never aliased to Export |
