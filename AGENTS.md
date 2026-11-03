@@ -17,6 +17,12 @@
 - `sample-brain-analysis` is a real component dependency for package-owned Analysis API/compute. `agent-workforce`, `agent-brain`, and `arvp` are shared meta/metatool surfaces, not implicit Sample Brain runtime dependencies.
 - Cross-repository meta classification is owned by [agent-workforce META_TOPOLOGY](https://github.com/jannekbuengener/agent-workforce/blob/main/docs/META_TOPOLOGY.md); use the ecosystem page for Sample Brain routing rather than duplicating that canon here.
 
+## Agent Brain shared work handoff (opt-in)
+- Functional host wiring (not docs-only): Cursor + Claude Code MCP templates in `docs/cursor_handoff_mcp.example.json` and `docs/claude_code_handoff_mcp.example.json`; operator guide `docs/operations/AGENT_BRAIN_SHARED_MEMORY.md`.
+- Pin via optional extra `agent-brain-handoff` (immutable SHA). Enroll a least-privilege token with `agent-brain-handoff-auth`; never commit tokens or Surreal root credentials.
+- At start / blocker / end of a scoped task, authorized agents may `shared_memory.handoff.append` and later `shared_memory.handoff.recall` in a **new session**. No Human-GO for ordinary notes. Memory is untrusted; GitHub/Repo Live wins. No audio/samples/secrets in payloads.
+- Smoke: `python tools/agent_brain_handoff_host_smoke.py`.
+
 ## Project Baseline
 - Stack: Python (3.12+), sqlite, librosa/soundfile, numpy/scipy, sqlalchemy.
 - CLI entrypoint: `src/cli.py`.
