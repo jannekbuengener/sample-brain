@@ -1,0 +1,291 @@
+{
+  "document_type": "sample_brain.live_kit_export_v1_contract",
+  "contract_schema_version": "1.0.0",
+  "plane": "normative_contract_schema",
+  "not_runtime_serialization": true,
+  "runtime_reconciliation_owner": "later_1221_child_from_live_evidence",
+  "issue": 1224,
+  "parent_issues": [1221, 1075],
+  "depends_on_issues": [1077, 1203, 1082, 1085],
+  "historical_evidence_issues": [728],
+  "exit_marker": "LIVE_KIT_EXPORT_V1_CONTRACT_FROZEN",
+  "canonical_markdown": "docs/LIVE_KIT_EXPORT_V1_CONTRACT.md",
+  "kit_type": "sample_brain_live_kit",
+  "export_type": "local_folder",
+  "distinct_from_package_kinds": ["sample_brain_track_package"],
+  "bundle_layout_v1": {
+    "destination_parent": "<user_chosen_destination_parent>",
+    "root_directory_name": "Sample Brain Live Kit",
+    "required_components": [
+      "manifest.json",
+      "audio/"
+    ],
+    "media_directory": "audio/",
+    "manifest_filename": "manifest.json",
+    "human_readable_readme_included": false,
+    "human_readable_readme_rationale": "manifest_plus_audio_tree_sufficient_avoids_second_source_of_truth",
+    "path_separator_in_refs": "/",
+    "notes": "Distinct from track package track_package.json + media/. Do not collapse commands or layouts."
+  },
+  "schema_version_policy": {
+    "manifest_schema_version_type": "integer",
+    "v1_value": 1,
+    "unsupported_future_version_fail_closed": true
+  },
+  "filename_collision_strategy": {
+    "group_folder_pattern": "NN_group-slug",
+    "slot_file_pattern": "NN_slot-slug__source-stem-slug.ext",
+    "slugify_unsafe_characters": true,
+    "escape_windows_reserved_device_names": true,
+    "silent_overwrite_forbidden": true
+  },
+  "media_semantics": {
+    "include_every_assigned_audio_asset": true,
+    "library_sources_unchanged": true,
+    "exported_media_independently_readable": true,
+    "source_reuse_policy": "COPY_PER_SLOT",
+    "missing_media_prevents_false_success": true,
+    "no_dependency_on_original_library_path_after_success": true
+  },
+  "required_manifest_top_level_fields": [
+    "schema_version",
+    "kit_type",
+    "export_type",
+    "groups"
+  ],
+  "required_group_fields": ["name", "folder", "slots"],
+  "required_slot_fields": ["group", "slot", "assigned", "display_name", "audio_path"],
+  "optional_resolved_metadata_fields": [
+    "bpm",
+    "key",
+    "pred_type",
+    "sample_class",
+    "duration_sec"
+  ],
+  "identity": {
+    "portable_kit_id_required": false,
+    "catalog_sample_id_required": false,
+    "stable_identity_components": ["group", "slot", "audio_path", "display_name"],
+    "domain_keys_not_display_labels": true,
+    "full_canonical_slot_map_always_present": true,
+    "notes": "WorkbenchRow has no portable sample_id; Live Kit has no product-owned kit_id."
+  },
+  "metadata_authority": {
+    "export_plane": "resolved_product_consumer_metadata",
+    "source_surface": "LiveKitState assignment WorkbenchRow",
+    "fields": ["bpm", "key", "pred_type", "sample_class", "duration_sec"],
+    "forbid_export_raw_analyzer_features_as_resolved_truth": true,
+    "forbid_reparse_filename_path_claims_at_export": true,
+    "path_metadata_authority_issue": 1203,
+    "bpm_precision_unknown_authority_issue": 1218,
+    "unknown_remains_unknown": true,
+    "no_fabricated_confidence": true,
+    "no_private_absolute_source_path_as_provenance": true,
+    "portable_manifest_embeds_raw_provenance_block": false,
+    "notes": "Catalog retains raw/resolved provenance; portable kit carries resolved consumer fields only."
+  },
+  "eligibility_status_vocabulary": ["EXPORTABLE", "NOT_EXPORTABLE"],
+  "eligibility_vectors": [
+    {
+      "id": "empty_kit",
+      "input": "zero_assigned_slots",
+      "exportable": false,
+      "status": "EMPTY_KIT",
+      "partial_output_policy": "no_final_folder_no_staging_left"
+    },
+    {
+      "id": "sparse_kit",
+      "input": "one_or_more_assigned_slots",
+      "exportable": true,
+      "status": null,
+      "partial_output_policy": "empty_slots_listed_assigned_false"
+    },
+    {
+      "id": "source_missing",
+      "input": "assigned_source_missing",
+      "exportable": false,
+      "status": "SOURCE_MISSING",
+      "partial_output_policy": "no_final_folder"
+    },
+    {
+      "id": "source_not_file",
+      "input": "assigned_source_not_regular_file",
+      "exportable": false,
+      "status": "SOURCE_NOT_FILE",
+      "partial_output_policy": "no_final_folder"
+    },
+    {
+      "id": "source_unreadable",
+      "input": "assigned_source_unreadable",
+      "exportable": false,
+      "status": "SOURCE_UNREADABLE",
+      "partial_output_policy": "no_final_folder"
+    },
+    {
+      "id": "source_reuse_multi_slot",
+      "input": "same_source_assigned_to_multiple_slots",
+      "exportable": true,
+      "status": null,
+      "partial_output_policy": "copy_per_slot_distinct_relpaths"
+    },
+    {
+      "id": "duplicate_basenames",
+      "input": "duplicate_source_basenames",
+      "exportable": true,
+      "status": null,
+      "partial_output_policy": "deterministic_collision_safe_names"
+    },
+    {
+      "id": "internal_collision",
+      "input": "planned_export_relpath_collision",
+      "exportable": false,
+      "status": "INTERNAL_COLLISION",
+      "partial_output_policy": "no_final_folder"
+    },
+    {
+      "id": "catalog_stale_but_readable",
+      "input": "catalog_stale_assignment_file_readable",
+      "exportable": true,
+      "status": null,
+      "partial_output_policy": "filesystem_readability_is_export_gate"
+    },
+    {
+      "id": "unknown_metadata",
+      "input": "unknown_or_unsupported_metadata_on_assigned_row",
+      "exportable": true,
+      "status": null,
+      "partial_output_policy": "unknown_remains_unknown"
+    },
+    {
+      "id": "destination_invalid",
+      "input": "destination_parent_missing_or_invalid",
+      "exportable": false,
+      "status": "DESTINATION_INVALID",
+      "partial_output_policy": "no_final_folder"
+    },
+    {
+      "id": "destination_not_writable",
+      "input": "destination_parent_not_writable",
+      "exportable": false,
+      "status": "DESTINATION_NOT_WRITABLE",
+      "partial_output_policy": "no_final_folder"
+    },
+    {
+      "id": "output_exists",
+      "input": "final_export_folder_already_exists",
+      "exportable": false,
+      "status": "OUTPUT_EXISTS",
+      "partial_output_policy": "do_not_overwrite_or_merge"
+    },
+    {
+      "id": "export_failed",
+      "input": "copy_manifest_or_publish_interruption",
+      "exportable": false,
+      "status": "EXPORT_FAILED",
+      "partial_output_policy": "remove_staging_never_report_success"
+    }
+  ],
+  "integrity": {
+    "mode": "structural_only",
+    "content_hashes_required": false,
+    "signing_subsystem_forbidden_for_v1": true,
+    "assigned_audio_paths_must_exist_under_audio": true,
+    "empty_slots_audio_path_null": true
+  },
+  "export_transaction_stages": [
+    "snapshot_live_kit_state",
+    "evaluate_eligibility",
+    "create_sibling_staging_directory_same_filesystem",
+    "copy_required_assigned_media_byte_identical",
+    "ensure_group_folders_exist",
+    "write_manifest_json",
+    "validate_staged_tree_against_manifest",
+    "commit_staging_to_final_root",
+    "report_success_with_final_path"
+  ],
+  "atomicity": {
+    "partial_output_never_reports_success": true,
+    "no_half_valid_visible_final_folder": true,
+    "staging_removed_on_failure": true,
+    "library_sources_unchanged": true,
+    "kit_state_unchanged_by_export": true,
+    "retry_allowed_when_final_absent": true,
+    "never_delete_foreign_destination_files_as_cleanup": true,
+    "large_copy_not_on_realtime_audio_path": true
+  },
+  "reference_confinement": {
+    "media_refs_package_relative": true,
+    "media_under_audio_dir_only": true,
+    "forbid_absolute_windows_paths": true,
+    "forbid_unc_paths": true,
+    "forbid_file_uri": true,
+    "forbid_dot_dot_segments": true,
+    "forbid_root_escape": true,
+    "forbid_sqlite_db_dependency": true,
+    "forbid_search_vector_index_dependency": true,
+    "forbid_model_cache_dependency": true,
+    "forbid_credentials_operator_metadata": true,
+    "reject_outcome": "path_escape_rejected"
+  },
+  "destination_eligibility": {
+    "must_not_be_inside_repository_checkout": true,
+    "user_chosen_local_folder": true,
+    "aligns_with": "docs/DATA_AND_ARTIFACT_POLICY.md"
+  },
+  "reuse_seams": {
+    "historical_728_module": "src/workbench_live_kit_export.py",
+    "reusable_728_patterns": [
+      "source_validation",
+      "sibling_staging",
+      "portable_relative_audio",
+      "complete_success_publication",
+      "per_slot_copy_collision_names"
+    ],
+    "track_package_1082_1085": {
+      "may_share_staging_validation_confinement_patterns": true,
+      "commands_remain_distinct": true,
+      "layouts_remain_distinct": true,
+      "must_not_activate_durable_track": true
+    },
+    "forbid_second_packaging_architecture": true
+  },
+  "non_goals": [
+    "full_exporter_rewrite_in_contract_issue",
+    "new_analyzer_algorithms",
+    "arrangement_song_export",
+    "midi_daw_package_formats",
+    "cloud_sharing_publishing",
+    "generic_archive_framework_unrelated_to_live_kit",
+    "collapse_export_kit_into_track_package_create"
+  ],
+  "existing_seams_referenced": [
+    {
+      "id": "live_kit_state",
+      "refs": ["src/workbench_live_kit.py"]
+    },
+    {
+      "id": "workbench_row_consumer_fields",
+      "refs": ["src/workbench_controller.py"]
+    },
+    {
+      "id": "live_kit_export_728",
+      "refs": ["src/workbench_live_kit_export.py"]
+    },
+    {
+      "id": "track_package_ownership",
+      "refs": [
+        "docs/TRACK_PACKAGE_OWNERSHIP_CONTRACT.md",
+        "docs/track_package_ownership_v1.json",
+        "src/track_package.py"
+      ]
+    },
+    {
+      "id": "path_metadata_reconciliation_1203",
+      "refs": ["docs/PATH_METADATA_RECONCILIATION.md"]
+    },
+    {
+      "id": "live_kit_edit_contract",
+      "refs": ["docs/WORKBENCH_LIVE_KIT_EDIT_CONTRACT.md"]
+    }
+  ]
+}

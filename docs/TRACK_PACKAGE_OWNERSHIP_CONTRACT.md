@@ -79,14 +79,15 @@ After successful create: kit / pattern / song / later MIDI mutations update the 
 
 ## 3. Demo Export Kit vs Track Package
 
-| | Demo `Export Kit` (#728) | Arrangement Entry / Create Track Package (#1082/#1085) |
+| | Live Kit `Export Kit` (#1224 contract; #728 evidence) | Arrangement Entry / Create Track Package (#1082/#1085) |
 |---|---|---|
 | Product command | Distinct | Distinct |
-| Outcome | Kit-only portable folder (`Sample Brain Live Kit` / kit `manifest.json`) | Durable track package (`track_package.json` + `media/`) that can become the active track |
-| Shared primitives | May share copy / staging / source-validation patterns | Same |
+| Contract authority | [`LIVE_KIT_EXPORT_V1_CONTRACT.md`](LIVE_KIT_EXPORT_V1_CONTRACT.md) (`LIVE_KIT_EXPORT_V1_CONTRACT_FROZEN`) | This document |
+| Outcome | Kit-only portable folder (`Sample Brain Live Kit` / kit `manifest.json` / `audio/`) | Durable track package (`track_package.json` + `media/`) that can become the active track |
+| Shared primitives | May share copy / staging / source-validation / confinement patterns | Same |
 | Activates durable track | **No** | **Yes**, only after create commit + bind |
 
-#728 remains historical / reusable technical evidence. Do not collapse the two commands.
+#1224 owns the portable Live-Kit export contract. #728 remains historical / reusable technical evidence for the kit-only exporter. Do not collapse the two commands or layouts.
 
 ## 4. Package layout (v1)
 
