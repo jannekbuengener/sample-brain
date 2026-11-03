@@ -5,10 +5,10 @@
 ## Pin
 
 ```text
-agent-brain @ git+https://github.com/jannekbuengener/agent-brain.git@e0ab6c644e39eb0f9c0d54b011a8cec5fd629bb9
+agent-brain==0.3.5
 ```
 
-Verify after install: `python -c "import agent_brain; print(agent_brain.__version__)"` → `0.3.4` (package version at that SHA; SHA is the immutable pin).
+Verify after install: `python -c "import agent_brain; print(agent_brain.__version__)"` → `0.3.5`.
 
 Optional extra: `pip install -e ".[agent-brain-handoff]"` (see `pyproject.toml`).
 
