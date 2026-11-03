@@ -208,6 +208,12 @@ class LiveKitPresenter:
         self._groups = self._project()
         return self._presentation.is_collapsed(group)
 
+    def ensure_group_expanded(self, group: str) -> bool:
+        """Expand *group* for pending Add-to-Kit slot reachability (#1374)."""
+        expanded = self._presentation.ensure_group_expanded(group)
+        self._groups = self._project()
+        return expanded
+
     def assign(self, group: str, slot: str, row: WorkbenchRow) -> None:
         self._state.assign(group, slot, row)
         self._groups = self._project()
@@ -1068,12 +1074,40 @@ class Screen1QmlInteractionAdapter:
         expands chooser geometry without forcing drawer_open, so a manual
         close (#954) remains respected on later assignments. Visibility
         predicates still treat pending-add as presentation-open for #1070/#1072.
+        #1374: auto-expand the first group that still has an empty slot so the
+        Slot + chooser is reachable without a hidden group-header discovery step.
         """
         self._pending_live_kit_row = row
         self._reveal_live_kit_pane()
+        self._ensure_pending_add_group_expanded()
         if self._on_add_to_kit_requested is not None:
             self._on_add_to_kit_requested(row)
         return row
+
+    def _ensure_pending_add_group_expanded(self) -> str | None:
+        """Expand one actionable group while Add is pending (#1374).
+
+        Prefers the first kit group that still has an empty slot. If every slot
+        is occupied, expands the first group so Replace remain reachable.
+        Returns the expanded group name, or None when Live Kit is unavailable.
+        """
+        if self._live_kit is None:
+            return None
+        groups = list(self._live_kit.state.groups())
+        if not groups:
+            return None
+        target = groups[0]
+        for group in groups:
+            empty = any(
+                self._live_kit.state.assignment_for(group, slot) is None
+                for slot in self._live_kit.state.slots_for(group)
+            )
+            if empty:
+                target = group
+                break
+        self._live_kit.ensure_group_expanded(target)
+        self._sync_live_kit_projection()
+        return target
 
     def request_context_add_to_kit(self) -> WorkbenchRow:
         """Dispatch Add-to-Kit for the stored context target (not a stale index)."""
@@ -7012,7 +7046,9 @@ ApplicationWindow {
                     return expandedSlots
                 }
                 readonly property int requestedHeight: 72 + groupFlowRows * 44 + expandedSlotCount * 26
-                readonly property int maximumHeight: Math.round(parent.height * 0.45)
+                // #1374: slightly taller cap so pending Add + one expanded group
+                // stays reachable; Flickable still scrolls when content exceeds.
+                readonly property int maximumHeight: Math.round(parent.height * 0.58)
                 readonly property int autoHeight: Math.min(requestedHeight, maximumHeight)
                 readonly property int userHeightPx: window.interaction.liveKitUserHeightPx
                 height: kitHudExpanded
