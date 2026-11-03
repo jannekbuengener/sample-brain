@@ -36,6 +36,27 @@ _WINDOWS_RESERVED = frozenset(
 _UNSAFE_CHARS = re.compile(r"[^a-z0-9]+")
 
 
+def _optional_resolved_duration_sec(details: dict[str, Any] | None) -> float | str | None:
+    """Pass through product-row ``duration_sec`` when present; never invent.
+
+    V1 allows either a JSON number or the pre-existing string form already on
+    the assignment row (see ``docs/LIVE_KIT_EXPORT_V1_CONTRACT.md`` §4).
+    """
+    if not details:
+        return None
+    raw = details.get("duration_sec")
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        text = raw.strip()
+        return text or None
+    return None
+
+
 @dataclass(frozen=True)
 class LiveKitExportResult:
     ok: bool
@@ -60,6 +81,8 @@ class _PlannedSlot:
     bpm: float | None = None
     key: str | None = None
     pred_type: str | None = None
+    sample_class: str | None = None
+    duration_sec: float | str | None = None
 
 
 def _failure(
@@ -142,6 +165,8 @@ def _snapshot_assignments(state: LiveKitState) -> list[_PlannedSlot]:
                     bpm=row.bpm,
                     key=row.key,
                     pred_type=row.pred_type,
+                    sample_class=row.sample_class,
+                    duration_sec=_optional_resolved_duration_sec(row.details),
                 )
             )
     return planned
@@ -242,6 +267,10 @@ def _build_manifest(planned: list[_PlannedSlot]) -> dict[str, Any]:
                 slot_entry["key"] = item.key
             if item.pred_type:
                 slot_entry["pred_type"] = item.pred_type
+            if item.sample_class:
+                slot_entry["sample_class"] = item.sample_class
+            if item.duration_sec is not None:
+                slot_entry["duration_sec"] = item.duration_sec
         current_entry["slots"].append(slot_entry)
     return {
         "schema_version": LIVE_KIT_EXPORT_SCHEMA_VERSION,
