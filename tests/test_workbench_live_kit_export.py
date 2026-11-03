@@ -485,6 +485,86 @@ def test_source_bytes_unchanged_and_exported_bytes_identical(tmp_path: Path) -> 
     assert kick.stat().st_mtime_ns == before_mtime
 
 
+def test_manifest_emits_optional_resolved_sample_class_and_duration_sec(
+    tmp_path: Path,
+) -> None:
+    """V1 optional resolved consumer fields from WorkbenchRow (#1370 / #1224)."""
+    sources = tmp_path / "sources"
+    kick = _write_bytes(sources / "kick.wav", b"RIFF-KICK")
+    hat = _write_bytes(sources / "hat.wav", b"RIFF-HAT")
+    destination = tmp_path / "dest"
+    destination.mkdir()
+
+    known = _row(kick)
+    unknown = WorkbenchRow(
+        display_name=hat.name,
+        relative_path=f"synthetic/{hat.name}",
+        path=str(hat),
+        bpm=None,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class=None,
+        pred_type=None,
+        status="ok",
+        details={},
+    )
+
+    state = LiveKitState()
+    state.assign("Kick + Bass", "Kick", known)
+    state.assign("Drums", "Closed Hat", unknown)
+
+    result = export_live_kit(state, destination)
+    assert result.ok is True
+    export_root = result.export_path
+    assert export_root is not None
+    manifest = json.loads((export_root / "manifest.json").read_text(encoding="utf-8"))
+    flat = [slot for group in manifest["groups"] for slot in group["slots"]]
+    kick_slot = next(slot for slot in flat if slot["slot"] == "Kick" and slot["assigned"])
+    hat_slot = next(
+        slot for slot in flat if slot["slot"] == "Closed Hat" and slot["assigned"]
+    )
+
+    assert kick_slot["bpm"] == 132.0
+    assert kick_slot["key"] == "Am"
+    assert kick_slot["pred_type"] == "Kick"
+    assert kick_slot["sample_class"] == "one_shot"
+    assert kick_slot["duration_sec"] == "0.25"
+
+    assert "bpm" not in hat_slot
+    assert "key" not in hat_slot
+    assert "pred_type" not in hat_slot
+    assert "sample_class" not in hat_slot
+    assert "duration_sec" not in hat_slot
+
+
+def test_manifest_duration_sec_passes_numeric_row_value(tmp_path: Path) -> None:
+    sources = tmp_path / "sources"
+    kick = _write_bytes(sources / "kick.wav", b"RIFF-KICK")
+    destination = tmp_path / "dest"
+    destination.mkdir()
+
+    row = _row(kick)
+    row.details = {"duration_sec": 1.5}
+    state = LiveKitState()
+    state.assign("Kick + Bass", "Kick", row)
+
+    result = export_live_kit(state, destination)
+    assert result.ok is True
+    export_root = result.export_path
+    assert export_root is not None
+    manifest = json.loads((export_root / "manifest.json").read_text(encoding="utf-8"))
+    slot = next(
+        item
+        for group in manifest["groups"]
+        for item in group["slots"]
+        if item["assigned"]
+    )
+    assert slot["duration_sec"] == 1.5
+    assert isinstance(slot["duration_sec"], float)
+
+
 def test_manifest_has_no_absolute_db_cache_or_runtime_paths(tmp_path: Path) -> None:
     sources = tmp_path / "sources"
     kick = _write_bytes(sources / "kick.wav", b"RIFF-KICK")
@@ -521,6 +601,12 @@ def test_manifest_has_no_absolute_db_cache_or_runtime_paths(tmp_path: Path) -> N
     slot = manifest["groups"][0]["slots"][0]
     assert slot["audio_path"].startswith("audio/")
     assert not Path(slot["audio_path"]).is_absolute()
+    assert slot.get("sample_class") == "one_shot"
+    assert slot.get("duration_sec") == "0.25"
+    assert "db_path" not in slot
+    assert "cache_path" not in slot
+    assert "index_path" not in slot
+    assert "runtime_evidence" not in slot
 
 
 def test_no_partial_final_output_after_copy_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
