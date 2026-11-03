@@ -347,9 +347,8 @@ def test_pending_add_counts_as_visible_for_docking_and_targets():
     assert adapter._live_kit_drawer_open is False
     assert adapter.live_kit_is_visible() is True
     assert adapter.edit_docking_materialization().live_kit is True
-    # Groups start collapsed — no slot delegates / #1072 keys until expanded.
-    assert adapter.visible_live_kit_slot_keys() == ()
-    adapter.toggle_live_kit_group("Kick + Bass")
+    # #1374: pending Add auto-expands the first group with an empty slot
+    # (Kick + Bass still has empty Bass) so #1072 Slot + keys are reachable.
     keys = adapter.visible_live_kit_slot_keys()
     assert keys
     assert all(group == "Kick + Bass" for group, _slot in keys)
