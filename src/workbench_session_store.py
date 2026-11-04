@@ -33,6 +33,7 @@ from .workbench_live_kit import (
     LIVE_KIT_SLOT_MAPPING,
     LiveKitState,
     is_live_kit_extra_slot,
+    is_live_kit_slot_identity,
 )
 from .workbench_transport_adapter import DEFAULT_TEMPO_BPM
 
@@ -819,17 +820,32 @@ def snapshot_from_track_package_musical(
         if not isinstance(group_raw, Mapping):
             raise _SessionSemanticError("Track package live_kit group missing")
         live_payload[group] = {}
-        for slot in slots:
-            item = group_raw.get(slot)
+
+        def _slot_entry(item: object) -> dict[str, str] | None:
             if item is None:
-                live_payload[group][slot] = None
-            elif isinstance(item, Mapping) and set(item) == {"path"}:
+                return None
+            if isinstance(item, Mapping) and set(item) == {"path"}:
                 resolved = _resolve_package_media_ref(package_root, item.get("path"))
                 if resolved is None:
-                    raise _SessionSemanticError("Assigned track package slot has no path")
-                live_payload[group][slot] = {"path": resolved}
-            else:
-                raise _SessionSemanticError("Track package live_kit slot is invalid")
+                    raise _SessionSemanticError(
+                        "Assigned track package slot has no path"
+                    )
+                return {"path": resolved}
+            raise _SessionSemanticError("Track package live_kit slot is invalid")
+
+        for slot in slots:
+            live_payload[group][slot] = _slot_entry(group_raw.get(slot))
+        # #1377: Extra-N slots ride alongside the canonical seed.
+        for slot, item in group_raw.items():
+            if slot in live_payload[group]:
+                continue
+            if not is_live_kit_slot_identity(group, slot) or not is_live_kit_extra_slot(
+                slot
+            ):
+                raise _SessionSemanticError(
+                    f"Unknown track package Live Kit slot: {group!r} -> {slot!r}"
+                )
+            live_payload[group][slot] = _slot_entry(item)
 
     rack_raw = musical.get("channel_rack")
     rack_payload: dict[str, Any] | None

@@ -78,6 +78,15 @@ def live_kit_has_extra_slots(state: LiveKitState) -> bool:
     return False
 
 
+def is_live_kit_slot_identity(group: str, slot: str) -> bool:
+    """True for canonical taxonomy slots or Extra-N under a known group (#1377)."""
+    if group not in LIVE_KIT_GROUPS or not isinstance(slot, str):
+        return False
+    if slot in _SLOTS_BY_GROUP[group]:
+        return True
+    return is_live_kit_extra_slot(slot)
+
+
 class LiveKitState:
     """In-memory musical assignments; deliberately independent of Tk and storage.
 
@@ -335,6 +344,7 @@ __all__ = [
     "LiveKitState",
     "RightPanePresentation",
     "is_live_kit_extra_slot",
+    "is_live_kit_slot_identity",
     "live_kit_extra_slot_index",
     "live_kit_group_display_name",
     "live_kit_has_extra_slots",

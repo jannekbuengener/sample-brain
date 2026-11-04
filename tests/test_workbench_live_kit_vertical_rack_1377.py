@@ -229,6 +229,81 @@ def test_export_with_extra_slot_uses_schema_v2(tmp_path: Path) -> None:
     assert (result.export_path / Path(extra_entry["audio_path"])).is_file()
 
 
+def test_track_package_shape_accepts_extra_slots() -> None:
+    from src.track_package import _validate_live_kit_shape
+
+    payload = {
+        group: {slot: None for slot in slots}
+        for group, slots in LIVE_KIT_SLOT_MAPPING
+    }
+    payload["Kick + Bass"]["Extra 1"] = {"path": "media/bass_extra.wav"}
+    assert _validate_live_kit_shape(payload) is None
+    payload["Kick + Bass"]["Bogus"] = None
+    assert _validate_live_kit_shape(payload) is not None
+
+
+def test_internal_dnd_lists_and_accepts_extra_slot_targets(tmp_path: Path) -> None:
+    from src import workbench_internal_sample_dnd as sample_dnd
+    from src.workbench_feature_settings import WorkbenchFeatureSettings
+
+    wav = tmp_path / "drop.wav"
+    wav.write_bytes(b"RIFF....WAVEfmt ")
+    row = WorkbenchRow(
+        display_name="drop.wav",
+        relative_path="synthetic/drop.wav",
+        path=str(wav),
+        bpm=120.0,
+        key="C",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=2000.0,
+        sample_class="one_shot",
+        pred_type="Bass",
+        status="ok",
+        details={},
+    )
+    state = LiveKitState()
+    extra = state.append_empty_slot("Kick + Bass")
+    features = WorkbenchFeatureSettings(
+        gesture_rack_apply_enabled=False,
+        workspace_panel_docking_enabled=False,
+        internal_sample_dnd_enabled=True,
+    )
+    keys = (("Kick + Bass", "Kick"), ("Kick + Bass", extra))
+    targets = sample_dnd.list_visible_live_kit_targets(
+        features=features,
+        live_kit_materialized=True,
+        visible_slot_keys=keys,
+    )
+    assert any(t.slot == extra for t in targets)
+
+    descriptor = sample_dnd.descriptor_from_row(
+        row, source_surface="browser", features=features
+    )
+    assert descriptor is not None
+    intent = sample_dnd.InternalSampleDropIntent(
+        descriptor=descriptor,
+        target=sample_dnd.LiveKitAssignmentTarget(
+            group="Kick + Bass",
+            slot=extra,
+            visible=True,
+        ),
+        delivery_id="delivery-extra-1",
+    )
+    result = sample_dnd.apply_internal_sample_drop(
+        intent,
+        kit=state,
+        catalog=[row],
+        features=features,
+        live_kit_materialized=True,
+        visible_slot_keys=keys,
+        session=sample_dnd.InternalSampleDropSession(),
+    )
+    assert result.reason != "invalid_target"
+    assert result.accepted is True
+    assert state.assignment_for("Kick + Bass", extra) is not None
+
+
 def test_qml_source_has_vertical_rack_plus_without_collapse_arrows() -> None:
     qml = Path("src/workbench_qml.py").read_text(encoding="utf-8")
     assert "appendEmptyLiveKitSlot" in qml
