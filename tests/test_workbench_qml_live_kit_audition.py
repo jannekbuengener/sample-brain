@@ -214,14 +214,14 @@ def test_collapse_expand_does_not_stop_or_mutate_playback():
     _assign(adapter, live_kit, "Drums", "Main Drum", _row("main.wav"))
 
     assert adapter.audition_live_kit_slot("Drums", "Main Drum") is True
-    # #743: Drums starts collapsed; expand then collapse without stopping playback.
-    assert adapter.toggle_live_kit_group("Drums") is False
+    # #1377: groups start expanded; collapse/expand must not stop playback.
+    assert adapter.toggle_live_kit_group("Drums") is True
     assert adapter.preview_active is True
     assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
     assert live_kit.state.assignment_for("Drums", "Main Drum") is not None
-    assert adapter.toggle_live_kit_group("Drums") is True
-    assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
     assert adapter.toggle_live_kit_group("Drums") is False
+    assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
+    assert adapter.toggle_live_kit_group("Drums") is True
     assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
 
 
@@ -257,9 +257,9 @@ def test_add_replace_collapse_regressions_stay_green_with_audition_present():
     assert live_kit.state.assignment_for("Drums", "Closed Hat") is None
 
     assert adapter.audition_live_kit_slot("Drums", "Main Drum") is True
-    # #743: expand then collapse; audition projection must survive disclosure.
-    assert adapter.toggle_live_kit_group("Drums") is False
+    # #1377: collapse then expand; audition projection must survive disclosure.
     assert adapter.toggle_live_kit_group("Drums") is True
+    assert adapter.toggle_live_kit_group("Drums") is False
     assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
 
 
@@ -415,21 +415,23 @@ def test_qml_slot_audition_wiring_has_no_audio_or_domain_implementation():
 
 
 def test_qml_live_kit_slot_audition_focused_state_is_subtle():
-    assert "slotAuditionBackdrop" in QML_SOURCE
-    assert "visible: modelData.auditioning" in QML_SOURCE
+    # #1377 vertical rack: audition focus is a quiet field tint, not a heavy card.
+    assert "id: slotField" in QML_SOURCE
+    assert "modelData.auditioning ? theme.selectionSurface" in QML_SOURCE
     assert "modelData.auditioning ? theme.actionActive" in QML_SOURCE
-    assert 'font.pixelSize: 10' in QML_SOURCE
+    assert "modelData.auditioning ? theme.selectionBorder" in QML_SOURCE
+    assert "font.pixelSize: 11" in QML_SOURCE or "font.pixelSize: 12" in QML_SOURCE
 
 
 def test_qml_replacement_target_is_separate_from_slot_audition_state():
     # Audition remains a projection of shared playback.  Replacement/Add on the
     # action affordance derives only from the pending-add property and the
     # read-only slot projection; no second Live-Kit target state is retained.
-    assert "slotAuditionBackdrop" in QML_SOURCE
-    assert "visible: modelData.auditioning" in QML_SOURCE
+    assert "id: slotField" in QML_SOURCE
+    assert "modelData.auditioning ? theme.selectionSurface" in QML_SOURCE
     assert "property bool hasPendingAdd:" in QML_SOURCE
     assert "property bool showReplaceAffordance:" in QML_SOURCE
-    assert "id: slotAuditionMouse" in QML_SOURCE
+    assert 'objectName: "slotAuditionMouse"' in QML_SOURCE or "id: slotAuditionMouse" in QML_SOURCE
     assert "id: slotAction" in QML_SOURCE
     assert "id: slotActionMouse" in QML_SOURCE
     assert "anchors.fill: parent" in QML_SOURCE
