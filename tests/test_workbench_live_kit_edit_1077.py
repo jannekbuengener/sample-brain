@@ -285,7 +285,8 @@ def test_visible_live_kit_exposes_canonical_1072_targets():
     assert all(t.kind == "live_kit_assignment" and t.visible for t in targets)
 
 
-def test_collapsed_groups_expose_no_1072_slot_keys():
+def test_vertical_rack_exposes_all_group_1072_slot_keys_while_visible():
+    # Helper still honors an empty expanded set (unit contract).
     assert (
         visible_live_kit_slot_keys(live_kit_visible=True, expanded_groups=()) == ()
     )
@@ -293,16 +294,20 @@ def test_collapsed_groups_expose_no_1072_slot_keys():
     adapter._live_kit_drawer_open = True
     adapter.live_kit_collapsed = False
     assert adapter.live_kit_is_visible() is True
+    # #1377: QML vertical rack authorizes every group while HUD is open,
+    # even if legacy presentation collapse toggles fire.
     assert all(
-        adapter._live_kit.presentation.is_collapsed(group)
+        not adapter._live_kit.presentation.is_collapsed(group)
         for group in adapter._live_kit.state.groups()
     )
-    assert adapter.visible_live_kit_slot_keys() == ()
-    adapter.toggle_live_kit_group("Kick + Bass")
     keys = adapter.visible_live_kit_slot_keys()
     assert keys
-    assert all(group == "Kick + Bass" for group, _slot in keys)
-    assert "Drums" not in {group for group, _slot in keys}
+    assert {group for group, _slot in keys} == set(adapter._live_kit.state.groups())
+    adapter.toggle_live_kit_group("Kick + Bass")
+    keys_after = adapter.visible_live_kit_slot_keys()
+    assert {group for group, _slot in keys_after} == set(
+        adapter._live_kit.state.groups()
+    )
 
 
 def test_hidden_live_kit_not_in_edit_docking_materialization():
@@ -347,11 +352,11 @@ def test_pending_add_counts_as_visible_for_docking_and_targets():
     assert adapter._live_kit_drawer_open is False
     assert adapter.live_kit_is_visible() is True
     assert adapter.edit_docking_materialization().live_kit is True
-    # #1374: pending Add auto-expands the first group with an empty slot
-    # (Kick + Bass still has empty Bass) so #1072 Slot + keys are reachable.
+    # #1377: while pending Add makes the Kit HUD visible, all groups authorize
+    # #1072 targets (vertical rack has no collapse gate on the QML path).
     keys = adapter.visible_live_kit_slot_keys()
     assert keys
-    assert all(group == "Kick + Bass" for group, _slot in keys)
+    assert {group for group, _slot in keys} == set(kit.groups())
     assert kit.assignment_for("Kick + Bass", "Kick") is keep
 
     assert adapter.cancel_live_kit_add() is True
@@ -578,10 +583,9 @@ def test_persisted_visible_preference_does_not_auto_open_on_restart(
     assert adapter.toggle_live_kit_drawer() is True
     assert adapter.live_kit_is_visible() is True
     assert composition.live_kit_materialized is True
-    adapter.toggle_live_kit_group("Kick + Bass")
     keys = adapter.visible_live_kit_slot_keys()
     assert keys
-    assert all(group == "Kick + Bass" for group, _slot in keys)
+    assert {group for group, _slot in keys} == set(kit_state.groups())
     targets = list_visible_live_kit_targets(
         features=WorkbenchFeatureSettings(internal_sample_dnd_enabled=True),
         live_kit_materialized=adapter.view_model.live_kit_materialized,
@@ -810,9 +814,9 @@ def test_session_open_restored_after_analysis_disclosure_clear(
     assert composition.live_kit_materialized is True
     assert adapter.live_kit_is_visible() is True
     assert adapter.edit_docking_materialization().live_kit is True
-    assert adapter.visible_live_kit_slot_keys() == ()
-    adapter.toggle_live_kit_group("Kick + Bass")
-    assert adapter.visible_live_kit_slot_keys()
+    keys = adapter.visible_live_kit_slot_keys()
+    assert keys
+    assert {group for group, _slot in keys} == set(kit_state.groups())
     assert kit_state.assignment_for("Kick + Bass", "Kick") is not None
 
 

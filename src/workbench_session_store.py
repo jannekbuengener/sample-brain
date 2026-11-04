@@ -34,6 +34,7 @@ from .workbench_live_kit import (
     LiveKitState,
     is_live_kit_extra_slot,
     is_live_kit_slot_identity,
+    live_kit_extra_slot_index,
 )
 from .workbench_transport_adapter import DEFAULT_TEMPO_BPM
 
@@ -417,8 +418,8 @@ def _parse_live_kit(payload: object) -> dict[str, dict[str, str | None]]:
             raise ValueError("live_kit entries must map group -> slot object")
         if group not in known_groups:
             raise ValueError(f"Unknown Live Kit group: {group!r}")
-        # Preserve Extra-N insertion order after the canonical seed.
-        extras: list[str] = []
+        # Canonical seed first; Extra-N follow in numeric index order (#1377).
+        extras: list[tuple[int, str, object]] = []
         for slot, slot_payload in slots_payload.items():
             if not isinstance(slot, str):
                 raise ValueError("live_kit slot keys must be strings")
@@ -427,13 +428,14 @@ def _parse_live_kit(payload: object) -> dict[str, dict[str, str | None]]:
                 continue
             if not is_live_kit_extra_slot(slot):
                 raise ValueError(f"Unknown Live Kit slot: {group!r} -> {slot!r}")
-            if slot in result[group] or slot in extras:
+            index = live_kit_extra_slot_index(slot)
+            if index is None:
+                raise ValueError(f"Unknown Live Kit slot: {group!r} -> {slot!r}")
+            if slot in result[group] or any(name == slot for _, name, _ in extras):
                 raise ValueError(f"Duplicate Live Kit slot: {group!r} -> {slot!r}")
-            extras.append(slot)
+            extras.append((index, slot, slot_payload))
+        for _index, slot, slot_payload in sorted(extras, key=lambda item: item[0]):
             result[group][slot] = _parse_live_kit_slot_path(slot_payload)
-        for slot in extras:
-            # Touch key order: extras already appended via dict insertion above.
-            _ = result[group][slot]
     return result
 
 

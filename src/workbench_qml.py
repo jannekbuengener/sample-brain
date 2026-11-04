@@ -2957,20 +2957,21 @@ class Screen1QmlInteractionAdapter:
         return bool(self.view_model.live_kit_materialized) and presentation_open
 
     def visible_live_kit_slot_keys(self) -> tuple[tuple[str, str], ...]:
-        """#1072 target keys — empty while hidden or when no group is expanded."""
+        """#1072 target keys — empty while HUD hidden.
+
+        #1377 vertical rack always projects every group/slot while the Kit is
+        visible. Drop authorization must match that surface, so collapse state
+        no longer gates target keys on the QML path.
+        """
         if not self.live_kit_is_visible():
             return ()
-        expanded: tuple[str, ...] = ()
         slots_by_group: dict[str, tuple[str, ...]] | None = None
+        expanded: tuple[str, ...] = ()
         if self._live_kit is not None:
-            expanded = tuple(
-                group
-                for group in self._live_kit.state.groups()
-                if not self._live_kit.presentation.is_collapsed(group)
-            )
+            expanded = self._live_kit.state.groups()
             slots_by_group = {
                 group: self._live_kit.state.slots_for(group)
-                for group in self._live_kit.state.groups()
+                for group in expanded
             }
         return visible_live_kit_slot_keys(
             live_kit_visible=True,
