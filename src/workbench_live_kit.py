@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -17,7 +18,12 @@ LIVE_KIT_SLOT_MAPPING = (
     ("Melodic", ("Lead", "Pad")),
     ("Atmos / FX", ("Atmos", "FX")),
 )
-"""Canonical Live Kit taxonomy shared by state, presentation, and chooser."""
+"""Canonical Live Kit taxonomy shared by state, presentation, and chooser.
+
+Seed / migration identity for every kit. Groups may grow beyond this map via
+:meth:`LiveKitState.append_empty_slot` (#1377); Export V1 still describes only
+this canonical map, while kits with extras export as schema V2.
+"""
 
 LIVE_KIT_GROUPS = tuple(group for group, _slots in LIVE_KIT_SLOT_MAPPING)
 """Compatibility projection of the canonical taxonomy's group order."""
@@ -25,6 +31,11 @@ LIVE_KIT_GROUPS = tuple(group for group, _slots in LIVE_KIT_SLOT_MAPPING)
 _SLOTS_BY_GROUP = dict(LIVE_KIT_SLOT_MAPPING)
 DRUM_SLOTS = _SLOTS_BY_GROUP["Drums"]
 """Compatibility projection for existing callers that address drum slots."""
+
+LIVE_KIT_MAX_SLOTS_PER_GROUP = 32
+"""Hard ceiling per group for growable racks (#1377)."""
+
+_EXTRA_SLOT_RE = re.compile(r"^Extra ([1-9]\d*)$")
 
 # Display-only labels (#1123). Domain taxonomy keys above stay authoritative.
 _LIVE_KIT_GROUP_DISPLAY_NAMES = {
@@ -45,12 +56,38 @@ def live_kit_slot_display_name(group: str, slot: str) -> str:
     return _LIVE_KIT_SLOT_DISPLAY_NAMES.get((group, slot), slot)
 
 
+def is_live_kit_extra_slot(slot: str) -> bool:
+    """True when *slot* is a growable Extra-N identity (#1377)."""
+    return _EXTRA_SLOT_RE.fullmatch(slot) is not None
+
+
+def live_kit_extra_slot_index(slot: str) -> int | None:
+    match = _EXTRA_SLOT_RE.fullmatch(slot)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def live_kit_has_extra_slots(state: LiveKitState) -> bool:
+    """True when any group currently holds a non-canonical Extra-N slot."""
+    for group in state.groups():
+        canonical = set(_SLOTS_BY_GROUP[group])
+        for slot in state.slots_for(group):
+            if slot not in canonical:
+                return True
+    return False
+
+
 class LiveKitState:
     """In-memory musical assignments; deliberately independent of Tk and storage.
 
     Optional ``on_assignment_changed`` supports session-owned persistence (#809).
     Wire the callback only after restore completes so assign-during-restore does
     not autosave a half-built snapshot.
+
+    #1377: each group is seeded from :data:`LIVE_KIT_SLOT_MAPPING` and may grow
+    through :meth:`append_empty_slot`. Creating a slot is distinct from assigning
+    a sample into an existing slot.
     """
 
     def __init__(
@@ -58,6 +95,9 @@ class LiveKitState:
         *,
         on_assignment_changed: Callable[[], None] | None = None,
     ) -> None:
+        self._slot_order: dict[str, list[str]] = {
+            group: list(slots) for group, slots in LIVE_KIT_SLOT_MAPPING
+        }
         self._assignments: dict[str, dict[str, WorkbenchRow | None]] = {
             group: {slot: None for slot in slots}
             for group, slots in LIVE_KIT_SLOT_MAPPING
@@ -75,7 +115,7 @@ class LiveKitState:
 
     def slots_for(self, group: str) -> tuple[str, ...]:
         self._validate_group(group)
-        return _SLOTS_BY_GROUP[group]
+        return tuple(self._slot_order[group])
 
     def assignment_for(self, group: str, slot: str) -> WorkbenchRow | None:
         self._validate_slot(group, slot)
@@ -104,12 +144,70 @@ class LiveKitState:
     def clear_assignments(self, *, notify: bool = True) -> None:
         """Clear all musical assignments, optionally without persistence callback."""
         changed = False
-        for group, slots in LIVE_KIT_SLOT_MAPPING:
-            for slot in slots:
+        for group in LIVE_KIT_GROUPS:
+            for slot in self._slot_order[group]:
                 if self._assignments[group][slot] is not None:
                     self._assignments[group][slot] = None
                     changed = True
         if changed and notify and self._on_assignment_changed is not None:
+            self._on_assignment_changed()
+
+    def append_empty_slot(self, group: str, *, notify: bool = True) -> str:
+        """Append one empty Extra-N slot to *group*. Returns the new slot key.
+
+        Does not assign a sample. Fails closed when the group is at
+        :data:`LIVE_KIT_MAX_SLOTS_PER_GROUP`.
+        """
+        self._validate_group(group)
+        order = self._slot_order[group]
+        if len(order) >= LIVE_KIT_MAX_SLOTS_PER_GROUP:
+            raise ValueError(
+                f"Maximum Live-Kit-Slots erreicht: {group} "
+                f"({LIVE_KIT_MAX_SLOTS_PER_GROUP})"
+            )
+        next_index = 1
+        for slot in order:
+            index = live_kit_extra_slot_index(slot)
+            if index is not None and index >= next_index:
+                next_index = index + 1
+        new_slot = f"Extra {next_index}"
+        if new_slot in self._assignments[group]:
+            raise ValueError(f"Live-Kit-Slot existiert bereits: {group} -> {new_slot}")
+        order.append(new_slot)
+        self._assignments[group][new_slot] = None
+        if notify and self._on_assignment_changed is not None:
+            self._on_assignment_changed()
+        return new_slot
+
+    def ensure_slot(self, group: str, slot: str) -> None:
+        """Ensure *slot* exists under *group* for session restore (#1377).
+
+        Canonical taxonomy slots are always present. Extra-N slots may be
+        appended in restore order. Unknown non-extra identities fail closed.
+        """
+        self._validate_group(group)
+        if slot in self._assignments[group]:
+            return
+        if not is_live_kit_extra_slot(slot):
+            raise ValueError(f"Unbekannter Live-Kit-Slot: {group} -> {slot}")
+        if len(self._slot_order[group]) >= LIVE_KIT_MAX_SLOTS_PER_GROUP:
+            raise ValueError(
+                f"Maximum Live-Kit-Slots erreicht: {group} "
+                f"({LIVE_KIT_MAX_SLOTS_PER_GROUP})"
+            )
+        self._slot_order[group].append(slot)
+        self._assignments[group][slot] = None
+
+    def reset_slot_structure(self, *, notify: bool = False) -> None:
+        """Reset every group to the canonical taxonomy with empty assignments."""
+        self._slot_order = {
+            group: list(slots) for group, slots in LIVE_KIT_SLOT_MAPPING
+        }
+        self._assignments = {
+            group: {slot: None for slot in slots}
+            for group, slots in LIVE_KIT_SLOT_MAPPING
+        }
+        if notify and self._on_assignment_changed is not None:
             self._on_assignment_changed()
 
     @staticmethod
@@ -119,7 +217,7 @@ class LiveKitState:
 
     def _validate_slot(self, group: str, slot: str) -> None:
         self._validate_group(group)
-        if slot not in self.slots_for(group):
+        if slot not in self._assignments[group]:
             raise ValueError(f"Unbekannter Live-Kit-Slot: {group} -> {slot}")
 
 
@@ -136,13 +234,17 @@ class LiveKitGroupView:
 
 
 class LiveKitPresentationState:
-    """Disclosure-only state layered over a LiveKitState."""
+    """Disclosure-only state layered over a LiveKitState.
+
+    #1377 vertical rack: groups start expanded so every slot field is reachable
+    without collapse arrows. Accordion toggle remains available for callers that
+    still use it (pending-add ensure, historical tests).
+    """
 
     def __init__(self, state: LiveKitState) -> None:
         self._state = state
-        # #743: first reveal shows only compact group headers; expand is explicit.
         self._active_group: str | None = None
-        self._collapsed_groups: set[str] = set(state.groups())
+        self._collapsed_groups: set[str] = set()
 
     def toggle_group(self, group: str) -> bool:
         self._state.slots_for(group)
@@ -155,13 +257,17 @@ class LiveKitPresentationState:
         return True
 
     def ensure_group_expanded(self, group: str) -> bool:
-        """Expand *group* (accordion: others collapse). No-op if already open.
+        """Expand *group*. No-op when already open.
 
         Returns True when *group* is expanded after the call.
-        Used by pending Add-to-Kit (#1374) so Slot + affordances are reachable
-        without a hidden group-header discovery step.
+        Used by pending Add-to-Kit (#1374) so Slot + affordances are reachable.
+        #1377 vertical rack starts fully expanded; in that state siblings stay
+        open so every group's slots remain assignment targets.
         """
         self._state.slots_for(group)
+        if not self._collapsed_groups:
+            self._active_group = group
+            return True
         if group not in self._collapsed_groups and self._active_group == group:
             return True
         self._collapsed_groups = set(self._state.groups()) - {group}
@@ -221,12 +327,16 @@ class RightPanePresentation:
 __all__ = [
     "DRUM_SLOTS",
     "LIVE_KIT_GROUPS",
+    "LIVE_KIT_MAX_SLOTS_PER_GROUP",
     "LIVE_KIT_SLOT_MAPPING",
     "LiveKitGroupView",
     "LiveKitPresentationState",
     "LiveKitSlotView",
     "LiveKitState",
     "RightPanePresentation",
+    "is_live_kit_extra_slot",
+    "live_kit_extra_slot_index",
     "live_kit_group_display_name",
+    "live_kit_has_extra_slots",
     "live_kit_slot_display_name",
 ]

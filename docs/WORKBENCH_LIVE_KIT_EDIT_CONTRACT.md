@@ -1,10 +1,10 @@
-# Workbench Live Kit Edit Contract (#1077 / #1123 / #1207)
+# Workbench Live Kit Edit Contract (#1077 / #1123 / #1207 / #1377)
 
 **Status:** ACTIVE_SUPPORTING  
-**Issue:** [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077) (Edit tool baseline); [#1123](https://github.com/jannekbuengener/sample-brain/issues/1123) (always-closed start + horizontal group cards); [#1207](https://github.com/jannekbuengener/sample-brain/issues/1207) (default-hidden Kit HUD + transient Add feedback)  
+**Issue:** [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077) (Edit tool baseline); [#1207](https://github.com/jannekbuengener/sample-brain/issues/1207) (default-hidden Kit HUD + transient Add feedback); [#1377](https://github.com/jannekbuengener/sample-brain/issues/1377) (vertical growing Sample Rack); [#1123](https://github.com/jannekbuengener/sample-brain/issues/1123) (historical Bassline display labels; card collapse UX superseded by #1377)  
 **Parent:** [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075)  
 **Depends on:** [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) product boundary; [#1070](https://github.com/jannekbuengener/sample-brain/issues/1070) Edit docking topology; [#1072](https://github.com/jannekbuengener/sample-brain/issues/1072) internal Sample DnD targets  
-**Related:** [#728](https://github.com/jannekbuengener/sample-brain/issues/728) Export Kit; [#1071](https://github.com/jannekbuengener/sample-brain/issues/1071) docking visuals; [#1073](https://github.com/jannekbuengener/sample-brain/issues/1073) Sample drag visuals; [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078) Arrangement entry; [#1220](https://github.com/jannekbuengener/sample-brain/issues/1220) Browser→Kit handoff; [#1221](https://github.com/jannekbuengener/sample-brain/issues/1221) full Live-Kit product
+**Related:** [#728](https://github.com/jannekbuengener/sample-brain/issues/728) Export Kit; [#1224](https://github.com/jannekbuengener/sample-brain/issues/1224) Export V1; [#1071](https://github.com/jannekbuengener/sample-brain/issues/1071) docking visuals; [#1073](https://github.com/jannekbuengener/sample-brain/issues/1073) Sample drag visuals; [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078) Arrangement entry; [#1220](https://github.com/jannekbuengener/sample-brain/issues/1220) Browser→Kit handoff; [#1221](https://github.com/jannekbuengener/sample-brain/issues/1221) full Live-Kit product
 
 ## Goal
 
@@ -114,24 +114,32 @@ adapter (`live_kit_user_height_px`, `0` = auto row-derived height), clamped to
 compact minimum and the existing workspace cap. Resize intents are separate
 from collapse/hide, panel-move, and sample-drag; resize is manual-mode only.
 
-### Group card projection (#1123)
+### Vertical growing Sample Rack (#1377; supersedes #1123 card collapse UX)
 
-Top-level kit **groups** project as compact horizontal cards (responsive wrap on
-narrow width; never unreadably narrow; no horizontal overflow as the default).
+Top-level kit **groups** project as a vertical Sample Rack inside the Kit HUD.
 Domain taxonomy keys stay authoritative (`Kick + Bass`, `Drums`, `Melodic`,
 `Atmos / FX`). Display-only labels may remap presentation without renaming
 domain IDs:
 
 | Domain group | Display label | Domain slots → display |
 |--------------|---------------|------------------------|
-| `Kick + Bass` | `Bassline` | `Kick` → `Kick Drum`; `Bass` → `Bass` |
-| `Drums` | `Drums` | unchanged |
-| `Melodic` | `Melodic` | unchanged |
-| `Atmos / FX` | `Atmos / FX` | unchanged (single domain group → one card; do not invent dual domain in QML) |
+| `Kick + Bass` | `Bassline` | `Kick` → `Kick Drum`; `Bass` → `Bass`; Extra-N keep domain key |
+| `Drums` | `Drums` | unchanged + optional Extra-N |
+| `Melodic` | `Melodic` | unchanged + optional Extra-N |
+| `Atmos / FX` | `Atmos / FX` | unchanged + optional Extra-N |
 
-Clicking a group card toggles expand/collapse of that group's slots. Collapsed
-groups keep musical assignments. Add / Replace / Remove / Export Kit seams are
-unchanged and remain Python-owned.
+Product rules (#1377):
+
+- Groups start expanded; no collapse arrows / dropdowns / side-by-side group buttons.
+- Slot fields stack vertically with ordinal position labels (`01`, `02`, …).
+- A compact centered **[+]** under the last field of each group calls
+  `LiveKitState.append_empty_slot` (create slot ≠ assign sample).
+- Canonical 11-slot seed remains the migration identity; Extra-N persist in session.
+- Export: canonical-only kits stay Export V1; kits with Extra-N use Export V2.
+- Add / Replace / Remove / Export Kit seams remain Python-owned.
+
+Historical #1123 horizontal card / accordion disclosure is superseded for the
+HUD surface. Default-hidden / manual-open HUD semantics from #1207 remain.
 
 ### Edit-scoped reveal (`editLiveKitRevealControl`)
 

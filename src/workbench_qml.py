@@ -234,6 +234,12 @@ class LiveKitPresenter:
             self._groups = self._project()
         return cleared
 
+    def append_empty_slot(self, group: str) -> str:
+        """Create one empty Extra-N slot via canonical domain mutation (#1377)."""
+        created = self._state.append_empty_slot(group)
+        self._groups = self._project()
+        return created
+
 
 def _row_details(row: WorkbenchRow) -> dict[str, object]:
     """Read the public renderer details attached to a Workbench row."""
@@ -670,16 +676,18 @@ class Screen1QmlViewModel:
                             "displayName": live_kit_slot_display_name(
                                 group.name, slot.name
                             ),
+                            "position": position,
+                            "positionLabel": f"{position:02d}",
                             "assignment": (
                                 slot.assignment.display_name
                                 if slot.assignment
-                                else "Empty · Slot wählen"
+                                else "Leerer Sample-Slot"
                             ),
                             "assigned": slot.assignment is not None,
                             "auditioning": self.auditioning_live_kit_slot
                             == (group.name, slot.name),
                         }
-                        for slot in group.slots
+                        for position, slot in enumerate(group.slots, start=1)
                     ],
                 }
                 for group in self.live_kit_groups
@@ -2362,6 +2370,20 @@ class Screen1QmlInteractionAdapter:
         self._sync_live_kit_projection()
         return self._live_kit.presentation.is_collapsed(group)
 
+    def append_empty_live_kit_slot(self, group: str) -> str | None:
+        """Grow one empty slot in *group* via domain mutation (#1377).
+
+        Returns the new slot key on success, else None. Distinct from assign.
+        """
+        if self._live_kit is None:
+            return None
+        try:
+            created = self._live_kit.append_empty_slot(group)
+        except ValueError:
+            return None
+        self._sync_live_kit_projection()
+        return created
+
     def assign_live_kit_slot(self, group: str, slot: str) -> bool:
         """Assign the pending (or selected) row through the existing seam.
 
@@ -2939,15 +2961,21 @@ class Screen1QmlInteractionAdapter:
         if not self.live_kit_is_visible():
             return ()
         expanded: tuple[str, ...] = ()
+        slots_by_group: dict[str, tuple[str, ...]] | None = None
         if self._live_kit is not None:
             expanded = tuple(
                 group
                 for group in self._live_kit.state.groups()
                 if not self._live_kit.presentation.is_collapsed(group)
             )
+            slots_by_group = {
+                group: self._live_kit.state.slots_for(group)
+                for group in self._live_kit.state.groups()
+            }
         return visible_live_kit_slot_keys(
             live_kit_visible=True,
             expanded_groups=expanded,
+            slots_by_group=slots_by_group,
         )
 
     def edit_docking_materialization(
@@ -7017,38 +7045,36 @@ ApplicationWindow {
                         || window.interaction.liveKitPendingAdd !== ""
                 // Compat alias — historical tests assert bottomExpanded.
                 readonly property bool bottomExpanded: kitHudExpanded
-                // #1123/#1207: wrap to fewer columns rather than squeeze slot controls.
-                // Assigned slot rows need ~172px for labels + audition + Replace/Remove.
-                readonly property int groupCardMinWidth: 200
-                readonly property int groupCardSpacing: 8
-                readonly property int groupCardWidth: {
-                    var avail = Math.max(0, width - 28)
-                    var gaps = groupCardSpacing * 3
-                    var ideal = (avail - gaps) / 4
-                    return Math.max(groupCardMinWidth, Math.min(220, ideal))
-                }
-                readonly property int groupFlowRows: {
+                // #1377: vertical growing Sample Rack — stacked group racks + trailing +.
+                readonly property int rackSlotHeight: 34
+                readonly property int rackGroupTitleHeight: 22
+                readonly property int rackPlusHeight: 22
+                readonly property int rackGroupSpacing: 10
+                readonly property int totalSlotCount: {
+                    var total = 0
                     var groups = window.screenData.liveKitGroups
-                    var avail = Math.max(0, width - 28)
-                    var perRow = Math.max(
-                        1,
-                        Math.floor((avail + groupCardSpacing) / (groupCardWidth + groupCardSpacing))
-                    )
-                    return Math.max(1, Math.ceil(groups.length / perRow))
+                    for (var gi = 0; gi < groups.length; gi++)
+                        total += groups[gi].slots.length
+                    return total
                 }
-                readonly property int expandedSlotCount: {
-                    var expandedSlots = 0
+                readonly property int requestedHeight: {
                     var groups = window.screenData.liveKitGroups
+                    var body = 56
                     for (var gi = 0; gi < groups.length; gi++) {
-                        if (groups[gi].active)
-                            expandedSlots += groups[gi].slots.length
+                        body += rackGroupTitleHeight
+                                + groups[gi].slots.length * rackSlotHeight
+                                + rackPlusHeight
+                                + rackGroupSpacing
                     }
-                    return expandedSlots
+                    return body
                 }
-                readonly property int requestedHeight: 72 + groupFlowRows * 44 + expandedSlotCount * 26
-                // #1374: slightly taller cap so pending Add + one expanded group
-                // stays reachable; Flickable still scrolls when content exceeds.
-                readonly property int maximumHeight: Math.round(parent.height * 0.58)
+                // Compat aliases for historical harnesses that probe card geometry.
+                readonly property int groupCardMinWidth: 200
+                readonly property int groupCardSpacing: rackGroupSpacing
+                readonly property int groupCardWidth: Math.max(groupCardMinWidth, width - 28)
+                readonly property int groupFlowRows: window.screenData.liveKitGroups.length
+                readonly property int expandedSlotCount: totalSlotCount
+                readonly property int maximumHeight: Math.round(parent.height * 0.72)
                 readonly property int autoHeight: Math.min(requestedHeight, maximumHeight)
                 readonly property int userHeightPx: window.interaction.liveKitUserHeightPx
                 height: kitHudExpanded
@@ -7288,64 +7314,48 @@ ApplicationWindow {
                             elide: Text.ElideRight
                         }
                     }
-                    Flow {
-                        // #1123: top-level kit groups as compact horizontal cards (wrap).
-                        // #1077: classic kit slots while Live Kit is visible; closed height 0.
-                        id: liveKitGroupsFlow
-                        objectName: "liveKitGroupsFlow"
+                    Column {
+                        // #1377: vertical growing Sample Rack per group.
+                        id: liveKitVerticalRack
+                        objectName: "liveKitVerticalRack"
                         visible: bottomRackPane.bottomExpanded
+                        // Compat probe for historical findChild("liveKitGroupsFlow").
+                        Item { objectName: "liveKitGroupsFlow"; width: 0; height: 0 }
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop
-                        spacing: bottomRackPane.groupCardSpacing
                         width: Math.max(0, parent.width)
-                        Repeater { model: window.screenData.liveKitGroups
-                            // Calm dark compact card; Blood-A accent only when active/selected.
-                            delegate: Rectangle {
+                        spacing: bottomRackPane.rackGroupSpacing
+                        Repeater {
+                            model: window.screenData.liveKitGroups
+                            delegate: Column {
+                                id: liveKitGroupRack
+                                width: parent.width
+                                spacing: 4
                                 property int kitGroupIndex: index
-                                property bool groupHovered: liveKitGroupHeader.containsMouse
-                                width: bottomRackPane.groupCardWidth
-                                height: 40 + (modelData.active ? modelData.slots.length * 26 + 10 : 0)
-                                radius: 4
-                                color: modelData.active ? theme.hoverSurface
-                                       : (groupHovered ? theme.hoverSurface : "transparent")
-                                opacity: modelData.active ? 1.0 : 0.92
-                                border.width: (modelData.active || groupHovered) ? 1 : 0
-                                border.color: modelData.active ? theme.actionActive
-                                              : theme.borderSubtle
-                                ColumnLayout { anchors.fill: parent; anchors.margins: 0; spacing: 0
-                                    Item { Layout.fillWidth: true; Layout.preferredHeight: 40; Layout.leftMargin: 10; Layout.rightMargin: 8
-                                        RowLayout { anchors.fill: parent; spacing: 4
-                                            Label { text: modelData.displayName; color: theme.textPrimary; font.pixelSize: 12; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
-                                            Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 11; opacity: 0.85 }
-                                        }
-                                        MouseArea {
-                                            id: liveKitGroupHeader
-                                            objectName: "liveKitGroupHeader" + index
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            // onPressed (not onClicked): toggle before release so a
-                                            // collapsing group cannot slide a neighbor under the
-                                            // pointer and accidental-expand it (#743 disclosure).
-                                            onPressed: window.interaction.toggleLiveKitGroup(kitGroupIndex)
-                                        }
-                                    }
-                                ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8; Layout.topMargin: 0; Layout.bottomMargin: 6
-                                    Repeater { model: modelData.active ? modelData.slots : []
+                                Label {
+                                    objectName: "liveKitGroupHeader" + kitGroupIndex
+                                    text: modelData.displayName
+                                    color: theme.textPrimary
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    width: parent.width
+                                }
+                                Column {
+                                    id: liveKitSlotColumn
+                                    width: parent.width
+                                    spacing: 2
+                                    Repeater {
+                                        model: modelData.slots
                                         delegate: Item {
                                             objectName: "liveKitSlot" + kitGroupIndex + "_" + index
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 26
-                                            // Renderer-only intent: derived from the authoritative
-                                            // pending-Add property plus the read-only slot projection.
-                                            // Keeps no second Live-Kit target state.
+                                            width: parent.width
+                                            height: bottomRackPane.rackSlotHeight
                                             property bool hasPendingAdd: window.interaction.liveKitPendingAdd !== ""
                                             property bool isAssigned: modelData.assigned
                                             property bool isEmpty: !modelData.assigned
                                             property bool showReplaceAffordance: modelData.assigned && !hasPendingAdd
                                             property bool showRemoveAffordance: modelData.assigned && !hasPendingAdd
                                             property bool showAddAffordance: !modelData.assigned || hasPendingAdd
-                                            // #1073: visible Live Kit slot accepts the internal Sample
-                                            // MIME only; Python owns eligibility, Add/Replace, replay.
                                             DropArea {
                                                 objectName: "internalSampleDropArea" + kitGroupIndex + "_" + index
                                                 anchors.fill: parent
@@ -7360,95 +7370,139 @@ ApplicationWindow {
                                                 }
                                             }
                                             Rectangle {
-                                                id: slotAuditionBackdrop
+                                                id: slotField
                                                 anchors.fill: parent
                                                 radius: 3
-                                                visible: modelData.auditioning
-                                                color: theme.selectionSurface
-                                                border.color: theme.selectionBorder
-                                            }
-                                            MouseArea {
-                                                id: slotAuditionMouse
-                                                objectName: "slotAuditionMouse"
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                enabled: modelData.assigned
-                                                onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
-                                            }
-                                            RowLayout { anchors.fill: parent; spacing: 4
-                                                Item { Layout.preferredWidth: 12; Layout.preferredHeight: 26
+                                                color: modelData.auditioning ? theme.selectionSurface
+                                                       : (slotFieldMouse.containsMouse ? theme.hoverSurface : "transparent")
+                                                border.width: 1
+                                                border.color: modelData.auditioning ? theme.selectionBorder : theme.borderSubtle
+                                                opacity: slotFieldMouse.containsMouse || modelData.auditioning ? 1.0 : 0.96
+                                                MouseArea {
+                                                    id: slotFieldMouse
+                                                    objectName: "slotAuditionMouse"
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    enabled: modelData.assigned
+                                                    z: 0
+                                                    onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
+                                                }
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 8
+                                                    anchors.rightMargin: 6
+                                                    spacing: 6
                                                     Label {
-                                                        anchors.centerIn: parent
+                                                        text: modelData.positionLabel
+                                                        color: theme.textSecondary
+                                                        font.pixelSize: 11
+                                                        Layout.preferredWidth: 22
+                                                    }
+                                                    Label {
                                                         text: modelData.assigned ? "▶" : ""
-                                                        color: slotAuditionMouse.containsMouse && window.interaction.liveKitPendingAdd === "" ? theme.actionActive : (modelData.auditioning ? theme.actionActive : theme.textSecondary)
-                                                        font.pixelSize: 10
+                                                        color: modelData.auditioning ? theme.actionActive
+                                                               : (slotFieldMouse.containsMouse && modelData.assigned ? theme.actionActive : theme.textSecondary)
+                                                        font.pixelSize: 11
+                                                        Layout.preferredWidth: 14
                                                     }
-                                                }
-                                                Label { text: modelData.displayName; color: theme.textSecondary; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: 48; elide: Text.ElideRight }
-                                                Label { text: modelData.assignment; color: modelData.auditioning ? theme.actionActive : (modelData.assigned ? theme.textPrimary : theme.textSecondary); font.pixelSize: 10; Layout.fillWidth: true; Layout.minimumWidth: 40; elide: Text.ElideRight }
-                                                Rectangle {
-                                                    // #895: quieter slot affordance — fine border, accent only when pending/active.
-                                                    id: slotAction
-                                                    Layout.preferredHeight: 20
-                                                    radius: 3
-                                                    Layout.preferredWidth: showReplaceAffordance ? 36 : 20
-                                                    color: hasPendingAdd ? theme.selectionSurface
-                                                           : (slotActionMouse.containsMouse ? theme.hoverSurface
-                                                              : (showReplaceAffordance ? theme.hoverSurface : "transparent"))
-                                                    border.width: hasPendingAdd || showReplaceAffordance || slotActionMouse.containsMouse ? 1 : 0
-                                                    border.color: hasPendingAdd ? theme.actionActive
-                                                                  : (showReplaceAffordance || slotActionMouse.containsMouse ? theme.borderSubtle : "transparent")
                                                     Label {
-                                                        anchors.centerIn: parent
-                                                        objectName: "slotActionLabel" + kitGroupIndex + "_" + index
-                                                        text: hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")
-                                                        color: hasPendingAdd ? theme.actionActive : (slotActionMouse.containsMouse ? theme.textPrimary : theme.textSecondary)
-                                                        font.pixelSize: showReplaceAffordance ? 13 : 12
-                                                    }
-                                                }
-                                                Rectangle {
-                                                    id: slotRemoveAction
-                                                    objectName: "slotRemoveAction" + kitGroupIndex + "_" + index
-                                                    Layout.preferredHeight: 20
-                                                    Layout.preferredWidth: 20
-                                                    radius: 3
-                                                    visible: showRemoveAffordance
-                                                    color: slotRemoveMouse.containsMouse ? theme.hoverSurface : "transparent"
-                                                    border.width: slotRemoveMouse.containsMouse ? 1 : 0
-                                                    border.color: theme.borderSubtle
-                                                    Label {
-                                                        anchors.centerIn: parent
-                                                        text: "×"
-                                                        color: slotRemoveMouse.containsMouse ? theme.textPrimary : theme.textSecondary
+                                                        text: modelData.assignment
+                                                        color: modelData.assigned ? theme.textPrimary : theme.textSecondary
                                                         font.pixelSize: 12
+                                                        Layout.fillWidth: true
+                                                        elide: Text.ElideRight
                                                     }
-                                                    MouseArea {
-                                                        id: slotRemoveMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        z: 1
-                                                        onClicked: window.interaction.removeLiveKitSlot(kitGroupIndex, index)
+                                                    Rectangle {
+                                                        id: slotAction
+                                                        Layout.preferredHeight: 22
+                                                        Layout.preferredWidth: showReplaceAffordance ? 36 : 22
+                                                        radius: 3
+                                                        visible: showReplaceAffordance || hasPendingAdd || showAddAffordance
+                                                        color: hasPendingAdd ? theme.selectionSurface
+                                                               : (slotActionMouse.containsMouse ? theme.hoverSurface
+                                                                  : (showReplaceAffordance ? theme.hoverSurface : "transparent"))
+                                                        border.width: hasPendingAdd || showReplaceAffordance || slotActionMouse.containsMouse ? 1 : 0
+                                                        border.color: hasPendingAdd ? theme.actionActive
+                                                                      : (showReplaceAffordance || slotActionMouse.containsMouse ? theme.borderSubtle : "transparent")
+                                                        Label {
+                                                            anchors.centerIn: parent
+                                                            objectName: "slotActionLabel" + kitGroupIndex + "_" + index
+                                                            text: hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")
+                                                            color: hasPendingAdd ? theme.actionActive
+                                                                   : (slotActionMouse.containsMouse ? theme.textPrimary : theme.textSecondary)
+                                                            font.pixelSize: showReplaceAffordance ? 13 : 12
+                                                        }
+                                                        MouseArea {
+                                                            id: slotActionMouse
+                                                            objectName: "slotActionMouse" + kitGroupIndex + "_" + index
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            z: 1
+                                                            onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                                        }
+                                                    }
+                                                    Rectangle {
+                                                        id: slotRemoveAction
+                                                        objectName: "slotRemoveAction" + kitGroupIndex + "_" + index
+                                                        Layout.preferredHeight: 22
+                                                        Layout.preferredWidth: 22
+                                                        radius: 3
+                                                        visible: showRemoveAffordance
+                                                        color: slotRemoveMouse.containsMouse ? theme.hoverSurface : "transparent"
+                                                        border.width: slotRemoveMouse.containsMouse ? 1 : 0
+                                                        border.color: theme.borderSubtle
+                                                        Label {
+                                                            anchors.centerIn: parent
+                                                            text: "×"
+                                                            color: slotRemoveMouse.containsMouse ? theme.textPrimary : theme.textSecondary
+                                                            font.pixelSize: 12
+                                                        }
+                                                        MouseArea {
+                                                            id: slotRemoveMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            z: 1
+                                                            onClicked: window.interaction.removeLiveKitSlot(kitGroupIndex, index)
+                                                        }
                                                     }
                                                 }
                                             }
-                                            MouseArea {
-                                                id: slotActionMouse
-                                                objectName: "slotActionMouse" + kitGroupIndex + "_" + index
-                                                x: slotAction.x
-                                                y: slotAction.y
-                                                width: slotAction.width
-                                                height: slotAction.height
-                                                hoverEnabled: true
-                                                z: 1
-                                                onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
-                                            }
+                                        }
+                                    }
+                                }
+                                Item {
+                                    width: parent.width
+                                    height: bottomRackPane.rackPlusHeight
+                                    Rectangle {
+                                        id: liveKitGroupPlus
+                                        objectName: "liveKitGroupPlus" + kitGroupIndex
+                                        width: 22
+                                        height: 22
+                                        radius: 11
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        color: plusMouse.containsMouse ? theme.hoverSurface : "transparent"
+                                        border.width: 1
+                                        border.color: plusMouse.containsMouse ? theme.actionActive : theme.borderSubtle
+                                        opacity: plusMouse.containsMouse ? 1.0 : 0.75
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: "+"
+                                            color: plusMouse.containsMouse ? theme.actionActive : theme.textSecondary
+                                            font.pixelSize: 14
+                                        }
+                                        MouseArea {
+                                            id: plusMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            Accessible.name: "Add empty Live Kit slot"
+                                            onClicked: window.interaction.appendEmptyLiveKitSlot(kitGroupIndex)
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
                 }
                 }
                 }
@@ -8898,6 +8952,18 @@ def _qml_interaction_bridge(
                 return
             adapter.toggle_live_kit_group(name)
             self._refresh()
+
+        @Slot(int, result=bool)
+        def appendEmptyLiveKitSlot(self, group_index: int) -> bool:
+            """Create one empty Extra-N slot under the group (#1377)."""
+            name = self._live_kit_group_name(group_index)
+            if name is None:
+                return False
+            created = adapter.append_empty_live_kit_slot(name)
+            if created is None:
+                return False
+            self._refresh()
+            return True
 
         @Slot(int, int)
         def addLiveKitSlot(self, group_index: int, slot_index: int) -> None:

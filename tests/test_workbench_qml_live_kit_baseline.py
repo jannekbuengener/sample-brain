@@ -74,14 +74,14 @@ def test_collapse_expand_changes_only_presentation_state_not_assignments():
         for group in live_kit.groups
     )
 
-    # #743: all groups start collapsed; expand/collapse remains presentation-only.
-    assert live_kit.groups[1].active is False
-    assert adapter.toggle_live_kit_group("Drums") is False
+    # #1377: groups start expanded; expand/collapse remains presentation-only.
     assert live_kit.groups[1].active is True
     assert adapter.toggle_live_kit_group("Drums") is True
     assert live_kit.groups[1].active is False
     assert adapter.toggle_live_kit_group("Drums") is False
     assert live_kit.groups[1].active is True
+    assert adapter.toggle_live_kit_group("Drums") is True
+    assert live_kit.groups[1].active is False
 
     assert before == tuple(
         (group.name, tuple(slot.name for slot in group.slots))
@@ -98,7 +98,7 @@ def test_empty_slot_projects_an_honest_empty_state():
 
     assert drums["name"] == "Drums"
     assert drums["slots"][0]["assigned"] is False
-    assert drums["slots"][0]["assignment"] == "Empty · Slot wählen"
+    assert drums["slots"][0]["assignment"] == "Leerer Sample-Slot"
     assert all(not slot["assigned"] for slot in drums["slots"])
 
 
@@ -300,7 +300,7 @@ def test_qml_header_and_panels_remain_structurally_stable():
 
 def test_qml_exposes_pending_and_slot_action_wiring():
     assert "liveKitPendingAdd" in QML_SOURCE
-    assert "toggleLiveKitGroup(" in QML_SOURCE
+    assert "appendEmptyLiveKitSlot(" in QML_SOURCE
     assert "addLiveKitSlot(" in QML_SOURCE
     assert "escapeLiveKitContext" in QML_SOURCE
     assert "window.interaction.liveKitPendingAdd !== \"\"" in QML_SOURCE
@@ -309,18 +309,14 @@ def test_qml_exposes_pending_and_slot_action_wiring():
     assert "modelData.assigned" in QML_SOURCE
 
 
-def test_qml_group_header_hit_area_is_structurally_valid():
-    # #1123 compact horizontal cards: shorter header row, tighter margins.
-    wrapper = (
-        "Item { Layout.fillWidth: true; Layout.preferredHeight: 40; "
-        "Layout.leftMargin: 10; Layout.rightMargin: 8"
-    )
-    assert wrapper in QML_SOURCE
-    assert QML_SOURCE.count(wrapper) == 1
+def test_qml_vertical_rack_structure_is_present():
+    # #1377 vertical rack: group title, stacked slots, trailing plus; no chevrons.
+    assert 'objectName: "liveKitVerticalRack"' in QML_SOURCE
     assert 'objectName: "liveKitGroupsFlow"' in QML_SOURCE
-    assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
-    assert "onPressed: window.interaction.toggleLiveKitGroup(kitGroupIndex)" in QML_SOURCE
-    assert "onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)" not in QML_SOURCE
+    assert "liveKitGroupPlus" in QML_SOURCE
+    assert "appendEmptyLiveKitSlot" in QML_SOURCE
+    rack = QML_SOURCE.split('objectName: "liveKitVerticalRack"', 1)[1][:9000]
+    assert "▸" not in rack and "▾" not in rack
     assert "LiveKitState" not in QML_SOURCE
 
 
@@ -396,50 +392,19 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
         assert banner.property("visible") is False
         assert live_kit.state.assignment_for("Drums", "Closed Hat") is None
 
-        def group_header(index: int) -> QQuickItem:
-            target = f"liveKitGroupHeader{index}"
-            to_visit = [pane]
-            while to_visit:
-                current = to_visit.pop()
-                if current.objectName() == target:
-                    return current
-                to_visit.extend(current.childItems())
-            raise AssertionError(f"kein Live Kit Gruppen-Header {target} gefunden")
-
-        def click_group_header(index: int) -> None:
-            header = group_header(index)
-            QTest.mouseClick(
-                window,
-                Qt.LeftButton,
-                Qt.NoModifier,
-                header.mapToScene(header.boundingRect().center()).toPoint(),
-            )
-            app.processEvents()
-            _settle_qml_frame(app)
-
-        def canonical_start() -> None:
-            for index, want_active in (
-                (0, False),
-                (1, True),
-                (2, False),
-                (3, False),
-            ):
-                if live_kit.groups[index].active is not want_active:
-                    bridge.toggleLiveKitGroup(index)
-                    app.processEvents()
-
-        canonical_start()
-        assert live_kit.groups[1].active is True
-        click_group_header(1)
-        assert live_kit.groups[1].active is False
-        collapsed = window.property("screenData").property("liveKitGroups")
-        assert collapsed[1]["active"] is False
+        # #1377: growable plus creates an Extra slot without touching assignments.
+        before_slots = live_kit.state.slots_for("Drums")
+        assert bridge.appendEmptyLiveKitSlot(1) is True
+        app.processEvents()
+        after_slots = live_kit.state.slots_for("Drums")
+        assert len(after_slots) == len(before_slots) + 1
+        assert after_slots[-1] == "Extra 1"
         assert live_kit.state.assignment_for("Drums", "Main Drum") is fixture.browser_rows[4]
+        assert live_kit.state.assignment_for("Drums", "Extra 1") is None
         assert view_model.live_kit_groups is live_kit.groups
-
-        click_group_header(1)
-        assert live_kit.groups[1].active is True
-        assert live_kit.state.assignment_for("Drums", "Main Drum") is fixture.browser_rows[4]
+        grown = window.property("screenData").property("liveKitGroups")
+        assert grown[1]["slots"][-1]["name"] == "Extra 1"
+        assert grown[1]["slots"][-1]["assigned"] is False
     finally:
         window.close()
         app.processEvents()
@@ -477,8 +442,8 @@ def test_qml_pending_add_pointer_targets_slot_action_pill_and_commits():
         on_preview_requested=previews.append,
     )
     live_kit.assign("Drums", "Main Drum", fixture.browser_rows[0])
-    # #743: slots render only when their group is expanded.
-    assert live_kit.toggle_group("Drums") is False
+    # #1377: vertical rack starts expanded — slots are already projected.
+    assert live_kit.groups[1].active is True
     adapter._sync_live_kit_projection()
     view_model.live_kit_groups = live_kit.groups
     # #1077: visible Live Kit surface required before slot hit-targets exist.

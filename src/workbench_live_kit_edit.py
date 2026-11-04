@@ -8,9 +8,8 @@ drag visuals (#1073), or Arrangement step UI.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Mapping
 
 from .workbench_controller import workbench_state_dir
 from .workbench_edit_docking import EditDockingMaterialization
@@ -32,18 +31,25 @@ def visible_live_kit_slot_keys(
     *,
     live_kit_visible: bool,
     expanded_groups: Iterable[str] = (),
+    slots_by_group: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[tuple[str, str], ...]:
     """#1072 targets for currently expanded groups only while Live Kit is open.
 
     Collapsed group headers have no QML slot delegates; keys for those groups
     must stay empty so drop authorization cannot target a hidden surface.
+    When *slots_by_group* is provided (growable racks #1377), use that order
+    instead of the frozen canonical seed alone.
     """
     if not live_kit_visible:
         return ()
     allowed = {str(group) for group in expanded_groups}
+    if slots_by_group is None:
+        mapping: Mapping[str, Sequence[str]] = dict(LIVE_KIT_SLOT_MAPPING)
+    else:
+        mapping = slots_by_group
     return tuple(
         (group, slot)
-        for group, slots in LIVE_KIT_SLOT_MAPPING
+        for group, slots in mapping.items()
         if group in allowed
         for slot in slots
     )

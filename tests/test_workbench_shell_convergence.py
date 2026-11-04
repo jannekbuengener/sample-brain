@@ -305,17 +305,12 @@ def test_partial_view_settings_remain_non_persistable_during_session(
         root.destroy()
 
 
-def test_live_kit_default_starts_with_all_groups_collapsed():
-    # #743: first Live Kit disclosure shows four compact headers only.
+def test_live_kit_default_starts_with_all_groups_expanded():
+    # #1377: vertical rack reveals every group's slots without collapse arrows.
     presentation = LiveKitPresentationState(LiveKitState())
 
     assert presentation.active_group() is None
-    assert all(presentation.is_collapsed(group) for group in EXPECTED_GROUPS)
-    assert tuple(
-        group
-        for group in EXPECTED_GROUPS
-        if not presentation.is_collapsed(group)
-    ) == ()
+    assert all(not presentation.is_collapsed(group) for group in EXPECTED_GROUPS)
 
 
 def test_live_kit_accordion_preserves_taxonomy_slots_and_assignment_state():
@@ -323,6 +318,9 @@ def test_live_kit_accordion_preserves_taxonomy_slots_and_assignment_state():
     assigned = _row()
     state.assign("Drums", "Closed Hat", assigned)
     presentation = LiveKitPresentationState(state)
+    for group in EXPECTED_GROUPS:
+        if not presentation.is_collapsed(group):
+            presentation.toggle_group(group)
 
     assert presentation.toggle_group("Melodic") is False
 

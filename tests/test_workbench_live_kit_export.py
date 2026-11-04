@@ -649,7 +649,7 @@ def test_export_does_not_mutate_live_kit_or_presentation_state(tmp_path: Path) -
 
     state = LiveKitState()
     presentation = LiveKitPresentationState(state)
-    assert presentation.is_collapsed("Kick + Bass") is True
+    assert presentation.is_collapsed("Kick + Bass") is False
     assert presentation.active_group() is None
     _assign(state, "Kick + Bass", "Kick", kick)
     assigned_before = state.assignment_for("Kick + Bass", "Kick")

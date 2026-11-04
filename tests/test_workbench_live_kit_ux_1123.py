@@ -153,33 +153,33 @@ def test_hide_reveal_preserves_musical_kit_state(
     assert kit.assignment_for("Kick + Bass", "Bass").display_name == "bass.wav"
 
 
-def test_bassline_expand_exposes_kick_drum_and_bass_targets():
+def test_bassline_rack_exposes_kick_drum_and_bass_targets():
     adapter = _adapter()
     adapter._live_kit_drawer_open = True
     adapter.live_kit_collapsed = False
-    assert adapter.visible_live_kit_slot_keys() == ()
-    assert adapter.toggle_live_kit_group("Kick + Bass") is False
+    # #1377: vertical rack starts expanded — Bassline slots are already targets.
     keys = adapter.visible_live_kit_slot_keys()
-    assert keys == (("Kick + Bass", "Kick"), ("Kick + Bass", "Bass"))
+    assert ("Kick + Bass", "Kick") in keys
+    assert ("Kick + Bass", "Bass") in keys
     targets = list_visible_live_kit_targets(
         features=WorkbenchFeatureSettings(internal_sample_dnd_enabled=True),
         live_kit_materialized=True,
         visible_slot_keys=keys,
     )
-    assert len(targets) == 2
+    assert len(targets) >= 2
 
 
-def test_qml_projects_horizontal_responsive_group_cards():
+def test_qml_projects_vertical_growing_sample_rack():
+    # #1377 supersedes #1123 horizontal collapse cards for the Kit HUD surface.
+    assert 'objectName: "liveKitVerticalRack"' in QML_SOURCE
     assert 'objectName: "liveKitGroupsFlow"' in QML_SOURCE
-    assert "Flow {" in QML_SOURCE
-    assert 'objectName: "liveKitGroupsColumn"' not in QML_SOURCE
-    # Cards wrap; minimum width guard against unreadably narrow cells.
+    assert "liveKitGroupPlus" in QML_SOURCE
     assert "groupCardMinWidth" in QML_SOURCE
     assert "groupCardWidth" in QML_SOURCE
-    assert "groupCardMinWidth: 200" in QML_SOURCE
-    flow = QML_SOURCE.split('objectName: "liveKitGroupsFlow"', 1)[1][:2500]
-    assert "displayName" in flow
-    assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
+    rack = QML_SOURCE.split('objectName: "liveKitVerticalRack"', 1)[1]
+    rack = rack.split("channelRackScreen", 1)[0]
+    assert "displayName" in rack
+    assert "appendEmptyLiveKitSlot" in rack
 
 
 def test_reveal_control_hidden_when_browser_collapsed():

@@ -16,10 +16,15 @@ import shutil
 import tempfile
 from typing import Any
 
-from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
+from .workbench_live_kit import (
+    LIVE_KIT_SLOT_MAPPING,
+    LiveKitState,
+    live_kit_has_extra_slots,
+)
 
 LIVE_KIT_EXPORT_DIR_NAME = "Sample Brain Live Kit"
 LIVE_KIT_EXPORT_SCHEMA_VERSION = 1
+LIVE_KIT_EXPORT_SCHEMA_VERSION_V2 = 2
 LIVE_KIT_EXPORT_KIT_TYPE = "sample_brain_live_kit"
 LIVE_KIT_EXPORT_TYPE = "local_folder"
 
@@ -128,9 +133,11 @@ def _slot_filename(slot_index: int, slot: str, source_path: Path) -> str:
 
 
 def _snapshot_assignments(state: LiveKitState) -> list[_PlannedSlot]:
+    """Plan export rows from current kit slots (canonical seed + optional Extra-N)."""
     planned: list[_PlannedSlot] = []
-    for group_index, (group, slots) in enumerate(LIVE_KIT_SLOT_MAPPING, start=1):
+    for group_index, (group, _canonical) in enumerate(LIVE_KIT_SLOT_MAPPING, start=1):
         group_folder = _group_folder_name(group_index, group)
+        slots = state.slots_for(group)
         for slot_index, slot in enumerate(slots, start=1):
             row = state.assignment_for(group, slot)
             if row is None:
@@ -239,7 +246,11 @@ def _ensure_no_internal_collisions(planned: list[_PlannedSlot]) -> LiveKitExport
     return None
 
 
-def _build_manifest(planned: list[_PlannedSlot]) -> dict[str, Any]:
+def _build_manifest(
+    planned: list[_PlannedSlot],
+    *,
+    schema_version: int,
+) -> dict[str, Any]:
     groups: list[dict[str, Any]] = []
     current_group: str | None = None
     current_entry: dict[str, Any] | None = None
@@ -273,7 +284,7 @@ def _build_manifest(planned: list[_PlannedSlot]) -> dict[str, Any]:
                 slot_entry["duration_sec"] = item.duration_sec
         current_entry["slots"].append(slot_entry)
     return {
-        "schema_version": LIVE_KIT_EXPORT_SCHEMA_VERSION,
+        "schema_version": int(schema_version),
         "kit_type": LIVE_KIT_EXPORT_KIT_TYPE,
         "export_type": LIVE_KIT_EXPORT_TYPE,
         "groups": groups,
@@ -299,6 +310,12 @@ def export_live_kit(
     assigned = [item for item in planned if item.assigned]
     empty_count = len(planned) - len(assigned)
     assigned_count = len(assigned)
+    # V1 remains exact for canonical-only kits; extras require explicit V2 (#1377).
+    schema_version = (
+        LIVE_KIT_EXPORT_SCHEMA_VERSION_V2
+        if live_kit_has_extra_slots(state)
+        else LIVE_KIT_EXPORT_SCHEMA_VERSION
+    )
 
     if assigned_count == 0:
         return _failure(
@@ -369,7 +386,7 @@ def export_live_kit(
                 parents=True, exist_ok=True
             )
 
-        manifest = _build_manifest(planned)
+        manifest = _build_manifest(planned, schema_version=schema_version)
         (staging / "manifest.json").write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=False) + "\n",
             encoding="utf-8",
@@ -410,6 +427,7 @@ __all__ = [
     "LIVE_KIT_EXPORT_DIR_NAME",
     "LIVE_KIT_EXPORT_KIT_TYPE",
     "LIVE_KIT_EXPORT_SCHEMA_VERSION",
+    "LIVE_KIT_EXPORT_SCHEMA_VERSION_V2",
     "LIVE_KIT_EXPORT_TYPE",
     "LiveKitExportResult",
     "export_live_kit",
