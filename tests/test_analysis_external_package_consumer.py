@@ -10,11 +10,11 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.1.3"
+EXPECTED_VERSION = "0.1.4"
 EXPECTED_WHEEL_URL = (
     "https://github.com/jannekbuengener/sample-brain-analysis/releases/download/"
-    "v0.1.3/sample_brain_analysis-0.1.3-py3-none-any.whl"
-    "#sha256=030a64c6fcfa9e1c7c13d5a9d32083c405766d4683ba634a6ff3b99b49f1739f"
+    "v0.1.4/sample_brain_analysis-0.1.4-py3-none-any.whl"
+    "#sha256=5eabf4c87091540d26ae55ae6a6b070cdfae7c09b490a19d98b3fd636fe5bb61"
 )
 
 MODULE_ALIASES = {
@@ -47,7 +47,8 @@ def test_sample_brain_pins_released_analysis_wheel() -> None:
     assert importlib.metadata.version("sample-brain-analysis") == EXPECTED_VERSION
 
 
-def test_non_finite_reference_bpm_is_rejected_through_legacy_harmony_consumer_path() -> None:
+def test_non_finite_reference_bpm_still_ranks_through_legacy_harmony_consumer_path() -> None:
+    """#1373: BPM is ranking-only; non-finite BPM must not block harmonic matches."""
     harmony = importlib.import_module("src.harmony")
     candidate = harmony.HarmonyInput(
         display_name="candidate",
@@ -69,8 +70,12 @@ def test_non_finite_reference_bpm_is_rejected_through_legacy_harmony_consumer_pa
         )
         matches, error = harmony.find_harmony_matches(reference, [candidate])
 
-        assert matches == []
-        assert error == "Ähnliche Samples benötigen ein analysiertes BPM."
+        assert error is None
+        assert len(matches) == 1
+        assert matches[0].row is candidate
+        assert matches[0].bpm_score == 0.0
+        assert matches[0].harmony_score == 1.0
+        assert matches[0].total_score == 0.75
 
 
 def test_legacy_analysis_modules_are_external_module_aliases() -> None:

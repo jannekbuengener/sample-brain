@@ -167,10 +167,8 @@ def rank_query(
 
     abstention_reason: str | None = None
     empty = len(ranked_ids) == 0
-    ref_bpm = ref_item.get("bpm")
-    if empty and (ref_bpm is None or (isinstance(ref_bpm, (int, float)) and ref_bpm <= 0)):
-        abstention_reason = "missing_reference_bpm"
-    elif empty and error:
+    # #1373: missing reference BPM no longer abstains; BPM is ranking-only.
+    if empty and error:
         abstention_reason = "product_empty_error"
 
     return {
@@ -463,7 +461,7 @@ def measure_bpm_cohorts(document: Mapping[str, Any]) -> dict[str, Any]:
         ),
         "note": (
             "BPM is secondary evidence only; missing BPM must not invent tempo "
-            "certainty. Missing reference BPM triggers product abstention."
+            "certainty. Missing reference BPM zeroes bpm_score only (#1373)."
         ),
     }
 
@@ -477,8 +475,9 @@ def coverage_report(
     complete = (
         len(queries) == 5
         and as_labeled.get("queries_total") == 5
-        and as_labeled.get("queries_scored", 0) >= 4
-        and as_labeled.get("queries_empty", 0) >= 1
+        # #1373: missing reference BPM still ranks — expect full score coverage.
+        and as_labeled.get("queries_scored", 0) >= 5
+        and as_labeled.get("queries_empty", 0) == 0
         and bool(support.get("has_direct"))
         and bool(support.get("has_related"))
         and bool(support.get("has_transpose"))
@@ -513,9 +512,10 @@ def is_measured(result: Mapping[str, Any]) -> bool:
         return False
     if as_labeled.get("queries_total") != 5:
         return False
-    if as_labeled.get("queries_scored", 0) < 4:
+    # #1373: missing reference BPM still ranks, so all 5 queries score.
+    if as_labeled.get("queries_scored", 0) < 5:
         return False
-    if as_labeled.get("queries_empty", 0) < 1:
+    if as_labeled.get("queries_empty", 0) != 0:
         return False
     for state in UPSTREAM_STATES:
         if state not in upstream:

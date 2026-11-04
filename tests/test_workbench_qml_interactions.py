@@ -358,7 +358,8 @@ def test_harmonic_no_browser_selection_stays_closed_without_finder_call():
     assert "Kein Sample" in view_model.harmony_status
 
 
-def test_harmonic_open_without_reference_bpm_is_fail_closed_without_finder_call():
+def test_harmonic_open_without_reference_bpm_still_invokes_finder():
+    """#1373: missing BPM must not block Harmonic Matches when key is modeful."""
     calls = []
 
     def finder(anchor, candidates):
@@ -384,9 +385,10 @@ def test_harmonic_open_without_reference_bpm_is_fail_closed_without_finder_call(
     )
 
     assert adapter.toggle_harmonic_match() is True
-    assert view_model.harmony_status == MATCHING_NO_BPM_MESSAGE
-    assert view_model.harmony_rows == ()
-    assert calls == []
+    assert calls
+    assert view_model.harmony_status != MATCHING_NO_BPM_MESSAGE
+    assert "Harmonic Matches" in view_model.harmony_status
+    assert view_model.harmony_rows
 
 
 def test_harmonic_open_without_key_mode_is_fail_closed_without_finder_call():

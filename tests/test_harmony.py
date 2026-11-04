@@ -107,8 +107,10 @@ def test_finder_keeps_reference_exclusion_and_error_messages():
     assert error == "Keine weiteren geladenen Samples zum Vergleichen."
     for bpm in (None, 0.0, -1.0):
         matches, error = harmony.find_harmony_matches(replace(ref, bpm=bpm), [_input("cand")])
-        assert matches == []
-        assert error == "Ähnliche Samples benötigen ein analysiertes BPM."
+        assert error is None
+        assert len(matches) == 1
+        assert matches[0].bpm_score == 0.0
+        assert matches[0].harmony_score == 1.0
 
 
 def test_finder_relation_score_name_path_and_stable_tie_order():

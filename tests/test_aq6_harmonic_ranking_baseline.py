@@ -68,7 +68,8 @@ def test_rank_query_as_labeled_returns_deterministic_order() -> None:
     assert "test_related_fmaj" in first["ranked_ids"][:3]
 
 
-def test_missing_reference_bpm_abstains_without_forced_matches() -> None:
+def test_missing_reference_bpm_still_ranks_without_forced_certainty() -> None:
+    """#1373: missing BPM no longer abstains; harmony ranking still runs."""
     doc = ranking.load_relevance_benchmark_fixture(FIXTURE_PATH)
     query = next(
         q
@@ -76,10 +77,11 @@ def test_missing_reference_bpm_abstains_without_forced_matches() -> None:
         if q["query_id"] == "q_test_amaj_bpm_missing_reference"
     )
     result = baseline.rank_query(query, upstream_state="as_labeled")
-    assert result["ranked_ids"] == []
-    assert result["empty_result"] is True
-    assert result["error"] is not None
-    assert result["abstention_reason"] == "missing_reference_bpm"
+    assert result["error"] is None
+    assert result["empty_result"] is False
+    assert result["ranked_ids"]
+    assert result["abstention_reason"] is None
+    assert all(detail["bpm_score"] == 0.0 for detail in result["rank_details"])
 
 
 def test_missing_candidate_key_collapses_harmony_to_uncertain() -> None:
@@ -126,8 +128,8 @@ def test_aggregate_metrics_macro_averages_and_coverage() -> None:
         scored.append(baseline.score_ranked_query(query, ranked))
     agg = baseline.aggregate_query_metrics(scored)
     assert agg["queries_total"] == 5
-    assert agg["queries_scored"] == 4  # one abstains on missing ref BPM
-    assert agg["queries_empty"] == 1
+    assert agg["queries_scored"] == 5  # #1373: missing ref BPM still ranks
+    assert agg["queries_empty"] == 0
     assert "precision_at_1" in agg["macro"]
     assert "mrr_at_5" in agg["macro"]
     assert "ndcg_at_5" in agg["macro"]
@@ -201,7 +203,8 @@ def test_run_writes_external_json_measured(tmp_path: Path) -> None:
     assert loaded["missing_evidence_guard"]["pass"] is True
     assert loaded["theory_plane"]["mixed_into_ranking_metrics"] is False
     assert loaded["as_labeled"]["macro"]["precision_at_1"] == 1.0
-    assert loaded["as_labeled"]["queries_empty"] == 1
+    assert loaded["as_labeled"]["queries_empty"] == 0
+    assert loaded["as_labeled"]["queries_scored"] == 5
     assert result["exit_status"] == baseline.EXIT_MEASURED
     # Exact floats may live only in external JSON; no absolute host paths.
     blob = out.read_text(encoding="utf-8")
