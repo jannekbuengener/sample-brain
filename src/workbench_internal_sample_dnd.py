@@ -14,7 +14,7 @@ from typing import Any, Mapping, Sequence
 
 from .live_kits_registry import assign_sample_to_kit, replace_sample_assignment
 from .workbench_controller import WorkbenchRow
-from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
+from .workbench_live_kit import LiveKitState, is_live_kit_slot_identity
 
 KIND_INTERNAL_SAMPLE = "internal_sample"
 KIND_INTERNAL_SAMPLE_DROP = "internal_sample_drop"
@@ -51,9 +51,6 @@ _FOREIGN_PAYLOAD_KINDS: frozenset[str] = frozenset(
         "focus",
     }
 )
-
-_SLOTS_BY_GROUP: dict[str, tuple[str, ...]] = dict(LIVE_KIT_SLOT_MAPPING)
-
 
 @dataclass(frozen=True)
 class InternalSampleDescriptor:
@@ -262,9 +259,9 @@ def list_visible_live_kit_targets(
         return ()
     targets: list[LiveKitAssignmentTarget] = []
     for group, slot in visible_slot_keys:
-        if group not in _SLOTS_BY_GROUP:
-            continue
-        if slot not in _SLOTS_BY_GROUP[group]:
+        # #1377: accept current kit identities (canonical + Extra-N), not only
+        # the frozen seed map. Visibility remains caller-gated via keys.
+        if not is_live_kit_slot_identity(group, slot):
             continue
         targets.append(
             LiveKitAssignmentTarget(
@@ -391,11 +388,19 @@ def apply_internal_sample_drop(
             reason="invalid_target",
             evidence="Only visible Live Kit assignment targets are accepted.",
         )
-    if target.group not in _SLOTS_BY_GROUP or target.slot not in _SLOTS_BY_GROUP[target.group]:
+    if not is_live_kit_slot_identity(target.group, target.slot):
         return InternalSampleDropResult(
             accepted=False,
             reason="invalid_target",
             evidence="Live Kit slot identity is invalid.",
+        )
+    try:
+        kit.assignment_for(target.group, target.slot)
+    except ValueError:
+        return InternalSampleDropResult(
+            accepted=False,
+            reason="invalid_target",
+            evidence="Live Kit slot is not present on the current kit.",
         )
 
     # Authoritative visibility: transport visible flag alone cannot authorize.

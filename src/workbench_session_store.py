@@ -29,7 +29,13 @@ from .pattern_core import (
     Trigger,
 )
 from .workbench_controller import WorkbenchRow, workbench_state_dir
-from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
+from .workbench_live_kit import (
+    LIVE_KIT_SLOT_MAPPING,
+    LiveKitState,
+    is_live_kit_extra_slot,
+    is_live_kit_slot_identity,
+    live_kit_extra_slot_index,
+)
 from .workbench_transport_adapter import DEFAULT_TEMPO_BPM
 
 SCHEMA_VERSION = 2
@@ -308,8 +314,8 @@ def rehydrate_live_kit_from_library(
         with workbench_library_readonly_connection(library_db_path) as conn:
             if conn is None:
                 return
-            for group, slots in LIVE_KIT_SLOT_MAPPING:
-                for slot in slots:
+            for group in live_kit.groups():
+                for slot in live_kit.slots_for(group):
                     current = live_kit.assignment_for(group, slot)
                     if current is None:
                         continue
@@ -384,31 +390,52 @@ def _empty_live_kit_paths() -> dict[str, dict[str, str | None]]:
     return {group: {slot: None for slot in slots} for group, slots in LIVE_KIT_SLOT_MAPPING}
 
 
+def _parse_live_kit_slot_path(slot_payload: object) -> str | None:
+    if slot_payload is None:
+        return None
+    if not isinstance(slot_payload, Mapping):
+        raise ValueError("live_kit slot value must be null or {path}")
+    _reject_unknown_keys(slot_payload, {"path"}, name="live_kit slot")
+    path = slot_payload.get("path")
+    if path is not None and not isinstance(path, str):
+        raise ValueError("live_kit path must be a string")
+    if path is not None and path == "":
+        raise ValueError("live_kit path must be non-empty when present")
+    return path
+
+
 def _parse_live_kit(payload: object) -> dict[str, dict[str, str | None]]:
+    """Parse Live Kit paths; canonical slots required, Extra-N allowed (#1377)."""
     if not isinstance(payload, Mapping):
         raise ValueError("live_kit must be an object")
     result = _empty_live_kit_paths()
-    known = {(group, slot) for group, slots in LIVE_KIT_SLOT_MAPPING for slot in slots}
+    known_groups = {group for group, _slots in LIVE_KIT_SLOT_MAPPING}
+    canonical = {
+        (group, slot) for group, slots in LIVE_KIT_SLOT_MAPPING for slot in slots
+    }
     for group, slots_payload in payload.items():
         if not isinstance(group, str) or not isinstance(slots_payload, Mapping):
             raise ValueError("live_kit entries must map group -> slot object")
+        if group not in known_groups:
+            raise ValueError(f"Unknown Live Kit group: {group!r}")
+        # Canonical seed first; Extra-N follow in numeric index order (#1377).
+        extras: list[tuple[int, str, object]] = []
         for slot, slot_payload in slots_payload.items():
             if not isinstance(slot, str):
                 raise ValueError("live_kit slot keys must be strings")
-            if (group, slot) not in known:
-                raise ValueError(f"Unknown Live Kit slot: {group!r} -> {slot!r}")
-            if slot_payload is None:
-                result[group][slot] = None
+            if (group, slot) in canonical:
+                result[group][slot] = _parse_live_kit_slot_path(slot_payload)
                 continue
-            if not isinstance(slot_payload, Mapping):
-                raise ValueError("live_kit slot value must be null or {path}")
-            _reject_unknown_keys(slot_payload, {"path"}, name="live_kit slot")
-            path = slot_payload.get("path")
-            if path is not None and not isinstance(path, str):
-                raise ValueError("live_kit path must be a string")
-            if path is not None and path == "":
-                raise ValueError("live_kit path must be non-empty when present")
-            result[group][slot] = path
+            if not is_live_kit_extra_slot(slot):
+                raise ValueError(f"Unknown Live Kit slot: {group!r} -> {slot!r}")
+            index = live_kit_extra_slot_index(slot)
+            if index is None:
+                raise ValueError(f"Unknown Live Kit slot: {group!r} -> {slot!r}")
+            if slot in result[group] or any(name == slot for _, name, _ in extras):
+                raise ValueError(f"Duplicate Live Kit slot: {group!r} -> {slot!r}")
+            extras.append((index, slot, slot_payload))
+        for _index, slot, slot_payload in sorted(extras, key=lambda item: item[0]):
+            result[group][slot] = _parse_live_kit_slot_path(slot_payload)
     return result
 
 
@@ -668,8 +695,8 @@ def snapshot_from_musical_state(
     target over the currently effective tempo (#818).
     """
     live_paths = _empty_live_kit_paths()
-    for group, slots in LIVE_KIT_SLOT_MAPPING:
-        for slot in slots:
+    for group in live_kit.groups():
+        for slot in live_kit.slots_for(group):
             assignment = live_kit.assignment_for(group, slot)
             live_paths[group][slot] = (
                 str(assignment.path) if assignment is not None else None
@@ -716,10 +743,16 @@ def snapshot_from_musical_state(
 
 def _snapshot_to_json_dict(snapshot: WorkbenchSessionSnapshot) -> dict[str, Any]:
     live_kit: dict[str, dict[str, dict[str, str] | None]] = {}
-    for group, slots in LIVE_KIT_SLOT_MAPPING:
+    for group, canonical_slots in LIVE_KIT_SLOT_MAPPING:
         live_kit[group] = {}
-        for slot in slots:
-            path = snapshot.live_kit[group][slot]
+        group_payload = snapshot.live_kit.get(group, {})
+        # Canonical slots first (stable V1-compatible identity), then extras.
+        ordered_slots = list(canonical_slots)
+        for slot in group_payload.keys():
+            if slot not in ordered_slots:
+                ordered_slots.append(slot)
+        for slot in ordered_slots:
+            path = group_payload.get(slot)
             live_kit[group][slot] = {"path": path} if path is not None else None
 
     if snapshot.channel_rack is None:
@@ -789,17 +822,32 @@ def snapshot_from_track_package_musical(
         if not isinstance(group_raw, Mapping):
             raise _SessionSemanticError("Track package live_kit group missing")
         live_payload[group] = {}
-        for slot in slots:
-            item = group_raw.get(slot)
+
+        def _slot_entry(item: object) -> dict[str, str] | None:
             if item is None:
-                live_payload[group][slot] = None
-            elif isinstance(item, Mapping) and set(item) == {"path"}:
+                return None
+            if isinstance(item, Mapping) and set(item) == {"path"}:
                 resolved = _resolve_package_media_ref(package_root, item.get("path"))
                 if resolved is None:
-                    raise _SessionSemanticError("Assigned track package slot has no path")
-                live_payload[group][slot] = {"path": resolved}
-            else:
-                raise _SessionSemanticError("Track package live_kit slot is invalid")
+                    raise _SessionSemanticError(
+                        "Assigned track package slot has no path"
+                    )
+                return {"path": resolved}
+            raise _SessionSemanticError("Track package live_kit slot is invalid")
+
+        for slot in slots:
+            live_payload[group][slot] = _slot_entry(group_raw.get(slot))
+        # #1377: Extra-N slots ride alongside the canonical seed.
+        for slot, item in group_raw.items():
+            if slot in live_payload[group]:
+                continue
+            if not is_live_kit_slot_identity(group, slot) or not is_live_kit_extra_slot(
+                slot
+            ):
+                raise _SessionSemanticError(
+                    f"Unknown track package Live Kit slot: {group!r} -> {slot!r}"
+                )
+            live_payload[group][slot] = _slot_entry(item)
 
     rack_raw = musical.get("channel_rack")
     rack_payload: dict[str, Any] | None
@@ -870,10 +918,10 @@ def apply_snapshot_to_live_kit(
     snapshot: WorkbenchSessionSnapshot, live_kit: LiveKitState
 ) -> None:
     """Replace Live Kit assignments from a validated snapshot without autosave."""
-    live_kit.clear_assignments(notify=False)
-    for group, slots in LIVE_KIT_SLOT_MAPPING:
-        for slot in slots:
-            path = snapshot.live_kit[group][slot]
+    live_kit.reset_slot_structure(notify=False)
+    for group, slots_payload in snapshot.live_kit.items():
+        for slot, path in slots_payload.items():
+            live_kit.ensure_slot(group, slot)
             if path is not None:
                 live_kit.assign(group, slot, workbench_row_from_sample_ref(path))
 

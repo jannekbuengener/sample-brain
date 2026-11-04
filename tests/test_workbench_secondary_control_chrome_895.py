@@ -110,22 +110,16 @@ def test_browser_search_is_dark_theme_native_field() -> None:
 
 def test_live_kit_group_chrome_is_light_not_heavy_card() -> None:
     live = _live_kit_block()
-    # Heavy default card mass from pre-#895 (radius 6 + elevated fill always).
-    # Active may still lift quietly; inactive must stay transparent/low mass.
-    group_delegate = live.split("Repeater { model: window.screenData.liveKitGroups", 1)[1]
-    group_rect = group_delegate.split("delegate: Rectangle", 1)[1][:1600]
-    assert "radius: 4" in group_rect or "radius: 3" in group_rect
-    assert "radius: 6" not in group_rect
-    # Quiet active lift (hoverSurface) or elevated; inactive stays transparent.
-    assert '"transparent"' in group_rect
-    assert "theme.hoverSurface" in group_rect or "theme.surfaceElevated" in group_rect
-    assert "theme.borderSubtle" in group_rect
-    # Idle groups must not keep a permanent box border (form-field look).
-    assert "border.width: (modelData.active || groupHovered) ? 1 : 0" in group_rect or (
-        "border.width:" in group_rect and "groupHovered" in group_rect
-    )
-    # Active border may use accent sparingly; quiet selectionBorder is also fine.
-    assert "theme.actionActive" in group_rect or "theme.selectionBorder" in group_rect
+    # #1377 vertical rack: group headers + slot fields stay light, not heavy cards.
+    assert 'objectName: "liveKitVerticalRack"' in live
+    rack = live.split('objectName: "liveKitVerticalRack"', 1)[1]
+    slot_field = rack.split("id: slotField", 1)[1][:1600]
+    assert "radius: 4" in slot_field or "radius: 3" in slot_field
+    assert "radius: 6" not in slot_field
+    assert '"transparent"' in slot_field
+    assert "theme.hoverSurface" in slot_field or "theme.surfaceElevated" in slot_field
+    assert "theme.borderSubtle" in slot_field
+    assert "theme.actionActive" in slot_field or "theme.selectionBorder" in slot_field
     # Export Kit shares secondary chrome language.
     export = _extract_named_control(live, "liveKitExportButton", window=2400)
     assert "flat: true" in export

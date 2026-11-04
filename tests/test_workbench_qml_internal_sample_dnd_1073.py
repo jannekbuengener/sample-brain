@@ -224,17 +224,27 @@ def test_visible_targets_empty_when_live_kit_not_materialized():
     assert adapter.visible_live_kit_drop_targets() == []
 
 
-def test_visible_targets_only_for_expanded_groups():
+def test_visible_targets_cover_all_groups_while_kit_open():
+    """#1377 vertical rack: every group/slot is a drop target while the HUD is open."""
     adapter, live_kit = _adapter(dnd_enabled=True)
-    assert adapter.visible_live_kit_drop_targets() == []
+    expected = {
+        (group, slot)
+        for group in live_kit.state.groups()
+        for slot in live_kit.state.slots_for(group)
+    }
 
-    adapter.toggle_live_kit_group("Kick + Bass")
     targets = adapter.visible_live_kit_drop_targets()
     keys = {(t["group"], t["slot"]) for t in targets}
 
-    assert keys == {("Kick + Bass", "Kick"), ("Kick + Bass", "Bass")}
+    assert keys == expected
     assert all(t["kind"] == TARGET_LIVE_KIT_ASSIGNMENT for t in targets)
     assert all(t["visible"] is True for t in targets)
+    # Legacy presentation collapse must not hide #1072 targets on this path.
+    adapter.toggle_live_kit_group("Kick + Bass")
+    keys_after = {
+        (t["group"], t["slot"]) for t in adapter.visible_live_kit_drop_targets()
+    }
+    assert keys_after == expected
 
 
 def test_visible_targets_feature_off_returns_empty():
@@ -311,13 +321,16 @@ def test_stale_deleted_sample_rejects_without_mutation(tmp_path: Path):
     assert str(row.path) not in str(result)
 
 
-def test_drop_to_collapsed_group_rejects(tmp_path: Path):
-    adapter, live_kit = _adapter(dnd_enabled=True)
+def test_drop_rejects_when_live_kit_hud_hidden(tmp_path: Path):
+    """Hidden Kit HUD (not per-group collapse) fails closed for #1072 drops."""
+    adapter, live_kit = _adapter(dnd_enabled=True, drawer_open=False)
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
     row = _inject_browser_row(adapter, tmp_path, relative="packs/kick.wav")
     before = live_kit.state.assignment_for("Kick + Bass", "Kick")
 
     result = adapter.apply_internal_sample_drop(
-        row.relative_path, "browser", "Kick + Bass", "Kick", "drop-collapsed-1"
+        row.relative_path, "browser", "Kick + Bass", "Kick", "drop-hidden-hud-1"
     )
 
     assert result["accepted"] is False

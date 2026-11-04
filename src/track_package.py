@@ -22,7 +22,11 @@ from typing import Any, Iterable
 import uuid
 
 from .pattern_core import CHANNEL_ID_BY_LIVE_KIT_SLOT
-from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING
+from .workbench_live_kit import (
+    LIVE_KIT_SLOT_MAPPING,
+    is_live_kit_extra_slot,
+    is_live_kit_slot_identity,
+)
 
 SCHEMA_VERSION = 1
 PACKAGE_KIND = "sample_brain_track_package"
@@ -426,14 +430,14 @@ def _iter_musical_sample_refs(musical: Mapping[str, Any]) -> list[str]:
 
 
 def _validate_live_kit_shape(live_kit: Mapping[str, Any]) -> str | None:
-    known = {(group, slot) for group, slots in LIVE_KIT_SLOT_MAPPING for slot in slots}
+    """Accept canonical slots plus Extra-N under known groups (#1377)."""
     for group, slots_payload in live_kit.items():
         if not isinstance(group, str) or not isinstance(slots_payload, Mapping):
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
         for slot, slot_payload in slots_payload.items():
             if not isinstance(slot, str):
                 return OUTCOME_CORRUPT_OR_UNSUPPORTED
-            if (group, slot) not in known:
+            if not is_live_kit_slot_identity(group, slot):
                 return OUTCOME_CORRUPT_OR_UNSUPPORTED
             if slot_payload is None:
                 continue
