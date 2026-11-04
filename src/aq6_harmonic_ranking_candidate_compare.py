@@ -262,8 +262,7 @@ def find_harmony_matches_for_candidate(
             limit=limit,
         )
 
-    if reference.bpm is None or reference.bpm <= 0:
-        return [], "Ähnliche Samples benötigen ein analysiertes BPM."
+    # #1373: missing/invalid BPM zeroes bpm_score in rate_harmony; do not block.
 
     needle = query.strip().casefold()
     filtered = candidates
@@ -350,10 +349,8 @@ def rank_query_for_candidate(
     ]
     empty = len(ranked_ids) == 0
     abstention_reason: str | None = None
-    ref_bpm = ref_item.get("bpm")
-    if empty and (ref_bpm is None or (isinstance(ref_bpm, (int, float)) and ref_bpm <= 0)):
-        abstention_reason = "missing_reference_bpm"
-    elif empty and error:
+    # #1373: missing reference BPM no longer abstains; BPM is ranking-only.
+    if empty and error:
         abstention_reason = "product_empty_error"
     return {
         "query_id": query.get("query_id"),
@@ -567,10 +564,11 @@ def baseline_anchor_matches(
         "precision_at_1": macro.get("precision_at_1") == 1.0,
         "mrr_at_5": macro.get("mrr_at_5") == 1.0,
         "ndcg_at_5": macro.get("ndcg_at_5") == 1.0,
+        # #1373: missing BPM no longer abstains.
         "queries_empty": ranking_result.get("as_labeled", {}).get("queries_empty")
-        == 1,
+        == 0,
         "queries_scored": ranking_result.get("as_labeled", {}).get("queries_scored")
-        == 4,
+        == 5,
     }
     return {
         "anchor": "harmonic.baseline.v1",

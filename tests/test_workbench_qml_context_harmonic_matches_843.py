@@ -386,9 +386,10 @@ def test_root_only_context_b_opens_empty_with_truthful_status():
     assert "b_root" in view_model.harmony_anchor
 
 
-def test_invalid_bpm_context_b_fail_closed_no_stale_rows():
+def test_missing_bpm_context_b_retargets_without_stale_rows():
+    """#1373: modeful key without BPM still matches; stale A rows must clear."""
     row_a = _row("a", key="Amin")
-    row_b = _row("b_bad", key="Gmaj", bpm=None)
+    row_b = _row("b_nobpm", key="Gmaj", bpm=None)
     stale = _row("stale", key="Gmaj")
     controller = HarmonicMatchLibraryController(finder=find_harmony_matches)
     _fixture, view_model, adapter = _adapter(
@@ -404,9 +405,10 @@ def test_invalid_bpm_context_b_fail_closed_no_stale_rows():
 
     assert adapter.harmonic_match_open is True
     assert controller.anchor is row_b
-    assert controller.results == ()
-    assert view_model.harmony_rows == ()
+    assert controller.results
+    assert view_model.harmony_rows
     assert "stale" not in view_model.harmony_anchor
+    assert "b_nobpm" in view_model.harmony_anchor
 
 
 def test_a_to_b_invalidates_a_rows_atomically_with_b_projection():

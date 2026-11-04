@@ -126,15 +126,12 @@ def test_match_only_policy_excludes_anchor_uncertain_and_out_of_contract_hints()
 @pytest.mark.parametrize(
     "anchor",
     [
-        _row("missing-bpm", bpm=None),
-        _row("invalid-bpm", bpm=0),
-        _row("nan-bpm", bpm=float("nan")),
-        _row("positive-infinity-bpm", bpm=float("inf")),
-        _row("negative-infinity-bpm", bpm=float("-inf")),
         _row("bad-key", key="???"),
+        _row("mode-less-key", key="A"),
+        _row("empty-key", key=None),
     ],
 )
-def test_missing_or_invalid_anchor_evidence_fails_closed_without_calling_finder(anchor):
+def test_invalid_anchor_key_fails_closed_without_calling_finder(anchor):
     calls: list[str] = []
     controller = _controller(
         finder=lambda *_args, **_kwargs: calls.append("finder") or ([], None)
@@ -144,7 +141,32 @@ def test_missing_or_invalid_anchor_evidence_fails_closed_without_calling_finder(
 
     assert calls == []
     assert controller.results == ()
-    assert controller.status
+    assert "Harmonic Match" in controller.status or "auswertbar" in controller.status.casefold()
+
+
+@pytest.mark.parametrize(
+    "anchor",
+    [
+        _row("missing-bpm", bpm=None, key="Cmaj"),
+        _row("invalid-bpm", bpm=0, key="Amin"),
+        _row("nan-bpm", bpm=float("nan"), key="Dmin"),
+    ],
+)
+def test_missing_bpm_does_not_block_harmonic_match_when_key_modeful(anchor):
+    """#1373/#1219: BPM is ranking-only; modeful key remains eligible."""
+    calls: list[str] = []
+    match = _suggestion(_row("hit", key="Amin"), HarmonyRelation.RELATED, total=0.7)
+
+    def finder(*_args, **_kwargs):
+        calls.append("finder")
+        return [match], None
+
+    controller = _controller(finder=finder)
+    controller.set_anchor(anchor, [match.row])
+
+    assert calls == ["finder"]
+    assert controller.results == (match,)
+    assert "Harmonic Matches" in controller.status
 
 
 def test_ordinary_selection_and_result_audition_never_change_anchor_or_refresh():

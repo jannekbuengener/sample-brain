@@ -2210,6 +2210,8 @@ def format_playlist_load_status(playlist_name: str, rows: list[WorkbenchRow]) ->
 MATCHING_NO_SELECTION_MESSAGE = "Kein Sample ausgewählt."
 MATCHING_NO_BPM_MESSAGE = "Ähnliche Samples benötigen ein analysiertes BPM."
 MATCHING_NO_SUGGESTIONS_MESSAGE = "Keine Vorschläge in geladener Ansicht."
+HARMONIC_NO_SELECTION_MESSAGE = "Kein Sample ausgewählt."
+HARMONIC_NO_KEY_MESSAGE = "Harmonic Match benötigt einen auswertbaren Referenz-Key."
 
 
 @dataclass(frozen=True)
@@ -2244,11 +2246,35 @@ def _reference_bpm_usable(bpm: float | None) -> bool:
 
 
 def validate_workbench_matching_reference(reference: WorkbenchRow | None) -> str | None:
-    """Return a user-facing error when *reference* cannot drive matching."""
+    """Return a user-facing error when *reference* cannot drive similar-sample matching.
+
+    Similar-sample search requires usable BPM. Harmonic Matches use
+    :func:`validate_workbench_harmonic_reference` instead (#1373 / #1219).
+    """
     if reference is None:
         return MATCHING_NO_SELECTION_MESSAGE
     if not _reference_bpm_usable(reference.bpm):
         return MATCHING_NO_BPM_MESSAGE
+    return None
+
+
+def validate_workbench_harmonic_reference(reference: WorkbenchRow | None) -> str | None:
+    """Return a user-facing error when *reference* cannot drive Harmonic Matches.
+
+    Eligibility is modeful key evidence only. BPM is a secondary ranking input
+    and must not block matching (#1373 / #1219). Key resolution matches
+    :func:`src.workbench_harmony.harmonic_match_key_for_row`.
+    """
+    if reference is None:
+        return HARMONIC_NO_SELECTION_MESSAGE
+    # Local import avoids a workbench_controller ↔ workbench_harmony cycle.
+    from .workbench_harmony import harmonic_match_key_for_row
+    from .key_signature import parse_key_signature
+
+    anchor_key = harmonic_match_key_for_row(reference)
+    parsed = parse_key_signature(anchor_key) if anchor_key else None
+    if parsed is None or parsed.mode is None:
+        return HARMONIC_NO_KEY_MESSAGE
     return None
 
 
@@ -2450,12 +2476,15 @@ __all__ = [
     "WorkbenchRowFilters",
     "WorkbenchSuggestion",
     "FILTER_ALL_LABEL",
+    "HARMONIC_NO_KEY_MESSAGE",
+    "HARMONIC_NO_SELECTION_MESSAGE",
     "MATCHING_NO_BPM_MESSAGE",
     "MATCHING_NO_SELECTION_MESSAGE",
     "MATCHING_NO_SUGGESTIONS_MESSAGE",
     "compute_workbench_similar_suggestions",
     "format_workbench_suggestion_reason",
     "suggest_similar_workbench_rows",
+    "validate_workbench_harmonic_reference",
     "validate_workbench_matching_reference",
     "workbench_row_sample_id",
     "workbench_row_to_match_candidate",

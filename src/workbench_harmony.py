@@ -14,9 +14,10 @@ from .harmony import (
 )
 from .key_signature import parse_key_signature
 from .workbench_controller import (
+    HARMONIC_NO_KEY_MESSAGE,
     WorkbenchKeyAnalysisClaim,
     WorkbenchRow,
-    validate_workbench_matching_reference,
+    validate_workbench_harmonic_reference,
 )
 
 
@@ -122,14 +123,16 @@ class HarmonicMatchLibraryController:
         """Promote one explicit anchor and refresh exactly once."""
         self.anchor = anchor
         self.results = ()
-        matching_error = validate_workbench_matching_reference(anchor)
+        # #1373/#1219: modeful key only — do not reuse similar-sample BPM gate.
+        matching_error = validate_workbench_harmonic_reference(anchor)
         if matching_error is not None:
             self.status = matching_error
             return
         anchor_key = harmonic_match_key_for_row(anchor)
+        # Defensive re-check; validator already required a modeful parse.
         parsed_key = parse_key_signature(anchor_key) if anchor_key else None
         if parsed_key is None or parsed_key.mode is None:
-            self.status = "Harmonic Match benötigt einen auswertbaren Referenz-Key."
+            self.status = HARMONIC_NO_KEY_MESSAGE
             return
 
         eligible = [row for row in candidates if row.path != anchor.path]
