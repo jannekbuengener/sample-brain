@@ -37,9 +37,10 @@ LIVE_KIT_MAX_SLOTS_PER_GROUP = 32
 
 _EXTRA_SLOT_RE = re.compile(r"^Extra ([1-9]\d*)$")
 
-# Display-only labels (#1123). Domain taxonomy keys above stay authoritative.
+# Display-only labels (#1123 / #1377). Domain taxonomy keys stay authoritative.
 _LIVE_KIT_GROUP_DISPLAY_NAMES = {
     "Kick + Bass": "Bassline",
+    "Atmos / FX": "Atmos / FX / Vocal",
 }
 _LIVE_KIT_SLOT_DISPLAY_NAMES = {
     ("Kick + Bass", "Kick"): "Kick Drum",
@@ -245,15 +246,25 @@ class LiveKitGroupView:
 class LiveKitPresentationState:
     """Disclosure-only state layered over a LiveKitState.
 
-    #1377 vertical rack: groups start expanded so every slot field is reachable
-    without collapse arrows. Accordion toggle remains available for callers that
-    still use it (pending-add ensure, historical tests).
+    #1377 vertical rack: groups start expanded (no collapse arrows). Accordion
+    toggle remains available for callers that still use it (pending-add ensure,
+    historical tests).
+
+    Minimal default rack (#1377 follow-up): each group projects a prefix of its
+    domain slots — default one empty field. Occupied slots and Extra-N (session
+    domain truth) always extend the prefix. Revealing the next empty canonical
+    slot is presentation-only and must not mutate :class:`LiveKitState`.
     """
 
     def __init__(self, state: LiveKitState) -> None:
         self._state = state
         self._active_group: str | None = None
         self._collapsed_groups: set[str] = set()
+        # Inclusive 0-based end index of the visible prefix per group.
+        self._visible_prefix_end: dict[str, int] = {
+            group: 0 for group in state.groups()
+        }
+        self.sync_visible_prefix_from_domain()
 
     def toggle_group(self, group: str) -> bool:
         self._state.slots_for(group)
@@ -290,6 +301,72 @@ class LiveKitPresentationState:
     def active_group(self) -> str | None:
         return self._active_group
 
+    def sync_visible_prefix_from_domain(self) -> None:
+        """Raise each group's visible prefix to cover occupied slots and Extra-N.
+
+        Does not shrink a session watermark from prior Plus reveals. Empty
+        Extra-N remain visible because they are domain/session truth; empty
+        canonical reveals without Extra-N are not session-backed and therefore
+        collapse on a fresh presentation over the same empty domain.
+        """
+        for group in self._state.groups():
+            slots = self._state.slots_for(group)
+            if not slots:
+                self._visible_prefix_end[group] = 0
+                continue
+            required = 0
+            for index, slot in enumerate(slots):
+                if (
+                    self._state.assignment_for(group, slot) is not None
+                    or is_live_kit_extra_slot(slot)
+                ):
+                    required = index
+            current = self._visible_prefix_end.get(group, 0)
+            end = max(current, required)
+            self._visible_prefix_end[group] = min(end, len(slots) - 1)
+
+    def cover_slot(self, group: str, slot: str) -> None:
+        """Ensure *slot* is inside the visible prefix (assign / Extra append)."""
+        slots = self._state.slots_for(group)
+        index = slots.index(slot)
+        current = self._visible_prefix_end.get(group, 0)
+        self._visible_prefix_end[group] = max(current, index)
+
+    def reveal_next_slot(self, group: str) -> str | None:
+        """Reveal the next already-existing domain slot. No domain mutation.
+
+        Returns the newly revealed slot key, or ``None`` when every domain slot
+        in *group* is already visible (caller may then append Extra-N).
+        """
+        slots = self._state.slots_for(group)
+        end = self._visible_prefix_end.get(group, 0)
+        next_index = end + 1
+        if next_index >= len(slots):
+            return None
+        self._visible_prefix_end[group] = next_index
+        return slots[next_index]
+
+    def visible_slot_names(self, group: str) -> tuple[str, ...]:
+        """Ordered visible slot keys for *group* (prefix projection).
+
+        Always includes every occupied slot and every Extra-N, even when the
+        domain was mutated without a presentation notify (Tk / restore paths).
+        """
+        slots = self._state.slots_for(group)
+        if not slots:
+            return ()
+        required = 0
+        for index, slot in enumerate(slots):
+            if (
+                self._state.assignment_for(group, slot) is not None
+                or is_live_kit_extra_slot(slot)
+            ):
+                required = index
+        end = max(self._visible_prefix_end.get(group, 0), required)
+        end = min(end, len(slots) - 1)
+        self._visible_prefix_end[group] = end
+        return slots[: end + 1]
+
     def visible_structure(self) -> tuple[LiveKitGroupView, ...]:
         return tuple(
             LiveKitGroupView(
@@ -299,7 +376,7 @@ class LiveKitPresentationState:
                         name=slot,
                         assignment=self._state.assignment_for(group, slot),
                     )
-                    for slot in self._state.slots_for(group)
+                    for slot in self.visible_slot_names(group)
                 ),
             )
             for group in self._state.groups()

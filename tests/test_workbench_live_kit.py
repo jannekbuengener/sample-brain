@@ -118,9 +118,13 @@ def test_live_kit_slot_mapping_is_the_shared_taxonomy_source():
     presentation = LiveKitPresentationState(state)
     visible = presentation.visible_structure()
     assert tuple(group.name for group in visible) == tuple(group for group, _slots in mapping)
+    # Domain taxonomy stays complete; empty-kit projection shows one field/group.
+    assert tuple(
+        (group, state.slots_for(group)) for group, _slots in mapping
+    ) == mapping
     assert tuple(
         (group.name, tuple(slot.name for slot in group.slots)) for group in visible
-    ) == mapping
+    ) == tuple((group, (slots[0],)) for group, slots in mapping)
 
 
 def test_closed_hat_assignment_preserves_the_workbench_row_identity():
@@ -306,12 +310,17 @@ def test_live_kit_presentation_exposes_canonical_visible_structure():
     missing = "live-kit right-pane presentation"
     empty = _require_method(presentation, "visible_structure", missing)()
     assert tuple(group.name for group in empty) == _groups(state, missing)
-    assert tuple(slot.name for slot in empty[1].slots) == _slots(state, "Drums", missing)
-    assert empty[1].slots[1].assignment is None
+    # Minimal default rack: one visible empty Drum field until occupied/extra.
+    assert tuple(slot.name for slot in empty[1].slots) == ("Main Drum",)
+    assert empty[1].slots[0].assignment is None
 
     row = _row()
     _assign(state, "Drums", "Closed Hat", row, missing)
     assigned = _require_method(presentation, "visible_structure", missing)()
+    assert tuple(slot.name for slot in assigned[1].slots) == (
+        "Main Drum",
+        "Closed Hat",
+    )
     assert assigned[1].slots[1].assignment is row
 
 

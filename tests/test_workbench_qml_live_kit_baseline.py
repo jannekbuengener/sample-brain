@@ -393,14 +393,24 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
         assert banner.property("visible") is False
         assert live_kit.state.assignment_for("Drums", "Closed Hat") is None
 
-        # #1377: growable plus creates an Extra slot without touching assignments.
+        # #1377: Plus reveals hidden canonical slots before creating Extra-N.
         before_slots = live_kit.state.slots_for("Drums")
+        assert bridge.appendEmptyLiveKitSlot(1) is True
+        app.processEvents()
+        assert live_kit.state.slots_for("Drums") == before_slots
+        revealed = window.property("screenData").property("liveKitGroups")
+        assert revealed[1]["slots"][-1]["name"] == "Closed Hat"
+        assert live_kit.state.assignment_for("Drums", "Main Drum") is fixture.browser_rows[4]
+        # Exhaust remaining canonical Drum slots, then Extra-N is created.
+        while len(live_kit.groups[1].slots) < len(before_slots):
+            assert bridge.appendEmptyLiveKitSlot(1) is True
+            app.processEvents()
+        assert live_kit.state.slots_for("Drums") == before_slots
         assert bridge.appendEmptyLiveKitSlot(1) is True
         app.processEvents()
         after_slots = live_kit.state.slots_for("Drums")
         assert len(after_slots) == len(before_slots) + 1
         assert after_slots[-1] == "Extra 1"
-        assert live_kit.state.assignment_for("Drums", "Main Drum") is fixture.browser_rows[4]
         assert live_kit.state.assignment_for("Drums", "Extra 1") is None
         assert view_model.live_kit_groups is live_kit.groups
         grown = window.property("screenData").property("liveKitGroups")
@@ -556,9 +566,14 @@ def test_live_kit_denominator_derives_from_projected_groups():
     canonical_total = sum(len(slots) for _group, slots in LIVE_KIT_SLOT_MAPPING)
 
     assert canonical_total == 11
-    assert projected_total == canonical_total
+    # Minimal default rack: one visible empty field per group (domain stays 11).
+    assert projected_total == 4
     assert tuple(
         (group.name, len(group.slots)) for group in live_kit.groups
+    ) == tuple((group, 1) for group, _slots in LIVE_KIT_SLOT_MAPPING)
+    assert tuple(
+        (group, len(live_kit.state.slots_for(group)))
+        for group, _slots in LIVE_KIT_SLOT_MAPPING
     ) == tuple((group, len(slots)) for group, slots in LIVE_KIT_SLOT_MAPPING)
 
 

@@ -126,14 +126,22 @@ domain IDs:
 | `Kick + Bass` | `Bassline` | `Kick` → `Kick Drum`; `Bass` → `Bass`; Extra-N keep domain key |
 | `Drums` | `Drums` | unchanged + optional Extra-N |
 | `Melodic` | `Melodic` | unchanged + optional Extra-N |
-| `Atmos / FX` | `Atmos / FX` | unchanged + optional Extra-N |
+| `Atmos / FX` | `Atmos / FX / Vocal` | unchanged + optional Extra-N |
 
 Product rules (#1377):
 
 - Groups start expanded; no collapse arrows / dropdowns / side-by-side group buttons.
+- **Minimal default rack:** an empty kit projects exactly one visible empty field
+  per group. Additional empty canonical slots stay domain-owned but hidden until
+  revealed. Occupied slots and Extra-N always extend the visible prefix.
 - Slot fields stack vertically with ordinal position labels (`01`, `02`, …).
-- A compact centered **[+]** under the last field of each group calls
-  `LiveKitState.append_empty_slot` (create slot ≠ assign sample).
+- A compact centered **[+]** under the last field of each group first reveals the
+  next hidden canonical slot (presentation-only; no domain mutation). Only after
+  all current domain slots in that group are visible does Plus call
+  `LiveKitState.append_empty_slot` (create Extra-N ≠ assign sample).
+- Restart visibility: Extra-N (including empty) remain visible via the existing
+  session/domain contract. Empty canonical Plus-reveals without Extra-N are not
+  session-backed and collapse to the minimal default on a cold presentation.
 - Canonical 11-slot seed remains the migration identity; Extra-N persist in session.
 - Export: canonical-only kits stay Export V1; kits with Extra-N use Export V2.
 - Add / Replace / Remove / Export Kit seams remain Python-owned.
