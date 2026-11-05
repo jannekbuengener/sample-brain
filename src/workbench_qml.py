@@ -7325,23 +7325,26 @@ ApplicationWindow {
                         boundsBehavior: Flickable.StopAtBounds
                         interactive: contentHeight > height
                         ScrollBar.vertical: ScrollBar {
-                            // Owner visual: keep AlwaysOn when overflowing, but quiet vs dark HUD.
+                            // Owner visual: AlwaysOn when overflowing; dark track + quiet thumb.
                             objectName: "liveKitDrawerScrollBar"
                             policy: liveKitDrawerScroll.contentHeight > liveKitDrawerScroll.height
                                     ? ScrollBar.AlwaysOn
                                     : ScrollBar.AlwaysOff
-                            width: 6
+                            width: 7
                             padding: 1
                             contentItem: Rectangle {
                                 implicitWidth: 3
-                                implicitHeight: 32
+                                implicitHeight: 40
                                 radius: 1.5
-                                color: theme.textDisabled
-                                opacity: parent.pressed ? 0.55
-                                         : (parent.hovered ? 0.42 : 0.28)
+                                color: theme.borderSubtle
+                                opacity: parent.pressed ? 0.95
+                                         : (parent.hovered ? 0.72 : 0.48)
                             }
-                            background: Item {
-                                implicitWidth: 6
+                            background: Rectangle {
+                                implicitWidth: 7
+                                radius: 2
+                                color: theme.surfaceElevated
+                                opacity: 0.45
                             }
                         }
                         Column {
