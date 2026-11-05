@@ -113,13 +113,17 @@ def test_live_kit_group_chrome_is_light_not_heavy_card() -> None:
     # #1377 vertical rack: group headers + slot fields stay light, not heavy cards.
     assert 'objectName: "liveKitVerticalRack"' in live
     rack = live.split('objectName: "liveKitVerticalRack"', 1)[1]
-    slot_field = rack.split("id: slotField", 1)[1][:1600]
+    slot_field = rack.split("id: slotField", 1)[1][:2800]
     assert "radius: 4" in slot_field or "radius: 3" in slot_field
     assert "radius: 6" not in slot_field
     assert '"transparent"' in slot_field
     assert "theme.hoverSurface" in slot_field or "theme.surfaceElevated" in slot_field
     assert "theme.borderSubtle" in slot_field
     assert "theme.actionActive" in slot_field or "theme.selectionBorder" in slot_field
+    # Owner visual: slot actions keep a visible border at rest (not ghosted).
+    assert "id: slotAction" in rack
+    assert "border.width: 1" in rack
+    assert "theme.hoverSurface" in rack
     # Export Kit shares secondary chrome language.
     export = _extract_named_control(live, "liveKitExportButton", window=2400)
     assert "flat: true" in export

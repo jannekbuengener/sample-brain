@@ -315,3 +315,22 @@ def test_qml_source_has_vertical_rack_plus_without_collapse_arrows() -> None:
     assert "▾" not in rack_chunk
     assert "appendEmptyLiveKitSlot" in rack_chunk
     assert "toggleLiveKitGroup" not in rack_chunk
+
+
+def test_qml_live_kit_hud_scroll_keeps_rack_reachable() -> None:
+    """Owner visual: Atmos/FX and group + must stay reachable via HUD scroll."""
+    qml = Path("src/workbench_qml.py").read_text(encoding="utf-8")
+    pane = qml[qml.index('objectName: "liveKitPane"') : qml.index("channelRackScreen")]
+    assert 'objectName: "liveKitDrawerScroll"' in pane
+    assert 'objectName: "liveKitDrawerScrollBar"' in pane
+    assert "ScrollBar.AlwaysOn" in pane
+    # Sticky chrome (header) must precede the scroll viewport.
+    assert pane.index("LIVE KIT") < pane.index('objectName: "liveKitDrawerScroll"')
+    assert pane.index('objectName: "liveKitDrawerScroll"') < pane.index(
+        'objectName: "liveKitVerticalRack"'
+    )
+    # Append control stays fully opaque / larger hit target.
+    assert "rackPlusHeight: 28" in qml
+    plus = pane[pane.index("id: liveKitGroupPlus") :]
+    assert "width: 26" in plus
+    assert "opacity: 1.0" in plus
