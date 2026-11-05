@@ -232,7 +232,7 @@ def test_export_v1_canonical_and_v2_with_extras(tmp_path: Path) -> None:
 
 def test_presentation_reveal_is_not_a_domain_mutation() -> None:
     state = LiveKitState()
-    presentation = LiveKitPresentationState(state)
+    presentation = LiveKitPresentationState(state, minimal_default_rack=True)
     before = state.slots_for("Drums")
     revealed = presentation.reveal_next_slot("Drums")
     assert revealed == "Closed Hat"
@@ -240,6 +240,13 @@ def test_presentation_reveal_is_not_a_domain_mutation() -> None:
     structure = presentation.visible_structure()
     drums = next(g for g in structure if g.name == "Drums")
     assert [s.name for s in drums.slots] == ["Main Drum", "Closed Hat"]
+
+
+def test_tk_fallback_presentation_keeps_full_domain_visible() -> None:
+    state = LiveKitState()
+    presentation = LiveKitPresentationState(state)
+    drums = next(g for g in presentation.visible_structure() if g.name == "Drums")
+    assert [s.name for s in drums.slots] == list(state.slots_for("Drums"))
 
 
 def test_adapter_plus_uses_grow_not_blind_extra() -> None:

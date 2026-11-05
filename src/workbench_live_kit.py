@@ -250,21 +250,38 @@ class LiveKitPresentationState:
     toggle remains available for callers that still use it (pending-add ensure,
     historical tests).
 
-    Minimal default rack (#1377 follow-up): each group projects a prefix of its
-    domain slots — default one empty field. Occupied slots and Extra-N (session
-    domain truth) always extend the prefix. Revealing the next empty canonical
-    slot is presentation-only and must not mutate :class:`LiveKitState`.
+    Minimal default rack (#1377 follow-up): when *minimal_default_rack* is True
+    (QML Screen-1 LiveKitPresenter), each group projects a prefix of its domain
+    slots — default one empty field. Occupied slots and Extra-N (session domain
+    truth) always extend the prefix. Revealing the next empty canonical slot is
+    presentation-only and must not mutate :class:`LiveKitState`.
+
+    Default ``minimal_default_rack=False`` keeps the full current domain slot
+    list visible so the Tk Workbench fallback retains direct slot reachability
+    without a QML-style group Plus grow control.
     """
 
-    def __init__(self, state: LiveKitState) -> None:
+    def __init__(
+        self,
+        state: LiveKitState,
+        *,
+        minimal_default_rack: bool = False,
+    ) -> None:
         self._state = state
+        self._minimal_default_rack = bool(minimal_default_rack)
         self._active_group: str | None = None
         self._collapsed_groups: set[str] = set()
         # Inclusive 0-based end index of the visible prefix per group.
-        self._visible_prefix_end: dict[str, int] = {
-            group: 0 for group in state.groups()
-        }
-        self.sync_visible_prefix_from_domain()
+        if self._minimal_default_rack:
+            self._visible_prefix_end: dict[str, int] = {
+                group: 0 for group in state.groups()
+            }
+            self.sync_visible_prefix_from_domain()
+        else:
+            self._visible_prefix_end = {
+                group: max(0, len(state.slots_for(group)) - 1)
+                for group in state.groups()
+            }
 
     def toggle_group(self, group: str) -> bool:
         self._state.slots_for(group)

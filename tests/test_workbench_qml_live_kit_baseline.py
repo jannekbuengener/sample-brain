@@ -111,9 +111,11 @@ def test_pending_add_derives_empty_and_assigned_target_intent_without_domain_sta
     assert adapter.assign_live_kit_slot("Drums", "Main Drum") is True
     adapter.request_add_to_kit(1)
 
+    assert adapter.append_empty_live_kit_slot("Drums") == "Closed Hat"
     slots = view_model.qml_context()["liveKitGroups"][1]["slots"]
     assert adapter.pending_live_kit_add == pending.display_name
     assert slots[0]["assigned"] is True
+    assert slots[1]["name"] == "Closed Hat"
     assert slots[1]["assigned"] is False
     assert live_kit.state.assignment_for("Drums", "Main Drum") is assigned
     assert live_kit.state.assignment_for("Drums", "Closed Hat") is None

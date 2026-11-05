@@ -176,7 +176,10 @@ class LiveKitPresenter:
 
     def __init__(self, state: LiveKitState | None = None) -> None:
         self._state = state if state is not None else LiveKitState()
-        self._presentation = LiveKitPresentationState(self._state)
+        # QML Screen-1 owns the minimal default rack projection (#1377).
+        self._presentation = LiveKitPresentationState(
+            self._state, minimal_default_rack=True
+        )
         self._groups = self._project()
 
     @property

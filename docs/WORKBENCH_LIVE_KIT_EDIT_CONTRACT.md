@@ -131,9 +131,12 @@ domain IDs:
 Product rules (#1377):
 
 - Groups start expanded; no collapse arrows / dropdowns / side-by-side group buttons.
-- **Minimal default rack:** an empty kit projects exactly one visible empty field
-  per group. Additional empty canonical slots stay domain-owned but hidden until
-  revealed. Occupied slots and Extra-N always extend the visible prefix.
+- **Minimal default rack (QML Screen-1):** an empty kit projects exactly one
+  visible empty field per group via `LiveKitPresentationState(minimal_default_rack=True)`.
+  Additional empty canonical slots stay domain-owned but hidden until revealed.
+  Occupied slots and Extra-N always extend the visible prefix. The Tk fallback
+  keeps `minimal_default_rack=False` so its existing direct slot controls remain
+  reachable without a QML-style group Plus grow seam.
 - Slot fields stack vertically with ordinal position labels (`01`, `02`, …).
 - A compact centered **[+]** under the last field of each group first reveals the
   next hidden canonical slot (presentation-only; no domain mutation). Only after
