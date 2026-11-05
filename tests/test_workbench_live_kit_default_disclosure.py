@@ -220,11 +220,11 @@ def test_qml_first_reveal_shows_vertical_rack_slots_and_plus():
             assert find_named(pane, f"liveKitGroupHeader{index}") is not None
             assert find_named(pane, f"liveKitGroupPlus{index}") is not None
 
-        for group_index, (_group, slots) in enumerate(LIVE_KIT_SLOT_MAPPING):
-            for slot_index in range(len(slots)):
-                assert (
-                    find_named(pane, f"liveKitSlot{group_index}_{slot_index}") is not None
-                )
+        # Minimal default rack: exactly one visible field per group at first reveal.
+        for group_index, (_group, _slots) in enumerate(LIVE_KIT_SLOT_MAPPING):
+            assert find_named(pane, f"liveKitSlot{group_index}_0") is not None
+            assert find_named(pane, f"liveKitSlot{group_index}_1") is None
+        assert sum(len(group["slots"]) for group in projected) == 4
         assert fixture.browser_rows[0] is not None
     finally:
         window.close()

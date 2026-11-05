@@ -225,13 +225,14 @@ def test_visible_targets_empty_when_live_kit_not_materialized():
 
 
 def test_visible_targets_cover_all_groups_while_kit_open():
-    """#1377 vertical rack: every group/slot is a drop target while the HUD is open."""
+    """Minimal default rack: drop targets match the visible prefix, not hidden slots."""
     adapter, live_kit = _adapter(dnd_enabled=True)
     expected = {
-        (group, slot)
-        for group in live_kit.state.groups()
-        for slot in live_kit.state.slots_for(group)
+        (group.name, slot.name)
+        for group in live_kit.groups
+        for slot in group.slots
     }
+    assert len(expected) == 4
 
     targets = adapter.visible_live_kit_drop_targets()
     keys = {(t["group"], t["slot"]) for t in targets}
@@ -239,7 +240,7 @@ def test_visible_targets_cover_all_groups_while_kit_open():
     assert keys == expected
     assert all(t["kind"] == TARGET_LIVE_KIT_ASSIGNMENT for t in targets)
     assert all(t["visible"] is True for t in targets)
-    # Legacy presentation collapse must not hide #1072 targets on this path.
+    # Legacy presentation collapse must not hide the currently projected targets.
     adapter.toggle_live_kit_group("Kick + Bass")
     keys_after = {
         (t["group"], t["slot"]) for t in adapter.visible_live_kit_drop_targets()
@@ -292,6 +293,8 @@ def test_harmony_drop_uses_same_python_semantics(tmp_path: Path):
     harmony_rows[0] = _qml_harmony_row(row)
     adapter.view_model.harmony_rows = tuple(harmony_rows)
     adapter.toggle_live_kit_group("Melodic")
+    # Reveal Pad before targeting it — hidden canonical slots are not drop targets.
+    assert adapter.append_empty_live_kit_slot("Melodic") == "Pad"
 
     result = adapter.apply_internal_sample_drop(
         row.relative_path, "harmony", "Melodic", "Pad", "drop-harmony-1"

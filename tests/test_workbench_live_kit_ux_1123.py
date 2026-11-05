@@ -66,8 +66,9 @@ def test_display_mapping_bassline_and_kick_drum_without_domain_rename():
     assert live_kit_slot_display_name("Kick + Bass", "Bass") == "Bass"
     assert "Kick + Bass" in LIVE_KIT_GROUPS
     assert ("Kick + Bass", ("Kick", "Bass")) in LIVE_KIT_SLOT_MAPPING
-    for group in ("Drums", "Melodic", "Atmos / FX"):
-        assert live_kit_group_display_name(group) == group
+    assert live_kit_group_display_name("Drums") == "Drums"
+    assert live_kit_group_display_name("Melodic") == "Melodic"
+    assert live_kit_group_display_name("Atmos / FX") == "Atmos / FX / Vocal"
 
 
 def test_qml_context_projects_display_names_keep_domain_keys():
@@ -80,12 +81,13 @@ def test_qml_context_projects_display_names_keep_domain_keys():
     assert groups[0]["displayName"] == "Bassline"
     slot_names = {slot["name"]: slot["displayName"] for slot in groups[0]["slots"]}
     assert slot_names["Kick"] == "Kick Drum"
-    assert slot_names["Bass"] == "Bass"
+    # Minimal default rack: only the first empty field is projected initially.
+    assert list(slot_names) == ["Kick"]
     assert [g["displayName"] for g in groups] == [
         "Bassline",
         "Drums",
         "Melodic",
-        "Atmos / FX",
+        "Atmos / FX / Vocal",
     ]
     # Single Atmos / FX domain group → one card (no invented dual domain).
     assert sum(1 for g in groups if "Atmos" in g["name"] or "FX" in g["name"]) == 1
@@ -157,9 +159,12 @@ def test_bassline_rack_exposes_kick_drum_and_bass_targets():
     adapter = _adapter()
     adapter._live_kit_drawer_open = True
     adapter.live_kit_collapsed = False
-    # #1377: vertical rack starts expanded — Bassline slots are already targets.
+    # Minimal default: only the first Bassline field is a drop target.
     keys = adapter.visible_live_kit_slot_keys()
     assert ("Kick + Bass", "Kick") in keys
+    assert ("Kick + Bass", "Bass") not in keys
+    assert adapter.append_empty_live_kit_slot("Kick + Bass") == "Bass"
+    keys = adapter.visible_live_kit_slot_keys()
     assert ("Kick + Bass", "Bass") in keys
     targets = list_visible_live_kit_targets(
         features=WorkbenchFeatureSettings(internal_sample_dnd_enabled=True),

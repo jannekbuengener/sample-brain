@@ -176,7 +176,10 @@ class LiveKitPresenter:
 
     def __init__(self, state: LiveKitState | None = None) -> None:
         self._state = state if state is not None else LiveKitState()
-        self._presentation = LiveKitPresentationState(self._state)
+        # QML Screen-1 owns the minimal default rack projection (#1377).
+        self._presentation = LiveKitPresentationState(
+            self._state, minimal_default_rack=True
+        )
         self._groups = self._project()
 
     @property
@@ -216,6 +219,7 @@ class LiveKitPresenter:
 
     def assign(self, group: str, slot: str, row: WorkbenchRow) -> None:
         self._state.assign(group, slot, row)
+        self._presentation.cover_slot(group, slot)
         self._groups = self._project()
 
     def reproject(self) -> None:
@@ -226,19 +230,36 @@ class LiveKitPresenter:
         group shape so an accepted drop is visible immediately (audition /
         remove / replace controls included) without a second kit truth.
         """
+        self._presentation.sync_visible_prefix_from_domain()
         self._groups = self._project()
 
     def clear_slot(self, group: str, slot: str, *, notify: bool = True) -> bool:
         cleared = self._state.clear_slot(group, slot, notify=notify)
         if cleared:
+            # Keep session watermark; do not shrink the rack on clear.
             self._groups = self._project()
         return cleared
 
     def append_empty_slot(self, group: str) -> str:
         """Create one empty Extra-N slot via canonical domain mutation (#1377)."""
         created = self._state.append_empty_slot(group)
+        self._presentation.cover_slot(group, created)
         self._groups = self._project()
         return created
+
+    def grow_visible_slot(self, group: str) -> str:
+        """Plus seam: reveal next hidden canonical slot, else append Extra-N.
+
+        Revealing an existing empty canonical slot is presentation-only and
+        must not mutate domain identity. Extra-N creation remains the only
+        domain growth path once the group's current domain slots are all
+        visible.
+        """
+        revealed = self._presentation.reveal_next_slot(group)
+        if revealed is not None:
+            self._groups = self._project()
+            return revealed
+        return self.append_empty_slot(group)
 
 
 def _row_details(row: WorkbenchRow) -> dict[str, object]:
@@ -2371,14 +2392,16 @@ class Screen1QmlInteractionAdapter:
         return self._live_kit.presentation.is_collapsed(group)
 
     def append_empty_live_kit_slot(self, group: str) -> str | None:
-        """Grow one empty slot in *group* via domain mutation (#1377).
+        """Grow one visible empty field in *group* (#1377 minimal default rack).
 
-        Returns the new slot key on success, else None. Distinct from assign.
+        Reveals the next hidden canonical slot when present; only then creates
+        Extra-N via domain mutation. Distinct from assign. Returns the newly
+        visible slot key on success, else None.
         """
         if self._live_kit is None:
             return None
         try:
-            created = self._live_kit.append_empty_slot(group)
+            created = self._live_kit.grow_visible_slot(group)
         except ValueError:
             return None
         self._sync_live_kit_projection()
@@ -2959,9 +2982,8 @@ class Screen1QmlInteractionAdapter:
     def visible_live_kit_slot_keys(self) -> tuple[tuple[str, str], ...]:
         """#1072 target keys — empty while HUD hidden.
 
-        #1377 vertical rack always projects every group/slot while the Kit is
-        visible. Drop authorization must match that surface, so collapse state
-        no longer gates target keys on the QML path.
+        #1377 minimal default rack projects a visible prefix per group. Drop
+        authorization must match that surface (not hidden canonical slots).
         """
         if not self.live_kit_is_visible():
             return ()
@@ -2970,8 +2992,8 @@ class Screen1QmlInteractionAdapter:
         if self._live_kit is not None:
             expanded = self._live_kit.state.groups()
             slots_by_group = {
-                group: self._live_kit.state.slots_for(group)
-                for group in expanded
+                group.name: tuple(slot.name for slot in group.slots)
+                for group in self._live_kit.groups
             }
         return visible_live_kit_slot_keys(
             live_kit_visible=True,
@@ -8988,7 +9010,7 @@ def _qml_interaction_bridge(
 
         @Slot(int, result=bool)
         def appendEmptyLiveKitSlot(self, group_index: int) -> bool:
-            """Create one empty Extra-N slot under the group (#1377)."""
+            """Reveal next canonical slot or create Extra-N under the group (#1377)."""
             name = self._live_kit_group_name(group_index)
             if name is None:
                 return False

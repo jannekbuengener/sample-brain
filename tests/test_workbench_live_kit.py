@@ -118,6 +118,7 @@ def test_live_kit_slot_mapping_is_the_shared_taxonomy_source():
     presentation = LiveKitPresentationState(state)
     visible = presentation.visible_structure()
     assert tuple(group.name for group in visible) == tuple(group for group, _slots in mapping)
+    # Shared presentation default (Tk fallback) keeps the full domain visible.
     assert tuple(
         (group.name, tuple(slot.name for slot in group.slots)) for group in visible
     ) == mapping
