@@ -7325,12 +7325,24 @@ ApplicationWindow {
                         boundsBehavior: Flickable.StopAtBounds
                         interactive: contentHeight > height
                         ScrollBar.vertical: ScrollBar {
+                            // Owner visual: keep AlwaysOn when overflowing, but quiet vs dark HUD.
                             objectName: "liveKitDrawerScrollBar"
                             policy: liveKitDrawerScroll.contentHeight > liveKitDrawerScroll.height
                                     ? ScrollBar.AlwaysOn
                                     : ScrollBar.AlwaysOff
-                            width: 8
-                            padding: 2
+                            width: 6
+                            padding: 1
+                            contentItem: Rectangle {
+                                implicitWidth: 3
+                                implicitHeight: 32
+                                radius: 1.5
+                                color: theme.textDisabled
+                                opacity: parent.pressed ? 0.55
+                                         : (parent.hovered ? 0.42 : 0.28)
+                            }
+                            background: Item {
+                                implicitWidth: 6
+                            }
                         }
                         Column {
                             // #1377: vertical growing Sample Rack per group.

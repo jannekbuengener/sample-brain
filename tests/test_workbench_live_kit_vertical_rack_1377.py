@@ -324,6 +324,15 @@ def test_qml_live_kit_hud_scroll_keeps_rack_reachable() -> None:
     assert 'objectName: "liveKitDrawerScroll"' in pane
     assert 'objectName: "liveKitDrawerScrollBar"' in pane
     assert "ScrollBar.AlwaysOn" in pane
+    # Quiet scrollbar thumb — theme token, not bright default handle.
+    bar = pane[
+        pane.index('objectName: "liveKitDrawerScrollBar"') : pane.index(
+            "id: liveKitVerticalRack"
+        )
+    ]
+    assert "contentItem: Rectangle" in bar
+    assert "theme.textDisabled" in bar
+    assert "opacity:" in bar
     # Sticky chrome (header) must precede the scroll viewport.
     assert pane.index("LIVE KIT") < pane.index('objectName: "liveKitDrawerScroll"')
     assert pane.index('objectName: "liveKitDrawerScroll"') < pane.index(
