@@ -120,15 +120,14 @@ def test_pending_add_derives_empty_and_assigned_target_intent_without_domain_sta
     assert live_kit.state.assignment_for("Drums", "Main Drum") is assigned
     assert live_kit.state.assignment_for("Drums", "Closed Hat") is None
 
-    # The target state belongs to the renderer and is derived only from the
-    # existing pending-add property plus the read-only slot projection.
-    # Owner visual (#1377 follow-up): actions keep a visible border at rest;
-    # pending/hover lift to actionActive without inventing a second kit target.
+    # Owner #1377: no side "+" on empty slots; Replace stays ↻ on assigned rows.
     assert "property bool hasPendingAdd:" in QML_SOURCE
     assert "property bool showReplaceAffordance:" in QML_SOURCE
-    assert "border.color: hasPendingAdd ? theme.actionActive" in QML_SOURCE
-    assert "slotActionMouse.containsMouse ? theme.actionActive : theme.borderSubtle" in QML_SOURCE
-    assert 'hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")' in QML_SOURCE
+    assert 'text: "↻"' in QML_SOURCE
+    assert "showAddAffordance" not in QML_SOURCE
+    rack = QML_SOURCE.split('objectName: "liveKitVerticalRack"', 1)[1]
+    rack = rack.split("channelRackScreen", 1)[0]
+    assert 'text: "+"' not in rack.split("id: liveKitGroupPlus", 1)[0]
 
 
 def test_without_pending_add_qml_has_no_replacement_target_state():
@@ -136,8 +135,8 @@ def test_without_pending_add_qml_has_no_replacement_target_state():
 
     assert adapter.pending_live_kit_add == ""
     assert "window.interaction.liveKitPendingAdd !== \"\"" in QML_SOURCE
-    assert "border.color: hasPendingAdd ? theme.actionActive" in QML_SOURCE
-    assert "slotActionMouse.containsMouse ? theme.actionActive : theme.borderSubtle" in QML_SOURCE
+    assert 'objectName: "liveKitGroupPlus"' in QML_SOURCE
+    assert "showAddAffordance" not in QML_SOURCE
 
 
 def test_assigned_slot_projects_existing_assignment_data():
@@ -365,9 +364,9 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
         projected = window.property("screenData").property("liveKitGroups")
         assert tuple(group["name"] for group in projected) == CANONICAL_GROUPS
         screen_data = window.property("screenData")
-        assert screen_data.property("liveKitTotalSlotCount") == sum(
-            len(_slots) for _group, _slots in LIVE_KIT_SLOT_MAPPING
-        )
+        # Minimal default rack: one visible empty field per group (domain stays 11).
+        assert screen_data.property("liveKitTotalSlotCount") == 4
+        assert sum(len(_slots) for _group, _slots in LIVE_KIT_SLOT_MAPPING) == 11
         assert screen_data.property("liveKitAssignedCount") == 0
         assert (
             window.property("interaction").property("liveKitPendingAdd")
@@ -434,8 +433,7 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
     reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
 )
 def test_qml_pending_add_pointer_targets_slot_action_pill_and_commits():
-    """Drive the real QML pointer path: pending-add replacement on an assigned
-    slot and the no-pending empty-slot add fallback through the action pill."""
+    """Drive the real QML pointer path: Replace via ↻ and empty-slot field click."""
     from PySide6.QtCore import QPointF, QRectF, Qt
     from PySide6.QtQuick import QQuickItem
     from PySide6.QtTest import QTest
@@ -455,11 +453,10 @@ def test_qml_pending_add_pointer_targets_slot_action_pill_and_commits():
         on_preview_requested=previews.append,
     )
     live_kit.assign("Drums", "Main Drum", fixture.browser_rows[0])
-    # #1377: vertical rack starts expanded — slots are already projected.
+    assert live_kit.grow_visible_slot("Drums") == "Closed Hat"
     assert live_kit.groups[1].active is True
     adapter._sync_live_kit_projection()
     view_model.live_kit_groups = live_kit.groups
-    # #1077: visible Live Kit surface required before slot hit-targets exist.
     view_model.live_kit_materialized = True
     adapter._live_kit_drawer_open = True
     adapter.live_kit_collapsed = False
@@ -474,14 +471,20 @@ def test_qml_pending_add_pointer_targets_slot_action_pill_and_commits():
         assert pane is not None
         assert pane.property("visible") is True
 
-        def item(name: str) -> QQuickItem:
+        def item(name: str) -> QQuickItem | None:
             to_visit = [pane]
             while to_visit:
                 current = to_visit.pop()
                 if current.objectName() == name:
                     return current
                 to_visit.extend(current.childItems())
-            raise AssertionError(f"QML item {name!r} fehlt im Live-Kit-Visualbaum")
+            return None
+
+        def require(name: str) -> QQuickItem:
+            found = item(name)
+            if found is None:
+                raise AssertionError(f"QML item {name!r} fehlt im Live-Kit-Visualbaum")
+            return found
 
         def pill_pointer_point(slot: QQuickItem, handler: QQuickItem):
             handler_origin = handler.mapToItem(slot, QPointF(0, 0))
@@ -492,14 +495,12 @@ def test_qml_pending_add_pointer_targets_slot_action_pill_and_commits():
             )
             slot_bounds = slot.boundingRect()
             assert slot_bounds.contains(local_point)
-            # The chosen point is owned by the action pill surface only.
             assert handler_bounds.contains(local_point)
             return slot.mapToScene(local_point).toPoint()
 
-        assigned_slot = item("liveKitSlot1_0")
-        assigned_handler = item("slotActionMouse1_0")
-        assigned_label = item("slotActionLabel1_0")
-        other_slot = item("liveKitSlot1_1")
+        assigned_slot = require("liveKitSlot1_0")
+        assigned_handler = require("slotActionMouse1_0")
+        assigned_label = require("slotActionLabel1_0")
         assert assigned_slot.property("visible") is True
         assert assigned_slot.property("enabled") is True
         assert assigned_handler.property("visible") is True
@@ -509,43 +510,42 @@ def test_qml_pending_add_pointer_targets_slot_action_pill_and_commits():
         _settle_qml_frame(app)
         assert interaction.property("liveKitPendingAdd") == fixture.browser_rows[1].display_name
 
-        # The action pill follows the pending-add intent: every slot shows "+".
+        # Assigned rows keep Replace (↻) only — never a side "+".
         assigned_point = pill_pointer_point(assigned_slot, assigned_handler)
         QTest.mouseMove(window, assigned_point)
         _settle_qml_frame(app)
         assert assigned_slot.property("hasPendingAdd") is True
-        assert assigned_slot.property("showReplaceAffordance") is False
-        assert assigned_label.property("text") == "+"
+        assert assigned_slot.property("showReplaceAffordance") is True
+        assert assigned_label.property("text") == "↻"
         assert previews == []
         assert interaction.property("previewActive") is False
 
-        # The pill click commits the pending row (replaces the assigned slot).
+        # Replace pill commits the pending row into the assigned slot.
         QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, assigned_point)
         _settle_qml_frame(app)
         assert live_kit.state.assignment_for("Drums", "Main Drum") is fixture.browser_rows[1]
         assert interaction.property("liveKitPendingAdd") == ""
-        # Assignment refreshes the QML projection, so observe the replacement
-        # delegate instance rather than retaining a deleted Qt wrapper.
-        assigned_slot = item("liveKitSlot1_0")
-        assigned_label = item("slotActionLabel1_0")
+        assigned_slot = require("liveKitSlot1_0")
+        assigned_label = require("slotActionLabel1_0")
         assert assigned_slot.property("hasPendingAdd") is False
         assert assigned_slot.property("showReplaceAffordance") is True
         assert assigned_label.property("text") == "↻"
         assert previews == []
 
-        # No-pending empty-slot fallback: select a browser row, then click the
-        # empty slot's action pill to assign the selected row.
-        adapter.select_row(2)
-        empty_slot = item("liveKitSlot1_1")
-        empty_handler = item("slotActionMouse1_1")
-        empty_label = item("slotActionLabel1_1")
-        assert empty_slot.property("showAddAffordance") is True
-        assert empty_slot.property("showReplaceAffordance") is False
-        empty_point = pill_pointer_point(empty_slot, empty_handler)
-        QTest.mouseMove(window, empty_point)
+        # Empty slots have no side action pill; pending Add assigns via field click.
+        bridge.addToKit(2)
         _settle_qml_frame(app)
-        assert empty_label.property("text") == "+"
-        assert previews == []
+        empty_slot = require("liveKitSlot1_1")
+        empty_action = item("slotActionMouse1_1")
+        # Replace chrome is created but hidden (width 0) on empty slots — no side "+".
+        assert empty_slot.property("showReplaceAffordance") is False
+        if empty_action is not None:
+            assert empty_action.width() == 0 or empty_action.property("visible") is False
+        empty_label = item("slotActionLabel1_1")
+        if empty_label is not None:
+            assert empty_label.property("text") == "↻"
+        field_bounds = empty_slot.boundingRect()
+        empty_point = empty_slot.mapToScene(field_bounds.center()).toPoint()
         QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, empty_point)
         _settle_qml_frame(app)
         assert live_kit.state.assignment_for("Drums", "Closed Hat") is fixture.browser_rows[2]

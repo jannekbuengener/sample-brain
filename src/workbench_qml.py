@@ -7406,9 +7406,11 @@ ApplicationWindow {
                                                 property bool hasPendingAdd: window.interaction.liveKitPendingAdd !== ""
                                                 property bool isAssigned: modelData.assigned
                                                 property bool isEmpty: !modelData.assigned
-                                                property bool showReplaceAffordance: modelData.assigned && !hasPendingAdd
+                                                // Owner #1377: no side "+" in slot rows. Only Replace/Remove
+                                                // on assigned slots; empty-slot assign is click/drop on the
+                                                // field. Group growth uses liveKitGroupPlus only.
+                                                property bool showReplaceAffordance: modelData.assigned
                                                 property bool showRemoveAffordance: modelData.assigned && !hasPendingAdd
-                                                property bool showAddAffordance: !modelData.assigned || hasPendingAdd
                                                 DropArea {
                                                     objectName: "internalSampleDropArea" + kitGroupIndex + "_" + index
                                                     anchors.fill: parent
@@ -7429,16 +7431,25 @@ ApplicationWindow {
                                                     color: modelData.auditioning ? theme.selectionSurface
                                                            : (slotFieldMouse.containsMouse ? theme.hoverSurface : "transparent")
                                                     border.width: 1
-                                                    border.color: modelData.auditioning ? theme.selectionBorder : theme.borderSubtle
+                                                    border.color: modelData.auditioning || (hasPendingAdd && slotFieldMouse.containsMouse)
+                                                                  ? theme.selectionBorder : theme.borderSubtle
                                                     opacity: slotFieldMouse.containsMouse || modelData.auditioning ? 1.0 : 0.96
                                                     MouseArea {
                                                         id: slotFieldMouse
                                                         objectName: "slotAuditionMouse"
                                                         anchors.fill: parent
                                                         hoverEnabled: true
-                                                        enabled: modelData.assigned
+                                                        // Assigned: audition (or replace when pending).
+                                                        // Empty: click assigns pending/selected sample.
+                                                        enabled: modelData.assigned || hasPendingAdd
                                                         z: 0
-                                                        onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
+                                                        onClicked: {
+                                                            if (hasPendingAdd || !modelData.assigned) {
+                                                                window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                                            } else {
+                                                                window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
+                                                            }
+                                                        }
                                                     }
                                                     RowLayout {
                                                         anchors.fill: parent
@@ -7468,23 +7479,22 @@ ApplicationWindow {
                                                         Rectangle {
                                                             id: slotAction
                                                             Layout.preferredHeight: 24
-                                                            Layout.preferredWidth: showReplaceAffordance ? 38 : 24
+                                                            Layout.preferredWidth: 38
                                                             radius: 3
-                                                            visible: showReplaceAffordance || hasPendingAdd || showAddAffordance
-                                                            color: hasPendingAdd ? theme.selectionSurface
-                                                                   : (slotActionMouse.containsMouse ? theme.hoverSurface
-                                                                      : theme.hoverSurface)
+                                                            visible: showReplaceAffordance
+                                                            color: slotActionMouse.containsMouse || hasPendingAdd
+                                                                   ? theme.selectionSurface : theme.hoverSurface
                                                             border.width: 1
-                                                            border.color: hasPendingAdd ? theme.actionActive
-                                                                          : (slotActionMouse.containsMouse ? theme.actionActive : theme.borderSubtle)
+                                                            border.color: slotActionMouse.containsMouse || hasPendingAdd
+                                                                          ? theme.actionActive : theme.borderSubtle
                                                             Label {
                                                                 anchors.centerIn: parent
                                                                 objectName: "slotActionLabel" + kitGroupIndex + "_" + index
-                                                                text: hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")
-                                                                color: hasPendingAdd || slotActionMouse.containsMouse
+                                                                text: "↻"
+                                                                color: slotActionMouse.containsMouse || hasPendingAdd
                                                                        ? theme.actionActive
                                                                        : theme.textPrimary
-                                                                font.pixelSize: showReplaceAffordance ? 13 : 13
+                                                                font.pixelSize: 13
                                                             }
                                                             MouseArea {
                                                                 id: slotActionMouse

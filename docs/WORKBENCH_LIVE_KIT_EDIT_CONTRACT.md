@@ -142,6 +142,13 @@ Product rules (#1377):
   next hidden canonical slot (presentation-only; no domain mutation). Only after
   all current domain slots in that group are visible does Plus call
   `LiveKitState.append_empty_slot` (create Extra-N ≠ assign sample).
+- Slot rows must **not** render a side **[+]** for empty fields. Empty-slot assign
+  uses field click (pending Add / selected Browser row) or drop. Assigned slots
+  keep Replace (**↻**) and Remove (**×**) only.
+- Fresh / empty kit identity is an empty `LiveKitState` (no fixture seed on the
+  product path). The Windows distributable restores
+  `%LOCALAPPDATA%\SampleBrain\state` when present; Owner demos that must prove
+  an empty default use an isolated `SAMPLE_BRAIN_WORKBENCH_STATE_DIR`.
 - Restart visibility: Extra-N (including empty) remain visible via the existing
   session/domain contract. Empty canonical Plus-reveals without Extra-N are not
   session-backed and collapse to the minimal default on a cold presentation.
