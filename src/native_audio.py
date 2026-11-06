@@ -12,6 +12,8 @@ import math
 import os
 import platform
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Tuple
@@ -21,6 +23,14 @@ import numpy as np
 # #1350: default False; refreshed from native sb_vendor_asio_backend_available()
 # after the DLL loads (never ASIO4ALL / never a second playback engine).
 VENDOR_ASIO_BACKEND_AVAILABLE = False
+
+# UI playback projection re-reads device lists on every transport tick. Calling
+# sb_enumerate_devices while an engine is open can ACCESS_VIOLATION in the
+# native DLL (observed writing near-NULL); cache + skip while open.
+_ENUMERATE_LOCK = threading.Lock()
+_ENUMERATE_CACHE: dict[bool, tuple[float, list[dict]]] = {}
+_ENUMERATE_CACHE_TTL_S = 2.0
+_OPEN_ENGINE_COUNT = 0
 
 class SbDeviceInfo(ctypes.Structure):
     _fields_ = [
@@ -150,6 +160,38 @@ def _load_native_library() -> Tuple[Optional[ctypes.CDLL], Optional[Path]]:
 
 
 _lib, _lib_path = _load_native_library()
+# #region agent log
+try:
+    import json as _agent_json
+    import time as _agent_time
+
+    with open(
+        os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+        "a",
+        encoding="utf-8",
+    ) as _agent_f:
+        _agent_f.write(
+            _agent_json.dumps(
+                {
+                    "sessionId": "e66ed0",
+                    "runId": "pre-fix",
+                    "hypothesisId": "B",
+                    "location": "native_audio.py:module_load",
+                    "message": "native library load result",
+                    "data": {
+                        "available": bool(_lib),
+                        "lib_path": str(_lib_path) if _lib_path else None,
+                        "pid": __import__("os").getpid(),
+                    },
+                    "timestamp": int(_agent_time.time() * 1000),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+except Exception:
+    pass
+# #endregion
 if _lib is None:
     import warnings
     warnings.warn("Native audio library samplebrain_audio not found or invalid. Native audio unavailable.")
@@ -597,6 +639,39 @@ class NativeAudioEngine:
 
     def open(self, config: EngineConfig) -> None:
         """Open the audio engine."""
+        # #region agent log
+        try:
+            import json as _agent_json
+            import time as _agent_time
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "B",
+                            "location": "native_audio.py:NativeAudioEngine.open:before",
+                            "message": "about to sb_engine_open",
+                            "data": {
+                                "sample_rate": config.sample_rate,
+                                "buffer_frames": config.buffer_frames,
+                                "has_output_device": bool(config.output_device),
+                                "pid": __import__("os").getpid(),
+                            },
+                            "timestamp": int(_agent_time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         c_config = SbEngineConfig(
             sample_rate=config.sample_rate,
             buffer_frames=config.buffer_frames,
@@ -609,6 +684,40 @@ class NativeAudioEngine:
         engine = sb_engine_t()
         _check_result(_lib.sb_engine_open(ctypes.byref(c_config), ctypes.byref(engine)), "open")
         self._engine = engine
+        global _OPEN_ENGINE_COUNT
+        with _ENUMERATE_LOCK:
+            _OPEN_ENGINE_COUNT += 1
+        # #region agent log
+        try:
+            import json as _agent_json
+            import time as _agent_time
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "B",
+                            "location": "native_audio.py:NativeAudioEngine.open:after",
+                            "message": "sb_engine_open returned ok",
+                            "data": {
+                                "pid": __import__("os").getpid(),
+                                "open_engine_count": _OPEN_ENGINE_COUNT,
+                            },
+                            "timestamp": int(_agent_time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         self._opened_output_device = config.output_device
         self._opened_output_name = ""
         self._opened_backend = ""
@@ -668,7 +777,63 @@ class NativeAudioEngine:
         """Start the audio engine."""
         if not self._engine:
             raise RuntimeError("Engine not open")
+        # #region agent log
+        try:
+            import json as _agent_json
+            import time as _agent_time
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "B",
+                            "location": "native_audio.py:start:before",
+                            "message": "about to sb_engine_start",
+                            "data": {"pid": __import__("os").getpid()},
+                            "timestamp": int(_agent_time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         _check_result(_lib.sb_engine_start(self._engine), "start")
+        # #region agent log
+        try:
+            import json as _agent_json
+            import time as _agent_time
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "B",
+                            "location": "native_audio.py:start:after",
+                            "message": "sb_engine_start ok",
+                            "data": {"pid": __import__("os").getpid()},
+                            "timestamp": int(_agent_time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
 
     def stop(self) -> None:
         """Stop the audio engine."""
@@ -680,11 +845,73 @@ class NativeAudioEngine:
         """Close the audio engine."""
         if not self._engine:
             raise RuntimeError("Engine not open")
+        # #region agent log
+        try:
+            import json as _agent_json
+            import time as _agent_time
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "D",
+                            "location": "native_audio.py:close:before",
+                            "message": "about to sb_engine_close",
+                            "data": {"pid": __import__("os").getpid()},
+                            "timestamp": int(_agent_time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         _check_result(_lib.sb_engine_close(self._engine), "close")
         self._engine = None
+        global _OPEN_ENGINE_COUNT
+        with _ENUMERATE_LOCK:
+            _OPEN_ENGINE_COUNT = max(0, _OPEN_ENGINE_COUNT - 1)
         self._opened_output_device = None
         self._opened_output_name = ""
         self._opened_backend = ""
+        # #region agent log
+        try:
+            import json as _agent_json
+            import time as _agent_time
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "D",
+                            "location": "native_audio.py:close:after",
+                            "message": "sb_engine_close ok",
+                            "data": {
+                                "pid": __import__("os").getpid(),
+                                "open_engine_count": _OPEN_ENGINE_COUNT,
+                            },
+                            "timestamp": int(_agent_time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
 
     def get_version(self) -> str:
         """Get the native engine build version."""
@@ -699,10 +926,165 @@ class NativeAudioEngine:
         """Enumerate audio devices."""
         if not _lib:
             raise RuntimeError("Native library not loaded")
+        capture_key = bool(capture)
+        now = time.monotonic()
+        with _ENUMERATE_LOCK:
+            cached = _ENUMERATE_CACHE.get(capture_key)
+            if cached is not None and (now - cached[0]) < _ENUMERATE_CACHE_TTL_S:
+                # #region agent log
+                try:
+                    import json as _agent_json
+
+                    with open(
+                        os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                        "a",
+                        encoding="utf-8",
+                    ) as _agent_f:
+                        _agent_f.write(
+                            _agent_json.dumps(
+                                {
+                                    "sessionId": "e66ed0",
+                                    "runId": "post-fix",
+                                    "hypothesisId": "C",
+                                    "location": "native_audio.py:enumerate_devices:cache_hit",
+                                    "message": "enumerate cache hit",
+                                    "data": {
+                                        "capture": capture_key,
+                                        "count": len(cached[1]),
+                                        "open_engines": _OPEN_ENGINE_COUNT,
+                                        "pid": os.getpid(),
+                                    },
+                                    "timestamp": int(time.time() * 1000),
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                except Exception:
+                    pass
+                # #endregion
+                return [dict(item) for item in cached[1]]
+            if _OPEN_ENGINE_COUNT > 0 and cached is not None:
+                # #region agent log
+                try:
+                    import json as _agent_json
+
+                    with open(
+                        os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                        "a",
+                        encoding="utf-8",
+                    ) as _agent_f:
+                        _agent_f.write(
+                            _agent_json.dumps(
+                                {
+                                    "sessionId": "e66ed0",
+                                    "runId": "post-fix",
+                                    "hypothesisId": "C",
+                                    "location": "native_audio.py:enumerate_devices:skip_while_open",
+                                    "message": "skip sb_enumerate_devices while engine open",
+                                    "data": {
+                                        "capture": capture_key,
+                                        "open_engines": _OPEN_ENGINE_COUNT,
+                                        "pid": os.getpid(),
+                                    },
+                                    "timestamp": int(time.time() * 1000),
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                except Exception:
+                    pass
+                # #endregion
+                return [dict(item) for item in cached[1]]
+            if _OPEN_ENGINE_COUNT > 0 and cached is None:
+                # No safe baseline yet; fail soft instead of risking native AV.
+                return []
+        # #region agent log
+        try:
+            import json as _agent_json
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "post-fix",
+                            "hypothesisId": "C",
+                            "location": "native_audio.py:enumerate_devices:before",
+                            "message": "about to sb_enumerate_devices",
+                            "data": {
+                                "capture": capture_key,
+                                "open_engines": _OPEN_ENGINE_COUNT,
+                                "pid": os.getpid(),
+                            },
+                            "timestamp": int(time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         max_count = 32
         devices = (SbDeviceInfo * max_count)()
         count = ctypes.c_uint32()
-        _check_result(_lib.sb_enumerate_devices(1 if capture else 0, devices, max_count, ctypes.byref(count)), "enumerate_devices")
+        try:
+            with _ENUMERATE_LOCK:
+                # Re-check under lock: another thread may have opened an engine.
+                if _OPEN_ENGINE_COUNT > 0:
+                    cached = _ENUMERATE_CACHE.get(capture_key)
+                    if cached is not None:
+                        return [dict(item) for item in cached[1]]
+                    return []
+                _check_result(
+                    _lib.sb_enumerate_devices(
+                        1 if capture_key else 0,
+                        devices,
+                        max_count,
+                        ctypes.byref(count),
+                    ),
+                    "enumerate_devices",
+                )
+        except OSError as exc:
+            # ctypes may surface native AVs as OSError; keep UI alive.
+            # #region agent log
+            try:
+                import json as _agent_json
+
+                with open(
+                    os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                    "a",
+                    encoding="utf-8",
+                ) as _agent_f:
+                    _agent_f.write(
+                        _agent_json.dumps(
+                            {
+                                "sessionId": "e66ed0",
+                                "runId": "post-fix",
+                                "hypothesisId": "C",
+                                "location": "native_audio.py:enumerate_devices:oserror",
+                                "message": "sb_enumerate_devices raised OSError",
+                                "data": {"err": str(exc), "pid": os.getpid()},
+                                "timestamp": int(time.time() * 1000),
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+            except Exception:
+                pass
+            # #endregion
+            with _ENUMERATE_LOCK:
+                cached = _ENUMERATE_CACHE.get(capture_key)
+                if cached is not None:
+                    return [dict(item) for item in cached[1]]
+            return []
         result = []
         for i in range(count.value):
             d = devices[i]
@@ -711,6 +1093,38 @@ class NativeAudioEngine:
                 "id_hex": d.id_hex.decode().rstrip('\x00'),
                 "is_default": bool(d.is_default),
             })
+        with _ENUMERATE_LOCK:
+            _ENUMERATE_CACHE[capture_key] = (time.monotonic(), [dict(item) for item in result])
+        # #region agent log
+        try:
+            import json as _agent_json
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "post-fix",
+                            "hypothesisId": "C",
+                            "location": "native_audio.py:enumerate_devices:after",
+                            "message": "sb_enumerate_devices returned",
+                            "data": {
+                                "count": int(count.value),
+                                "pid": os.getpid(),
+                            },
+                            "timestamp": int(time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         return result
 
     def create_voice(self, config: VoiceConfig) -> int:
@@ -841,8 +1255,70 @@ class NativeAudioEngine:
         """Get engine snapshot."""
         if not self._engine:
             raise RuntimeError("Engine not open")
+        # #region agent log
+        try:
+            import json as _agent_json
+            import time as _agent_time
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "F",
+                            "location": "native_audio.py:snapshot:before",
+                            "message": "about to sb_engine_snapshot",
+                            "data": {
+                                "engine_is_null": not bool(self._engine),
+                                "pid": __import__("os").getpid(),
+                            },
+                            "timestamp": int(_agent_time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         snap = SbSnapshot()
         _check_result(_lib.sb_engine_snapshot(self._engine, ctypes.byref(snap)), "snapshot")
+        # #region agent log
+        try:
+            import json as _agent_json
+            import time as _agent_time
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "F",
+                            "location": "native_audio.py:snapshot:after",
+                            "message": "sb_engine_snapshot ok",
+                            "data": {
+                                "engine_frame": int(snap.engine_frame),
+                                "pid": __import__("os").getpid(),
+                            },
+                            "timestamp": int(_agent_time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         return Snapshot.from_c_snapshot(snap)
 
     def __enter__(self) -> "NativeAudioEngine":

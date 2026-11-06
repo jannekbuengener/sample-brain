@@ -12439,6 +12439,58 @@ def apply_clean_start_launch(
 
 def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
     """Open the optional production Screen-1 renderer without changing Tk defaults."""
+    # #region agent log
+    try:
+        import faulthandler
+        import json
+        import os
+        import time
+        from pathlib import Path
+
+        _dbg = Path(os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"))
+        _fault = Path(os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0-fault.log"))
+        _fault_fh = open(_fault, "a", encoding="utf-8")
+        faulthandler.enable(file=_fault_fh, all_threads=True)
+        peers = []
+        try:
+            import subprocess
+
+            peers = (
+                subprocess.check_output(
+                    ["tasklist", "/FI", "IMAGENAME eq SampleBrain.exe", "/FO", "CSV", "/NH"],
+                    text=True,
+                    errors="ignore",
+                )
+                .strip()
+                .splitlines()
+            )
+        except Exception:
+            peers = []
+        with open(_dbg, "a", encoding="utf-8") as _f:
+            _f.write(
+                json.dumps(
+                    {
+                        "sessionId": "e66ed0",
+                        "runId": "pre-fix",
+                        "hypothesisId": "A",
+                        "location": "workbench_qml.py:run_qml_screen1:entry",
+                        "message": "run_qml_screen1 start",
+                        "data": {
+                            "pid": os.getpid(),
+                            "state_dir": os.environ.get("SAMPLE_BRAIN_WORKBENCH_STATE_DIR"),
+                            "library_root": os.environ.get("SAMPLE_BRAIN_LIBRARY_ROOT"),
+                            "python": sys.executable,
+                            "samplebrain_peers": peers[:8],
+                        },
+                        "timestamp": int(time.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # #endregion
     composition = Screen1QmlRuntimeComposition(
         library_db_path=workbench_library_db_path(),
     )
@@ -12459,9 +12511,67 @@ def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
         view_model,
         runtime_composition=composition,
     )
+    # #region agent log
+    try:
+        import json
+        import os
+        import time
+
+        with open(
+            os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+            "a",
+            encoding="utf-8",
+        ) as _f:
+            _f.write(
+                json.dumps(
+                    {
+                        "sessionId": "e66ed0",
+                        "runId": "pre-fix",
+                        "hypothesisId": "E",
+                        "location": "workbench_qml.py:run_qml_screen1:before_exec",
+                        "message": "QML engine ready, entering app.exec",
+                        "data": {"pid": os.getpid()},
+                        "timestamp": int(time.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # #endregion
     try:
         return app.exec()
     finally:
+        # #region agent log
+        try:
+            import json
+            import os
+            import time
+
+            with open(
+                os.path.join(os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _f:
+                _f.write(
+                    json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "D",
+                            "location": "workbench_qml.py:run_qml_screen1:finally",
+                            "message": "app.exec returned / cleanup",
+                            "data": {"pid": os.getpid()},
+                            "timestamp": int(time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         root_context = getattr(_engine, "rootContext", None)
         if callable(root_context):
             coordinator = root_context().contextProperty(

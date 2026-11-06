@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Optional
@@ -25,31 +26,19 @@ from src.session_grid import SessionTransport, compute_sync_playback_rate
 warn = logging.getLogger(__name__.partition(".")[2]).warning
 
 DEFAULT_TEMPO_BPM = 132.0
+# Cache TTL for non-COM measurable_output probes (UI polls routing evidence often).
+_METER_CACHE_TTL_S = 1.0
 
-# Import WASAPI meter deps before any native engine open can CoInitialize the
-# thread apartment (#1352). Late imports after ma_device_init can raise
-# RPC_E_CHANGED_MODE and would otherwise disable measurable_output.
-_METER_IMPORT_ERROR: str | None
+# Eager-import COM stack before any native engine open can CoInitialize the
+# thread apartment (#1352). Live WASAPI peak COM probes are disabled: comtypes
+# IUnknown.__del__/Release during GC caused ACCESS_VIOLATION in _ctypes (#1377).
 try:
-    from ctypes import POINTER as _METER_POINTER
-    from ctypes import cast as _METER_CAST
+    import comtypes  # noqa: F401
+    import pycaw  # noqa: F401
 
-    from comtypes import CLSCTX_ALL as _METER_CLSCTX_ALL
-    from comtypes import CoCreateInstance as _METER_CoCreateInstance
-    from pycaw.api.endpointvolume import IAudioMeterInformation as _METER_Iface
-    from pycaw.api.mmdeviceapi import IMMDeviceEnumerator as _METER_IMMDevEnum
-    from pycaw.constants import CLSID_MMDeviceEnumerator as _METER_CLSID
-
-    _METER_IMPORT_ERROR = None
+    _METER_IMPORT_ERROR: str | None = None
 except Exception as _meter_exc:  # pragma: no cover - optional host dependency
     _METER_IMPORT_ERROR = str(_meter_exc)
-    _METER_POINTER = None  # type: ignore[assignment]
-    _METER_CAST = None  # type: ignore[assignment]
-    _METER_CLSCTX_ALL = None  # type: ignore[assignment]
-    _METER_CoCreateInstance = None  # type: ignore[assignment]
-    _METER_Iface = None  # type: ignore[assignment]
-    _METER_IMMDevEnum = None  # type: ignore[assignment]
-    _METER_CLSID = None  # type: ignore[assignment]
 
 
 def _clamp_bpm(value: float) -> float:
@@ -113,6 +102,10 @@ class WorkbenchTransportAdapter:
         self._audio_switch_phase: str = "idle"
         # #1351: after device loss, block ensure_engine_running until explicit retry.
         self._audio_output_requires_explicit_retry: bool = False
+        # Coalesce WASAPI meter COM probes (#1377 runtime AV via comtypes GC).
+        self._meter_cache_device_id: str | None = None
+        self._meter_cache_at: float = 0.0
+        self._meter_cache_value: dict[str, object] | None = None
 
         if native_engine is None:
             self._native_available = _native_audio.is_available()
@@ -541,6 +534,41 @@ class WorkbenchTransportAdapter:
         Does NOT start the musical transport if it was stopped - only starts the audio engine callback.
         Idempotent: if engine already started, returns True without calling start() again.
         Returns True if engine is available and running."""
+        # #region agent log
+        try:
+            import json as _agent_json
+            import os as _agent_os
+            import time as _agent_time
+
+            with open(
+                _agent_os.path.join(_agent_os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", _agent_os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "pre-fix",
+                            "hypothesisId": "B",
+                            "location": "workbench_transport_adapter.py:ensure_engine_running:entry",
+                            "message": "ensure_engine_running called",
+                            "data": {
+                                "pid": _agent_os.getpid(),
+                                "native_available": bool(self._native_available),
+                                "native_opened": bool(self._native_opened),
+                                "native_started": bool(self._native_started),
+                                "has_engine": self._native_engine is not None,
+                            },
+                            "timestamp": int(_agent_time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
         with self._lock:
             if not self._native_available or self._native_engine is None:
                 self._audio_switch_phase = "unavailable"
@@ -1213,26 +1241,63 @@ class WorkbenchTransportAdapter:
             return None
         if not self._native_started:
             return {"peak": 0.0, "sessions_active": 0, "source": "engine_stopped"}
-        if _METER_IMPORT_ERROR or _METER_CoCreateInstance is None or _METER_Iface is None:
-            return None
+        # WASAPI endpoint meters via comtypes/pycaw are unsafe on the QML UI
+        # thread: leftover IUnknown.__del__/Release during GC races with
+        # preview/librosa import and ACCESS_VIOLATIONs in _ctypes (debug #1377).
+        # Prove callback progress from the native snapshot instead — same shape
+        # as the vendor-ASIO path, no COM objects.
+        engine = self._native_engine
+        frame = 0
         try:
-            wasapi_id = (
-                bytes.fromhex(device_id).decode("utf-16-le", errors="ignore").split("\x00")[0]
-            )
-            enumerator = _METER_CoCreateInstance(
-                _METER_CLSID, _METER_IMMDevEnum, _METER_CLSCTX_ALL
-            )
-            device = enumerator.GetDevice(wasapi_id)
-            iface = device.Activate(_METER_Iface._iid_, _METER_CLSCTX_ALL, None)
-            meter = _METER_CAST(iface, _METER_POINTER(_METER_Iface))
-            return {
-                "peak": float(meter.GetPeakValue()),
-                "sessions_active": None,
-                "source": "wasapi_endpoint_meter_coarse",
-            }
-        except Exception as exc:  # pragma: no cover - host/COM specific
-            warn("measurable_output probe failed: %s", exc)
-            return None
+            if engine is not None and hasattr(engine, "snapshot"):
+                frame = int(getattr(engine.snapshot(), "engine_frame", 0) or 0)
+            elif engine is not None and hasattr(engine, "get_frame"):
+                frame = int(engine.get_frame())
+        except Exception as exc:  # pragma: no cover - device specific
+            warn("WASAPI measurable_output frame probe failed: %s", exc)
+            frame = -1
+        result = {
+            "peak": None,
+            "sessions_active": None,
+            "source": "wasapi_callback_frame",
+            "engine_frame": frame,
+            "callback_advancing": frame > 0,
+        }
+        # #region agent log
+        try:
+            import json as _agent_json
+            import os as _agent_os
+
+            with open(
+                _agent_os.path.join(_agent_os.environ.get("SAMPLE_BRAIN_DEBUG_DIR", _agent_os.environ.get("TEMP", ".")), "sample-brain-debug-e66ed0.log"),
+                "a",
+                encoding="utf-8",
+            ) as _agent_f:
+                _agent_f.write(
+                    _agent_json.dumps(
+                        {
+                            "sessionId": "e66ed0",
+                            "runId": "post-fix",
+                            "hypothesisId": "G",
+                            "location": "workbench_transport_adapter.py:_measure_opened_output_peak:no_com",
+                            "message": "WASAPI meter uses snapshot frame (COM disabled)",
+                            "data": {
+                                "pid": _agent_os.getpid(),
+                                "engine_frame": frame,
+                            },
+                            "timestamp": int(time.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
+        self._meter_cache_device_id = device_id
+        self._meter_cache_at = time.monotonic()
+        self._meter_cache_value = dict(result)
+        return result
 
     def is_native_available(self) -> bool:
         with self._lock:
