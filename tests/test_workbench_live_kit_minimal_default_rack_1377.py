@@ -259,3 +259,49 @@ def test_adapter_plus_uses_grow_not_blind_extra() -> None:
     assert created == "Bass"
     assert live_kit_has_extra_slots(live_kit.state) is False
     assert [s.name for s in live_kit.groups[0].slots] == ["Kick", "Bass"]
+
+
+def test_fresh_presenter_has_no_prefilled_assignments() -> None:
+    presenter = LiveKitPresenter()
+    for group in presenter.groups:
+        assert len(group.slots) == 1
+        assert group.slots[0].assignment is None
+        assert presenter.state.assignment_for(group.name, group.slots[0].name) is None
+
+
+def test_qml_source_has_bottom_plus_only_no_side_add() -> None:
+    from src.workbench_qml import QML_SOURCE
+
+    assert "showAddAffordance" not in QML_SOURCE
+    assert 'objectName: "liveKitGroupPlus"' in QML_SOURCE
+    rack = QML_SOURCE.split('objectName: "liveKitVerticalRack"', 1)[1]
+    rack = rack.split("channelRackScreen", 1)[0]
+    before_group_plus, after_group_plus = rack.split("id: liveKitGroupPlus", 1)
+    assert 'text: "+"' not in before_group_plus
+    assert 'text: "+"' in after_group_plus
+    assert 'text: "↻"' in before_group_plus
+
+
+def test_fixture_seed_is_not_the_product_empty_default() -> None:
+    """Acceptance fixtures may carry demo assignments; product presenter must not."""
+    fixture = build_screen1_visual_fixture_v1()
+    assert fixture.assignments  # historical visual fixture still has seeds
+    product = LiveKitPresenter()
+    assert all(
+        slot.assignment is None
+        for group in product.groups
+        for slot in group.slots
+    )
+
+
+def test_empty_slot_field_click_assigns_selected_browser_row_without_pending() -> None:
+    """Codex P2: selected Browser row still assigns via empty-field click."""
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
+    live_kit = LiveKitPresenter()
+    adapter = Screen1QmlInteractionAdapter(view_model=view_model, live_kit=live_kit)
+    view_model.live_kit_groups = live_kit.groups
+    adapter.select_row(2)
+    assert adapter.pending_live_kit_add == ""
+    assert adapter.assign_live_kit_slot("Kick + Bass", "Kick") is True
+    assert live_kit.state.assignment_for("Kick + Bass", "Kick") is fixture.browser_rows[2]

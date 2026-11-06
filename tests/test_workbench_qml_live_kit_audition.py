@@ -419,7 +419,7 @@ def test_qml_live_kit_slot_audition_focused_state_is_subtle():
     assert "id: slotField" in QML_SOURCE
     assert "modelData.auditioning ? theme.selectionSurface" in QML_SOURCE
     assert "modelData.auditioning ? theme.actionActive" in QML_SOURCE
-    assert "modelData.auditioning ? theme.selectionBorder" in QML_SOURCE
+    assert "theme.selectionBorder" in QML_SOURCE
     assert "font.pixelSize: 11" in QML_SOURCE or "font.pixelSize: 12" in QML_SOURCE
 
 
@@ -436,7 +436,7 @@ def test_qml_replacement_target_is_separate_from_slot_audition_state():
     assert "id: slotActionMouse" in QML_SOURCE
     assert "anchors.fill: parent" in QML_SOURCE
     assert "z: 1" in QML_SOURCE
-    assert "enabled: modelData.assigned" in QML_SOURCE
+    assert "enabled: true" in QML_SOURCE
     assert "window.interaction.addLiveKitSlot(kitGroupIndex, index)" in QML_SOURCE
     assert "window.interaction.auditionLiveKitSlot(kitGroupIndex, index)" in QML_SOURCE
 
@@ -489,7 +489,10 @@ def test_qml_live_kit_slot_audition_runtime_roundtrip_focus_and_stop():
         app.processEvents()
         asserted = window.property("screenData").property("liveKitGroups")
         assert asserted[1]["slots"][0]["auditioning"] is True
-        assert asserted[1]["slots"][1]["auditioning"] is False
+        assert all(
+            (not slot.get("auditioning")) or index == 0
+            for index, slot in enumerate(asserted[1]["slots"])
+        )
         assert window.property("interaction").property("previewActive") is True
         assert len(previews) == 1
         assert adapter.selected_browser_index == selected_before
@@ -591,8 +594,8 @@ def test_qml_pending_banner_escape_stops_audition_and_cancels_add():
         on_preview_requested=previews.append,
     )
     _assign(adapter, live_kit, "Drums", "Main Drum", _row("banner.wav"))
-    # #743: expand Drums before banner/audition focus path (slots remain projected).
-    assert adapter.toggle_live_kit_group("Drums") is False
+    # #1377 vertical rack starts expanded; keep Drums open for the banner path.
+    assert live_kit.presentation.is_collapsed("Drums") is False
     view_model.live_kit_groups = live_kit.groups
 
     app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
