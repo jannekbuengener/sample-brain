@@ -436,7 +436,7 @@ def test_qml_replacement_target_is_separate_from_slot_audition_state():
     assert "id: slotActionMouse" in QML_SOURCE
     assert "anchors.fill: parent" in QML_SOURCE
     assert "z: 1" in QML_SOURCE
-    assert "enabled: modelData.assigned || hasPendingAdd" in QML_SOURCE
+    assert "enabled: true" in QML_SOURCE
     assert "window.interaction.addLiveKitSlot(kitGroupIndex, index)" in QML_SOURCE
     assert "window.interaction.auditionLiveKitSlot(kitGroupIndex, index)" in QML_SOURCE
 

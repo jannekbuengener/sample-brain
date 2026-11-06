@@ -292,3 +292,16 @@ def test_fixture_seed_is_not_the_product_empty_default() -> None:
         for group in product.groups
         for slot in group.slots
     )
+
+
+def test_empty_slot_field_click_assigns_selected_browser_row_without_pending() -> None:
+    """Codex P2: selected Browser row still assigns via empty-field click."""
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
+    live_kit = LiveKitPresenter()
+    adapter = Screen1QmlInteractionAdapter(view_model=view_model, live_kit=live_kit)
+    view_model.live_kit_groups = live_kit.groups
+    adapter.select_row(2)
+    assert adapter.pending_live_kit_add == ""
+    assert adapter.assign_live_kit_slot("Kick + Bass", "Kick") is True
+    assert live_kit.state.assignment_for("Kick + Bass", "Kick") is fixture.browser_rows[2]

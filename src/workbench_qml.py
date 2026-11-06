@@ -7439,9 +7439,10 @@ ApplicationWindow {
                                                         objectName: "slotAuditionMouse"
                                                         anchors.fill: parent
                                                         hoverEnabled: true
-                                                        // Assigned: audition (or replace when pending).
-                                                        // Empty: click assigns pending/selected sample.
-                                                        enabled: modelData.assigned || hasPendingAdd
+                                                        // Assigned without pending: audition.
+                                                        // Empty or pending: assign/replace via
+                                                        // addLiveKitSlot (pending or selected Browser row).
+                                                        enabled: true
                                                         z: 0
                                                         onClicked: {
                                                             if (hasPendingAdd || !modelData.assigned) {
